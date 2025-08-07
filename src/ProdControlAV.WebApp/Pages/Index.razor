@@ -1,0 +1,63 @@
+
+@using System.Collections.Generic
+@using System.Threading.Tasks
+@using ProdControlAV.Core.Models
+@using ProdControlAV.WebApp.Services
+
+@inject DeviceStatusService StatusService
+
+<h3>Device Status</h3>
+
+@if (_statuses == null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <table class="table table-dark">
+        <thead>
+            <tr>
+                <th>Device</th>
+                <th>Status</th>
+                <th>Last Checked</th>
+                <th>Last Response</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var status in _statuses)
+        {
+            <tr>
+                <td>@status.DeviceId</td>
+                <td>@(status.IsOnline ? "Online" : "Offline")</td>
+                <td>@status.LastChecked.ToString("g")</td>
+                <td>@status.LastResponse</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<DeviceStatus>? _statuses;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+        _ = PeriodicRefresh();
+    }
+
+    private async Task RefreshAsync()
+    {
+        _statuses = await StatusService.GetStatusesAsync();
+        StateHasChanged();
+    }
+
+    private async Task PeriodicRefresh()
+    {
+        while (true)
+        {
+            await Task.Delay(30000); // 30 seconds
+            await RefreshAsync();
+        }
+    }
+}
