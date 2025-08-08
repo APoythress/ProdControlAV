@@ -1,10 +1,22 @@
 @inherits LayoutComponentBase
 
-<LayoutView>
-    <div class="main dark-theme">
-        <NavMenu />
-        <div class="content px-4">
-            @Body
+<div class="main-container bg-dark text-white min-vh-100 d-flex flex-column">
+
+    <!-- Header -->
+    <header class="p-3 border-bottom border-light">
+        <div class="container d-flex justify-content-between align-items-center">
+            <span><strong>UserName</strong> | <strong>LocationName</strong></span>
+            <a class="btn btn-outline-light" href="/manage-devices">Manage Devices</a>
         </div>
-    </div>
-</LayoutView>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-fill container py-4">
+        @Body
+    </main>
+
+    <!-- Footer -->
+    <footer class="p-3 border-top border-light text-center small">
+        © 2025 ProdControlAV
+    </footer>
+</div>

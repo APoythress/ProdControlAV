@@ -1,28 +1,34 @@
 using Microsoft.AspNetCore.Mvc;
-using ProdControlAV.Core.Models;
+using ProdControlAV.WebApp.Models;
 
 namespace ProdControlAV.Server.Controllers;
 
 [ApiController]
-[Route("api/status")]
+[Route("api/devices")]
 public class StatusController : ControllerBase
 {
-    private static readonly List<DeviceStatus> Statuses = new();
+    private readonly IDeviceStatusRepository _repo;
 
-    [HttpGet]
-    public IActionResult GetAll()
+    public StatusController(IDeviceStatusRepository repo)
     {
-        return Ok(Statuses);
+        _repo = repo;
     }
 
-    [HttpPost]
-    public IActionResult ReportStatus(DeviceStatus status)
+    // POST api/devices/status
+    // Used to populate the status of the clients device
+    [HttpPost("status")]
+    public async Task<IActionResult> PostStatus([FromBody] DeviceStatusDto dto)
     {
-        var existing = Statuses.FirstOrDefault(s => s.DeviceId == status.DeviceId);
-        if (existing != null)
-            Statuses.Remove(existing);
+        var log = new DeviceStatusLog
+        {
+            DeviceName = dto.Name,
+            IP = dto.IP,
+            IsOnline = dto.IsOnline,
+            LastPingMs = dto.LastPingMs,
+            Timestamp = DateTime.UtcNow
+        };
 
-        Statuses.Add(status);
+        await _repo.SaveStatusAsync(log);
         return Ok();
     }
 }

@@ -14,6 +14,7 @@ public class CommandController : ControllerBase
         _queue = queue;
     }
 
+    // Get the status
     [HttpGet("{deviceId}")]
     public async Task<IActionResult> GetCommands(string deviceId)
     {

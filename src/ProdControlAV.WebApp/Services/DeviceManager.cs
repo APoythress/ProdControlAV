@@ -1,10 +1,8 @@
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Threading.Tasks;
-using ProdControlAV.Core.Models;
 using ProdControlAV.WebApp.Models;
 
 namespace ProdControlAV.Infrastructure.Services

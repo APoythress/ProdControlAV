@@ -14,10 +14,21 @@ builder.Services.AddCors(options =>
     {
         policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
     });
+    
+    // Add mocking
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.AllowAnyOrigin()
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
 });
+
 builder.Services.AddSingleton<ICommandQueue>(new JsonCommandQueue("Data/Commands"));
 builder.Services.AddSingleton<IDeviceController>(new TelnetDeviceController());
 builder.Services.AddSingleton<INetworkMonitor, PingNetworkMonitor>();
+builder.Services.AddSingleton<IDeviceStatusRepository, InMemoryDeviceStatusRepository>();
+
 
 var app = builder.Build();
 

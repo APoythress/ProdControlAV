@@ -20,5 +20,4 @@ public class DeviceStatusService
         return await _http.GetFromJsonAsync<List<DeviceStatus>>("https://your-api-host.com/api/status")
                ?? new List<DeviceStatus>();
     }
-
 }

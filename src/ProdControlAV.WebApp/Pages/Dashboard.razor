@@ -1,0 +1,130 @@
+@page "/dashboard"
+@using System.Diagnostics
+@using System.Threading
+@using Microsoft.VisualBasic
+@using ProdControlAV.Core.Models
+@using ProdControlAV.WebApp.Models
+@inject DeviceApiClient Api
+@implements IAsyncDisposable
+
+<div class="container mt-5 text-white">
+    <h3 class="text-center mb-4"><u>Device Status</u></h3>
+    
+    <div class="row g-3 justify-content-center">
+        @foreach (var device in Devices)
+        {
+            Debugger.Log(1, null, @device.ToString());
+            
+            <div class="col-12 col-sm-6 col-md-4 col-lg-3">
+                <div class="card text-center bg-dark border-light text-white h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">@device.Name</h5>
+                        <p class="card-text">
+                            Status:
+                            <span class="badge @GetStatusClass(device)">@device.Status</span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <h4 class="text-center mt-5"><u>Actions</u></h4>
+
+    <div class="d-flex justify-content-center flex-wrap gap-3 mt-3">
+        @foreach (var action in Actions)
+        {
+            <button class="btn btn-outline-light">@action.Label</button>
+        }
+    </div>
+    
+    <div class="d-flex justify-content-center flex-wrap gap-3 mt-3">
+        <p class="text-info">Devices loaded: @Devices?.Count</p>
+        <p class="text-info">Actions loaded: @Actions?.Count</p>
+    </div>
+    
+
+</div>
+
+@code {
+    private List<DeviceStatus> Devices = new();
+    private List<DeviceAction> Actions = new();
+    private bool _loading = true;
+    private string? _error;
+
+    private CancellationTokenSource? _refreshCts;
+    private Task? _refreshTask;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _loading = true;
+            Devices = await Api.GetDevicesAsync() ?? new();
+            Actions = await Api.GetActionsAsync() ?? new();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+        // Start periodic refresh (every 30s)
+        _refreshCts = new CancellationTokenSource();
+        _refreshTask = RefreshLoopAsync(_refreshCts.Token);
+    }
+
+    private async Task RefreshLoopAsync(CancellationToken ct)
+    {
+        var timer = new System.Threading.PeriodicTimer(TimeSpan.FromSeconds(30));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                try
+                {
+                    var updated = await Api.GetDevicesAsync() ?? new();
+                    Devices = updated;
+
+                    // Ensure UI updates on the correct context
+                    await InvokeAsync(StateHasChanged);
+                }
+                catch (Exception ex)
+                {
+                    _error = ex.Message;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected when the component is disposed
+        }
+        finally
+        {
+            timer.Dispose();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_refreshCts is not null)
+        {
+            _refreshCts.Cancel();
+            _refreshCts.Dispose();
+        }
+
+        if (_refreshTask is not null)
+        {
+            try { await _refreshTask; }
+            catch (OperationCanceledException) { }
+        }
+    }
+
+    private static string GetStatusClass(DeviceStatus d) =>
+        string.Equals(d?.Status, "ONLINE", StringComparison.CurrentCultureIgnoreCase)
+            ? "bg-success" : "bg-danger";
+}
