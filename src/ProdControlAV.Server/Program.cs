@@ -28,7 +28,7 @@ builder.Services.AddSingleton<ICommandQueue>(new JsonCommandQueue("Data/Commands
 builder.Services.AddSingleton<IDeviceController>(new TelnetDeviceController());
 builder.Services.AddSingleton<INetworkMonitor, PingNetworkMonitor>();
 builder.Services.AddSingleton<IDeviceStatusRepository, InMemoryDeviceStatusRepository>();
-
+builder.Services.AddHttpClient();
 
 var app = builder.Build();
 
