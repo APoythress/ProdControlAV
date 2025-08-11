@@ -1,17 +1,37 @@
 # Default ignored files
 /shelf/
 /workspace.xml
+
 # Rider ignored files
 /modules.xml
 /projectSettingsUpdater.xml
 /contentModel.xml
 /.idea.ProdControlAV.iml
+
 # Editor-based HTTP Client requests
 /httpRequests/
+
 # Datasource local storage ignored files
 /dataSources/
 /dataSources.local.xml
 
-# bin and obj
+# Build output
 bin/
 obj/
+
+# Publish output
+publish/
+**/publish/
+
+# Visual Studio files
+.vs/
+*.suo
+*.user
+*.log
+
+# Package files
+packages/
+*.nupkg
+
+# Other temporary files
+temp/
