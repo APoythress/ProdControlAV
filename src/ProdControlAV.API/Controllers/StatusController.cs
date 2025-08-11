@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using ProdControlAV.WebApp.Models;
 
-namespace ProdControlAV.Server.Controllers;
+namespace ProdControlAV.API.Controllers;
 
 [ApiController]
 [Route("api/devices")]

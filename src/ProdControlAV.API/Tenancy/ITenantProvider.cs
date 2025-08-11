@@ -1,0 +1,1 @@
+public interface ITenantProvider { Guid TenantId { get; } }

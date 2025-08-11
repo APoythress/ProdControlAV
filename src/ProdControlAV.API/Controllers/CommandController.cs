@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using ProdControlAV.Core.Interfaces;
 
-namespace ProdControlAV.Server.Controllers;
+namespace ProdControlAV.API.Controllers;
 
 [ApiController]
 [Route("api/commands")]

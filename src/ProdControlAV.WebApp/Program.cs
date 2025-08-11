@@ -16,9 +16,7 @@ builder.Services.AddHttpClient<DeviceApiClient>(client =>
     client.BaseAddress = new Uri("http://192.168.1.50/"); // Pico API IP
 });
 
-builder.Services.AddAntiforgery(options =>
-{
-    options.HeaderName = "X-CSRF-TOKEN"; // Token will be sent in a header
-});
+builder.Services.AddHttpClient<DeviceApiClient>(client =>
+    client.BaseAddress = new Uri(builder.HostEnvironment.BaseAddress));
 
 await builder.Build().RunAsync();

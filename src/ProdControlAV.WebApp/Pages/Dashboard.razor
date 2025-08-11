@@ -1,9 +1,13 @@
 @page "/dashboard"
 @using System.Diagnostics
+@using System.Net.Http
 @using System.Threading
 @using ProdControlAV.Core.Models
-@inject DeviceApiClient Api
+
 @implements IAsyncDisposable
+
+@inject HttpClient Http
+@inject DeviceApiClient deviceApiClient
 
 <div class="container mt-5 text-white">
     <h3 class="text-center mb-4"><u>Device Status</u></h3>
@@ -32,21 +36,21 @@
     <div class="d-flex justify-content-center flex-wrap gap-3 mt-3">
         @foreach (var action in Actions)
         {
-            <button class="btn btn-outline-light">@action.Label</button>
+            <button class="btn btn-outline-light">@action.ActionName</button>
         }
     </div>
     
     <div class="d-flex justify-content-center flex-wrap gap-3 mt-3">
-        <p class="text-info">Devices loaded: @Devices?.Count</p>
-        <p class="text-info">Actions loaded: @Actions?.Count</p>
+        <p class="text-info">Devices loaded: @Devices?.Count()</p>
+        <p class="text-info">Actions loaded: @Actions?.Count()</p>
     </div>
     
 
 </div>
 
 @code {
-    private List<DeviceStatus> Devices = new();
-    private List<DeviceAction> Actions = new();
+    private IEnumerable<Device> Devices;
+    private IEnumerable<DeviceAction> Actions;
     private bool _loading = true;
     private string? _error;
 
@@ -58,8 +62,8 @@
         try
         {
             _loading = true;
-            Devices = await Api.GetDevicesAsync() ?? new();
-            Actions = await Api.GetActionsAsync() ?? new();
+            Devices = await deviceApiClient.GetDevicesAsync();
+            Actions = await deviceApiClient.GetDeviceActionsAsync();
         }
         catch (Exception ex)
         {
@@ -77,14 +81,14 @@
 
     private async Task RefreshLoopAsync(CancellationToken ct)
     {
-        var timer = new System.Threading.PeriodicTimer(TimeSpan.FromSeconds(30));
+        var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
         try
         {
             while (await timer.WaitForNextTickAsync(ct))
             {
                 try
                 {
-                    var updated = await Api.GetDevicesAsync() ?? new();
+                    var updated = await deviceApiClient.GetDevicesAsync() ?? [];
                     Devices = updated;
 
                     // Ensure UI updates on the correct context
@@ -122,7 +126,6 @@
         }
     }
 
-    private static string GetStatusClass(DeviceStatus d) =>
-        string.Equals(d?.Status, "ONLINE", StringComparison.CurrentCultureIgnoreCase)
-            ? "bg-success" : "bg-danger";
+    private static string GetStatusClass(Device d) =>
+        Equals(d?.Status, true) ? "bg-success" : "bg-danger";
 }
