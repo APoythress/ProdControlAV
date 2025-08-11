@@ -30,6 +30,9 @@ builder.Services.AddSingleton<INetworkMonitor, PingNetworkMonitor>();
 builder.Services.AddSingleton<IDeviceStatusRepository, InMemoryDeviceStatusRepository>();
 builder.Services.AddHttpClient();
 
+builder.Services.AddControllers();
+builder.Services.AddAntiforgery(o => o.HeaderName = "X-CSRF-TOKEN"); // CSRF via header
+
 var app = builder.Build();
 
 // Middleware
@@ -39,6 +42,17 @@ app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthorization();
 app.MapControllers();
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+    app.UseHsts(); // optional
+}
+
+app.UseStaticFiles();
+app.UseRouting();
+
+app.MapControllers(); // expose your API + token endpoint
 
 // Serve Blazor WASM app
 app.MapFallbackToFile("index.html");

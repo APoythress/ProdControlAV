@@ -1,0 +1,96 @@
+@page "/devicemanager"
+@using System.Net.Http
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Components.Forms
+@using ProdControlAV.Server.Controllers
+@using ProdControlAV.Core.Models
+@inject HttpClient Http
+@inject DeviceApiClient deviceApiClient
+
+<div class="container-sm mt-5 text-white">
+    <EditForm Model="@_device" OnValidSubmit="@HandleSubmit">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+
+        <div class="row">
+            <div class="col-9 col-sm-6">
+                <label class="form-label">Device Name</label>
+                <InputText class="form-control" @bind-Value="_device.Name" />
+                <div class="form-text">Give your device a name</div>
+            </div>
+            <div class="col-9 col-sm-6">
+                <label class="form-label">Device Model</label>
+                <InputText class="form-control" @bind-Value="_device.Model" />
+                <div class="form-text">Input the model of your device</div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-9 col-sm-6">
+                <label class="form-label">Device Brand</label>
+                <InputText class="form-control" @bind-Value="_device.Brand" />
+                <div class="form-text">What brand is your device?</div>
+            </div>
+            <div class="col-9 col-sm-6">
+                <label class="form-label">Device Type</label>
+                <InputText class="form-control" @bind-Value="_device.Type" />
+                <div class="form-text">Audio, Video, Lighting, Network or Other?</div>
+            </div>
+        </div>
+
+        <div class="row mt-2">
+            <div class="col">
+                <div class="form-check form-switch">
+                    <InputCheckbox class="form-check-input" @bind-Value="_device.AllowTelNet" />
+                    <label class="form-check-label">Allow TelNet Commands?</label>
+                </div>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary mt-3" disabled="@isSubmitting">
+            @(isSubmitting ? "Adding..." : "Add Device")
+        </button>
+
+        @if (!string.IsNullOrEmpty(statusMessage))
+        {
+            <div class="mt-3">@statusMessage</div>
+        }
+    </EditForm>
+</div>
+
+@code {
+    private DeviceModel _device = new();
+    private bool isSubmitting;
+    private string? statusMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        
+    }
+
+    private async Task HandleSubmit()
+    {
+        Console.WriteLine("trying");
+        try
+        {
+            isSubmitting = true;
+            statusMessage = null;
+
+            var result = await deviceApiClient.AddNewDeviceAsync(_device);
+            statusMessage = result == "Success" ? "Device added." : $"Failed: {result}";
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private class TokenResponse
+    {
+        public string Token { get; set; }
+    }
+}
