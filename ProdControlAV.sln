@@ -2,8 +2,6 @@
 # Visual Studio Version 17
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProdControlAV.Tests", "tests\\ProdControlAV.Tests\\ProdControlAV.Tests.csproj", "{13A6BBC5-132B-42C2-82D5-81E75875402F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProdControlAV.Agent", "src\\ProdControlAV.Agent\\ProdControlAV.Agent.csproj", "{FE99B988-6E93-4F08-82A2-FD2D648AE945}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProdControlAV.Infrastructure", "src\\ProdControlAV.Infrastructure\\ProdControlAV.Infrastructure.csproj", "{FF58D76D-6228-40B6-9419-859CC37EC904}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProdControlAV.Core", "src\\ProdControlAV.Core\\ProdControlAV.Core.csproj", "{3F19202E-C1CE-4D6F-B4FF-4054C934E016}"
@@ -14,10 +12,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProdControlAV.Server", "src
 EndProject
 Global
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{FE99B988-6E93-4F08-82A2-FD2D648AE945}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{FE99B988-6E93-4F08-82A2-FD2D648AE945}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{FE99B988-6E93-4F08-82A2-FD2D648AE945}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{FE99B988-6E93-4F08-82A2-FD2D648AE945}.Release|Any CPU.Build.0 = Release|Any CPU
 		{3F19202E-C1CE-4D6F-B4FF-4054C934E016}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{3F19202E-C1CE-4D6F-B4FF-4054C934E016}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3F19202E-C1CE-4D6F-B4FF-4054C934E016}.Release|Any CPU.ActiveCfg = Release|Any CPU
