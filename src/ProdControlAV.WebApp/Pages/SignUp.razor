@@ -1,0 +1,127 @@
+@page "/signup"
+@using System.Net.Http
+@using System.Net.Http.Json
+@using ProdControlAV.WebApp.Services
+@inject IJSRuntime JS
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+<h3>Create your account</h3>
+
+<div class="card p-3 my-3">
+    <div class="mb-3">
+        <label class="form-label">Email</label>
+        <input class="form-control" @bind="email" type="email" placeholder="you@example.com" />
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Display name</label>
+        <input class="form-control" @bind="displayName" />
+    </div>
+    <div class="mb-3">
+        <button class="btn btn-primary" @onclick="RegisterPasskey" disabled="@busy">Register Passkey</button>
+        <a class="btn btn-outline-secondary ms-2" href="/auth/login">Continue with Apple</a>
+    </div>
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert @messageClass">@message</div>
+    }
+</div>
+
+<h4>Create tenant (optional)</h4>
+<div class="card p-3 my-3">
+    <div class="mb-3">
+        <label class="form-label">Tenant name</label>
+        <input class="form-control" @bind="tenantName" placeholder="Acme Inc." />
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Tenant slug</label>
+        <input class="form-control" @bind="tenantSlug" placeholder="acme" />
+    </div>
+    <button class="btn btn-success" @onclick="CreateTenant" disabled="@busy || !canCreateTenant">Create Tenant</button>
+</div>
+
+@code {
+    private string email = string.Empty;
+    private string? displayName;
+    private string tenantName = string.Empty;
+    private string tenantSlug = string.Empty;
+    private string? message;
+    private string messageClass = "alert-info";
+    private bool busy;
+
+    private bool canCreateTenant => !string.IsNullOrWhiteSpace(tenantName) && !string.IsNullOrWhiteSpace(tenantSlug);
+
+    private async Task RegisterPasskey()
+    {
+        message = null;
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            message = "Please enter your email.";
+            messageClass = "alert-warning";
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            var svc = new PasskeyService(JS, Http);
+            var ok = await svc.RegisterAsync(email.Trim(), displayName?.Trim());
+            message = ok ? "Passkey registered. You are now signed in." : "Registration failed.";
+            messageClass = ok ? "alert-success" : "alert-danger";
+            if (ok)
+            {
+                // After sign-in, navigate to home or remain for tenant creation
+                // Nav.NavigateTo("/");
+            }
+        }
+        catch (Exception ex)
+        {
+            message = $"Error: {ex.Message}";
+            messageClass = "alert-danger";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task CreateTenant()
+    {
+        message = null;
+        if (!canCreateTenant)
+        {
+            message = "Enter a tenant name and slug.";
+            messageClass = "alert-warning";
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            var req = new { Name = tenantName.Trim(), Slug = tenantSlug.Trim().ToLowerInvariant() };
+            var resp = await Http.PostAsJsonAsync("/api/tenants", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                message = "Tenant created and set as active.";
+                messageClass = "alert-success";
+                // Redirect to app landing page if desired
+                // Nav.NavigateTo("/");
+            }
+            else
+            {
+                var detail = await resp.Content.ReadAsStringAsync();
+                message = $"Tenant creation failed: {detail}";
+                messageClass = "alert-danger";
+            }
+        }
+        catch (Exception ex)
+        {
+            message = $"Error: {ex.Message}";
+            messageClass = "alert-danger";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

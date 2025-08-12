@@ -13,7 +13,7 @@ public class DevicesController : ControllerBase
     // GET api/devices
     [HttpGet]
     public async Task<ActionResult<IEnumerable<Device>>> Devices()
-        => Ok(await _db.Devices.AsNoTracking().OrderBy(d => d.Name).ToListAsync());
+        => Ok(await _db.Devices.AsNoTracking().ToListAsync());
     
     // GET api/devices/actions
     [HttpGet("actions")]

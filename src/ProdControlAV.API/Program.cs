@@ -29,12 +29,33 @@ builder.Services.AddScoped<ITenantProvider, HeaderTenantProvider>();
 var dbSection = builder.Configuration.GetSection("Database");
 var provider = dbSection["Provider"] ?? "Sqlite";
 
-builder.Services.AddDbContext<AppDbContext>(options =>
+if (provider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase))
 {
-    options.UseSqlite(dbSection.GetSection("Sqlite")["ConnectionString"]);
-    // Optional: switch on provider if adding PostgreSQL later
-    // switch (provider.ToLowerInvariant()) { ... }
-});
+    var configured = dbSection.GetSection("Sqlite")["ConnectionString"];
+
+    string connectionString;
+    if (string.IsNullOrWhiteSpace(configured))
+    {
+        // Fallback to ContentRoot/data/prodcontrol.db
+        var dbPath = Path.Combine(builder.Environment.ContentRootPath, "data", "prodcontrol.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
+        connectionString = $"Data Source={dbPath}";
+    }
+    else if (configured.StartsWith("Data Source=./", StringComparison.OrdinalIgnoreCase))
+    {
+        // Resolve relative path against ContentRoot
+        var relative = configured.Substring("Data Source=".Length).Trim(); // "./data/prodcontrol.db"
+        var dbPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, relative));
+        Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
+        connectionString = $"Data Source={dbPath}";
+    }
+    else
+    {
+        connectionString = configured;
+    }
+
+    builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlite(connectionString));
+}
 
 var app = builder.Build();
 

@@ -1,0 +1,64 @@
+@page "/signin"
+@using System.Net.Http
+@using ProdControlAV.WebApp.Services
+@inject IJSRuntime JS
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+<h3>Sign in</h3>
+
+<div class="card p-3 my-3">
+    <div class="mb-3">
+        <label class="form-label">Email (for passkey lookup)</label>
+        <input class="form-control" @bind="email" type="email" placeholder="you@example.com" />
+    </div>
+    <div class="mb-3">
+        <button class="btn btn-primary" @onclick="SignInWithPasskey" disabled="@busy">Sign in with Passkey</button>
+        <a class="btn btn-outline-secondary ms-2" href="/auth/login">Sign in with Apple</a>
+    </div>
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert @messageClass">@message</div>
+    }
+</div>
+
+@code {
+    private string email = string.Empty;
+    private string? message;
+    private string messageClass = "alert-info";
+    private bool busy;
+
+    private async Task SignInWithPasskey()
+    {
+        message = null;
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            message = "Please enter your email.";
+            messageClass = "alert-warning";
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            var svc = new PasskeyService(JS, Http);
+            var ok = await svc.AuthenticateAsync(email.Trim());
+            message = ok ? "Signed in." : "Sign-in failed.";
+            messageClass = ok ? "alert-success" : "alert-danger";
+            if (ok)
+            {
+                // Navigate to app landing page
+                // Nav.NavigateTo("/");
+            }
+        }
+        catch (Exception ex)
+        {
+            message = $"Error: {ex.Message}";
+            messageClass = "alert-danger";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}
