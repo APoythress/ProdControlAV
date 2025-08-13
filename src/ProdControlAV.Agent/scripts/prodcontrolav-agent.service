@@ -1,0 +1,19 @@
+[Unit]
+Description=ProdControlAV Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/prodcontrolav/agent
+# If you published self-contained, use the binary directly:
+# ExecStart=/opt/prodcontrolav/agent/ProdControlAV.Agent
+# If framework-dependent:
+ExecStart=/usr/bin/dotnet /opt/prodcontrolav/agent/ProdControlAV.Agent.dll
+Restart=always
+User=prodctl
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
