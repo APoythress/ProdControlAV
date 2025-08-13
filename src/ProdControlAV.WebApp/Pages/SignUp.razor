@@ -1,127 +1,104 @@
 @page "/signup"
+@using System.ComponentModel.DataAnnotations
 @using System.Net.Http
 @using System.Net.Http.Json
-@using ProdControlAV.WebApp.Services
-@inject IJSRuntime JS
-@inject HttpClient Http
 @inject NavigationManager Nav
+@inject HttpClient Http
+@using Microsoft.AspNetCore.Components.Forms
 
-<h3>Create your account</h3>
+<PageTitle>Sign Up</PageTitle>
+<h3 class="mb-3">Create your account</h3>
 
-<div class="card p-3 my-3">
-    <div class="mb-3">
-        <label class="form-label">Email</label>
-        <input class="form-control" @bind="email" type="email" placeholder="you@example.com" />
-    </div>
-    <div class="mb-3">
-        <label class="form-label">Display name</label>
-        <input class="form-control" @bind="displayName" />
-    </div>
-    <div class="mb-3">
-        <button class="btn btn-primary" @onclick="RegisterPasskey" disabled="@busy">Register Passkey</button>
-        <a class="btn btn-outline-secondary ms-2" href="/auth/login">Continue with Apple</a>
-    </div>
-    @if (!string.IsNullOrEmpty(message))
-    {
-        <div class="alert @messageClass">@message</div>
-    }
-</div>
+<EditForm Model="@Model" OnValidSubmit="@SubmitAsync">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
 
-<h4>Create tenant (optional)</h4>
-<div class="card p-3 my-3">
-    <div class="mb-3">
-        <label class="form-label">Tenant name</label>
-        <input class="form-control" @bind="tenantName" placeholder="Acme Inc." />
+    <div class="form-group mb-3">
+        <label for="email">Email</label>
+        <InputText id="email" class="form-control" @bind-Value="Model.Email" placeholder="name@domain.com" />
     </div>
-    <div class="mb-3">
-        <label class="form-label">Tenant slug</label>
-        <input class="form-control" @bind="tenantSlug" placeholder="acme" />
+
+    <div class="form-group mb-3">
+        <label for="password">Password</label>
+        <InputText id="password" type="password" class="form-control" @bind-Value="Model.Password" />
     </div>
-    <button class="btn btn-success" @onclick="CreateTenant" disabled="@busy || !canCreateTenant">Create Tenant</button>
-</div>
+
+    <div class="form-group mb-3">
+        <label for="confirm">Confirm Password</label>
+        <InputText id="confirm" type="password" class="form-control" @bind-Value="Model.ConfirmPassword" />
+    </div>
+
+    <div class="form-group mb-3">
+        <label for="displayName">Display Name (optional)</label>
+        <InputText id="displayName" class="form-control" @bind-Value="Model.DisplayName" />
+    </div>
+
+    <fieldset class="mb-3">
+        <legend class="h6">Tenant</legend>
+
+        <InputRadioGroup @bind-Value="Model.TenantMode">
+            <div class="form-check">
+                <InputRadio class="form-check-input" Value="TenantSelectionMode.Create" id="tenantCreate" />
+                <label class="form-check-label" for="tenantCreate">Create a new tenant</label>
+            </div>
+            <div class="form-check">
+                <InputRadio class="form-check-input" Value="TenantSelectionMode.Join" id="tenantJoin" />
+                <label class="form-check-label" for="tenantJoin">Join an existing tenant</label>
+            </div>
+        </InputRadioGroup>
+
+        @if (Model.TenantMode == TenantSelectionMode.Create)
+        {
+            <div class="form-group mt-2">
+                <label for="tenantName">Tenant Name</label>
+                <InputText id="tenantName" class="form-control" @bind-Value="Model.NewTenantName" placeholder="e.g., Main Campus AV" />
+            </div>
+        }
+        else
+        {
+            <div class="form-group mt-2">
+                <label for="joinCode">Tenant Invite/Join Code</label>
+                <InputText id="joinCode" class="form-control" @bind-Value="Model.JoinCode" placeholder="tenant slug or code" />
+            </div>
+        }
+    </fieldset>
+
+    <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Create Account</button>
+        <a class="btn btn-link" href="/signin">Already have an account?</a>
+    </div>
+</EditForm>
 
 @code {
-    private string email = string.Empty;
-    private string? displayName;
-    private string tenantName = string.Empty;
-    private string tenantSlug = string.Empty;
-    private string? message;
-    private string messageClass = "alert-info";
-    private bool busy;
+    private SignUpRequest Model = new();
 
-    private bool canCreateTenant => !string.IsNullOrWhiteSpace(tenantName) && !string.IsNullOrWhiteSpace(tenantSlug);
-
-    private async Task RegisterPasskey()
+    private async Task SubmitAsync()
     {
-        message = null;
-        if (string.IsNullOrWhiteSpace(email))
+        // IMPORTANT: rooted relative URL for same-origin HTTPS
+        var resp = await Http.PostAsJsonAsync("/api/auth/register", new
         {
-            message = "Please enter your email.";
-            messageClass = "alert-warning";
-            return;
-        }
+            email = Model.Email,
+            password = Model.Password,
+            confirmPassword = Model.ConfirmPassword,
+            displayName = Model.DisplayName,
+            tenantMode = Model.TenantMode == TenantSelectionMode.Create ? 0 : 1, // enum as number
+            newTenantName = Model.NewTenantName,
+            joinCode = Model.JoinCode
+        });
 
-        busy = true;
-        try
-        {
-            var svc = new PasskeyService(JS, Http);
-            var ok = await svc.RegisterAsync(email.Trim(), displayName?.Trim());
-            message = ok ? "Passkey registered. You are now signed in." : "Registration failed.";
-            messageClass = ok ? "alert-success" : "alert-danger";
-            if (ok)
-            {
-                // After sign-in, navigate to home or remain for tenant creation
-                // Nav.NavigateTo("/");
-            }
-        }
-        catch (Exception ex)
-        {
-            message = $"Error: {ex.Message}";
-            messageClass = "alert-danger";
-        }
-        finally
-        {
-            busy = false;
-        }
+        if (resp.IsSuccessStatusCode) Nav.NavigateTo("/signin");
+        // TODO: show API errors via ValidationSummary
     }
 
-    private async Task CreateTenant()
+    public class SignUpRequest
     {
-        message = null;
-        if (!canCreateTenant)
-        {
-            message = "Enter a tenant name and slug.";
-            messageClass = "alert-warning";
-            return;
-        }
-
-        busy = true;
-        try
-        {
-            var req = new { Name = tenantName.Trim(), Slug = tenantSlug.Trim().ToLowerInvariant() };
-            var resp = await Http.PostAsJsonAsync("/api/tenants", req);
-            if (resp.IsSuccessStatusCode)
-            {
-                message = "Tenant created and set as active.";
-                messageClass = "alert-success";
-                // Redirect to app landing page if desired
-                // Nav.NavigateTo("/");
-            }
-            else
-            {
-                var detail = await resp.Content.ReadAsStringAsync();
-                message = $"Tenant creation failed: {detail}";
-                messageClass = "alert-danger";
-            }
-        }
-        catch (Exception ex)
-        {
-            message = $"Error: {ex.Message}";
-            messageClass = "alert-danger";
-        }
-        finally
-        {
-            busy = false;
-        }
+        [Required, EmailAddress] public string Email { get; set; } = string.Empty;
+        [Required, MinLength(8)] public string Password { get; set; } = string.Empty;
+        [Compare(nameof(Password))] public string ConfirmPassword { get; set; } = string.Empty;
+        public string? DisplayName { get; set; }
+        [Required] public TenantSelectionMode TenantMode { get; set; } = TenantSelectionMode.Create;
+        public string? NewTenantName { get; set; }
+        public string? JoinCode { get; set; }
     }
+    public enum TenantSelectionMode { Create, Join }
 }

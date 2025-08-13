@@ -9,16 +9,21 @@ public class AppDbContext : DbContext
 
     // Expose tenant through an instance member so EF parameterizes it per-context
     protected Guid CurrentTenantId => _tenant.TenantId;
-
     public DbSet<Device> Devices => Set<Device>();
     public DbSet<DeviceAction> DeviceActions => Set<DeviceAction>();
+    public DbSet<DeviceStatusLog> DeviceStatusLogs => Set<DeviceStatusLog>();
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<UserTenant> UserTenants => Set<UserTenant>();
     public DbSet<AppUser> Users => Set<AppUser>();
-    public DbSet<PasskeyCredential> PasskeyCredentials => Set<PasskeyCredential>();
+    public DbSet<Agent> Agents => Set<Agent>();
+    public DbSet<AgentCommand> AgentCommands => Set<AgentCommand>();
+// Ensure you already have: Devices, DeviceStatusHistory
+
 
     protected override void OnModelCreating(ModelBuilder b)
     {
+        base.OnModelCreating(b);
+
         b.Entity<Device>(e =>
         {
             e.HasKey(x => new { x.Id, x.TenantId });
@@ -37,5 +42,9 @@ public class AppDbContext : DbContext
 
         // Use the instance property instead of capturing a local
         b.Entity<Device>().HasQueryFilter(x => x.TenantId == CurrentTenantId);
+        
+        // Automatically pick up all IEntityTypeConfiguration<T> in this assembly
+        b.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+
     }
 }

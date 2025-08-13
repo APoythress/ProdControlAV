@@ -80,4 +80,5 @@ public class TenantsController : ControllerBase
         var t = await _db.Tenants.FindAsync(new object?[] { id }, ct);
         return t is null ? NotFound() : Ok(t);
     }
+    
 }

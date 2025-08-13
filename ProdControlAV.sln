@@ -10,6 +10,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProdControlAV.WebApp", "src
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProdControlAV.API", "src\ProdControlAV.API\ProdControlAV.API.csproj", "{53AD9532-3331-4D5C-82C3-21B27EDBA3F8}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProdControlAV.Agent", "ProdControlAV.Agent\ProdControlAV.Agent.csproj", "{E2B1A337-633A-48CB-8D2C-0DE6B0C1DBB3}"
+EndProject
 Global
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{3F19202E-C1CE-4D6F-B4FF-4054C934E016}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
@@ -32,6 +34,10 @@ Global
 		{53AD9532-3331-4D5C-82C3-21B27EDBA3F8}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{53AD9532-3331-4D5C-82C3-21B27EDBA3F8}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{53AD9532-3331-4D5C-82C3-21B27EDBA3F8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E2B1A337-633A-48CB-8D2C-0DE6B0C1DBB3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E2B1A337-633A-48CB-8D2C-0DE6B0C1DBB3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E2B1A337-633A-48CB-8D2C-0DE6B0C1DBB3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E2B1A337-633A-48CB-8D2C-0DE6B0C1DBB3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

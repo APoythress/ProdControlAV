@@ -2,7 +2,7 @@
 
 public class DeviceStatusLog
 {
-    public int Id { get; set; }
+    public Guid Id { get; set; }
     public string DeviceName { get; set; }
     public string IP { get; set; }
     public bool IsOnline { get; set; }

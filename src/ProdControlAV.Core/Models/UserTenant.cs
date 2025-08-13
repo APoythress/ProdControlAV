@@ -1,3 +1,5 @@
+using System;
+
 namespace ProdControlAV.API.Models;
 
 public class UserTenant
