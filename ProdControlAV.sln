@@ -10,7 +10,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProdControlAV.WebApp", "src
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProdControlAV.API", "src\ProdControlAV.API\ProdControlAV.API.csproj", "{53AD9532-3331-4D5C-82C3-21B27EDBA3F8}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProdControlAV.Agent", "ProdControlAV.Agent\ProdControlAV.Agent.csproj", "{E2B1A337-633A-48CB-8D2C-0DE6B0C1DBB3}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProdControlAV.Agent", "src\ProdControlAV.Agent\ProdControlAV.Agent.csproj", "{E2B1A337-633A-48CB-8D2C-0DE6B0C1DBB3}"
 EndProject
 Global
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
