@@ -1,3 +1,6 @@
+using System;
+using Microsoft.AspNetCore.Http;
+
 public sealed class HeaderTenantProvider : ITenantProvider
 {
     private readonly IHttpContextAccessor _http;
