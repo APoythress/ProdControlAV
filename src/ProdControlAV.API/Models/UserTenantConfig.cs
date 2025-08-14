@@ -17,14 +17,9 @@ public class UserTenantConfig : IEntityTypeConfiguration<UserTenant>
             .HasMaxLength(50);
 
         // Relationships
-        builder.HasOne(ut => ut.User)
-            .WithMany(/* u => u.UserTenants */) // use the nav here if you have it
-            .HasForeignKey(ut => ut.UserId)
-            .OnDelete(DeleteBehavior.Cascade);
-
-        builder.HasOne(ut => ut.Tenant)
-            .WithMany(/* t => t.UserTenants */) // use the nav here if you have it
-            .HasForeignKey(ut => ut.TenantId)
-            .OnDelete(DeleteBehavior.Cascade);
+        // builder.HasOne(ut => ut.Tenant)
+        //     .WithMany(/* t => t.UserTenants */) // use the nav here if you have it
+        //     .HasForeignKey(ut => ut.TenantId)
+        //     .OnDelete(DeleteBehavior.Cascade);
     }
 }

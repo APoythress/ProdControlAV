@@ -47,5 +47,8 @@ public class AppDbContext : DbContext
         // Automatically pick up all IEntityTypeConfiguration<T> in this assembly
         b.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
 
+        b.Entity<AppUser>()
+            .HasKey(x => x.UserId);
+
     }
 }
