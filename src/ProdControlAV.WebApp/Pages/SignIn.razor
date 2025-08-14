@@ -37,11 +37,16 @@
                             <button type="submit" class="btn btn-primary text-center">Sign in</button>
                         </div>
                         
-                            @if (!string.IsNullOrEmpty(errorMessage))
-                            {
-                                <p class="alert alert-danger mt-3 text-center" role="alert">@errorMessage</p>
-                            }
+                        @if (!string.IsNullOrEmpty(errorMessage))
+                        {
+                            <p class="alert alert-danger mt-3 text-center" role="alert">@errorMessage</p>
+                        }
                     </EditForm>
+                    
+                    <hr class="my-4">
+                    
+                    <a style="font-size: .75rem;" href="/SignUp">Create an Account</a>
+                    
                 </div>
             </div>
         </div>

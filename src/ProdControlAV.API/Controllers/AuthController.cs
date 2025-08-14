@@ -38,10 +38,7 @@ public class AuthController : ControllerBase
         [Required, MinLength(8)] public string Password { get; set; } = string.Empty;
         [Compare(nameof(Password))] public string ConfirmPassword { get; set; } = string.Empty;
         public string? DisplayName { get; set; }
-
-        [Required] public TenantMode TenantMode { get; set; } = TenantMode.Create; // FE can send 0/1
-        public string? NewTenantName { get; set; } // if Create
-        public string? JoinCode { get; set; }      // if Join (slug or invite code)
+        [Required, MinLength(8)] public string JoinCode { get; set; } = string.Empty;
     }
 
     public class LoginRequest
@@ -57,61 +54,42 @@ public class AuthController : ControllerBase
     [HttpPost("register")]
     public async Task<IActionResult> Register([FromBody] RegisterRequest req, CancellationToken ct)
     {
-        if (!ModelState.IsValid) return ValidationProblem(ModelState);
+        if (!ModelState.IsValid) 
+            return ValidationProblem(ModelState);
 
         var email = req.Email.Trim().ToLowerInvariant();
+        var hash = BCrypt.Net.BCrypt.HashPassword(req.Password, workFactor: 12);
+        var tenant = await _db.Tenants
+            .Where(t => t.Slug == req.JoinCode)
+            .FirstOrDefaultAsync(ct); // TenantId?;
+        
+        // Fail first before moving on to any inserts
         if (await _db.Users.AnyAsync(u => u.Email == email, ct))
             return Conflict(new { error = "email_exists" });
-
-        var hash = BCrypt.Net.BCrypt.HashPassword(req.Password, workFactor: 12);
-
+        // Join tenant
+        if (string.IsNullOrWhiteSpace(req.JoinCode))
+            return BadRequest(new { error = "join_code_required" });
+        // If we cannot bind user to the tenant do not continue with creation
+        if (tenant is null)
+            return BadRequest(new { error = "tenant_not_found" });
+        
         var user = new AppUser
         {
             Email = email,
             DisplayName = string.IsNullOrWhiteSpace(req.DisplayName) ? email : req.DisplayName.Trim(),
-            PasswordHash = hash
+            PasswordHash = hash,
+            TenantId = tenant.TenantId,
         };
+        await _db.SaveChangesAsync(ct); // need the save here to persist the userId to UserTenant
         _db.Users.Add(user);
-        await _db.SaveChangesAsync(ct);
-
-        if (req.TenantMode == TenantMode.Create)
+        
+        _db.UserTenants.Add(new UserTenant
         {
-            var name = string.IsNullOrWhiteSpace(req.NewTenantName) ? "Default Tenant" : req.NewTenantName.Trim();
-            var baseSlug = string.Join("-", name.ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries));
-            var slug = baseSlug;
-
-            // Ensure unique slug
-            var i = 1;
-            while (await _db.Tenants.AnyAsync(t => t.Slug == slug, ct))
-                slug = $"{baseSlug}-{i++}";
-
-            var tenant = new Tenant { Name = name, Slug = slug };
-            _db.Tenants.Add(tenant);
-
-            _db.UserTenants.Add(new UserTenant
-            {
-                UserId = user.UserId,
-                TenantId = tenant.TenantId,
-                Role = "Owner"
-            });
-        }
-        else // Join
-        {
-            if (string.IsNullOrWhiteSpace(req.JoinCode))
-                return BadRequest(new { error = "join_code_required" });
-
-            var tenant = await _db.Tenants.FirstOrDefaultAsync(t => t.Slug == req.JoinCode.ToLowerInvariant(), ct);
-            if (tenant is null)
-                return BadRequest(new { error = "tenant_not_found" });
-
-            _db.UserTenants.Add(new UserTenant
-            {
-                UserId = user.UserId,
-                TenantId = tenant.TenantId,
-                Role = "Member"
-            });
-        }
-
+            UserId = user.UserId,
+            TenantId = tenant.TenantId,
+            Role = "Member"
+        });
+        
         await _db.SaveChangesAsync(ct);
         return Ok(new { ok = true });
     }
