@@ -5,72 +5,74 @@
 @inject NavigationManager Nav
 @inject HttpClient Http
 @using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Mvc
 
 <PageTitle>Sign Up</PageTitle>
-<h3 class="mb-3">Create your account</h3>
 
-<EditForm Model="@Model" OnValidSubmit="@SubmitAsync">
-    <DataAnnotationsValidator />
-    <ValidationSummary />
+<div class="modal modal-sheet position-static d-block bg-body-secondary p-4 py-md-5">
+    <div class="modal-dialog">
+        <div class="modal-content rounded-4 shadow">
+            <div class="modal-body p-5">
+                <div class="row align-items-center">
+                    <h3 class="mb-3">Create your account</h3>
+                    <hr class="my-4">
+                    
+                    <EditForm Model="@Model" OnValidSubmit="@SubmitAsync">
+                        <DataAnnotationsValidator/>
+                        <ValidationSummary/>
 
-    <div class="form-group mb-3">
-        <label for="email">Email</label>
-        <InputText id="email" class="form-control" @bind-Value="Model.Email" placeholder="name@domain.com" />
-    </div>
+                        <div class="form-group mb-3">
+                            <label for="email">Email</label>
+                            <InputText id="email" class="form-control" @bind-Value="Model.Email" placeholder="name@domain.com"/>
+                        </div>
 
-    <div class="form-group mb-3">
-        <label for="password">Password</label>
-        <InputText id="password" type="password" class="form-control" @bind-Value="Model.Password" />
-    </div>
+                        <div class="form-group mb-3">
+                            <label for="password">Password</label>
+                            <InputText id="password" type="password" class="form-control" @bind-Value="Model.Password"/>
+                        </div>
 
-    <div class="form-group mb-3">
-        <label for="confirm">Confirm Password</label>
-        <InputText id="confirm" type="password" class="form-control" @bind-Value="Model.ConfirmPassword" />
-    </div>
+                        <div class="form-group mb-3">
+                            <label for="confirm">Confirm Password</label>
+                            <InputText id="confirm" type="password" class="form-control" @bind-Value="Model.ConfirmPassword"/>
+                        </div>
 
-    <div class="form-group mb-3">
-        <label for="displayName">Display Name (optional)</label>
-        <InputText id="displayName" class="form-control" @bind-Value="Model.DisplayName" />
-    </div>
+                        <div class="form-group mb-3">
+                            <label for="displayName">Display Name (optional)</label>
+                            <InputText id="displayName" class="form-control" @bind-Value="Model.DisplayName"/>
+                        </div>
 
-    <fieldset class="mb-3">
-        <legend class="h6">Tenant</legend>
+                        <fieldset class="mb-3">
+                            <div class="form-group mt-2">
+                                <label for="joinCode">Group Invite Code (required)</label>
+                                <InputText id="joinCode" class="form-control" @bind-Value="Model.JoinCode" placeholder="group code" required/>
+                            </div>
+                        </fieldset>
+                        
+                        <hr class="my-4">
 
-        <InputRadioGroup @bind-Value="Model.TenantMode">
-            <div class="form-check">
-                <InputRadio class="form-check-input" Value="TenantSelectionMode.Create" id="tenantCreate" />
-                <label class="form-check-label" for="tenantCreate">Create a new tenant</label>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">Create Account</button>
+                            <a class="btn btn-link" href="/signin">Already have an account?</a>
+                        </div>
+                    </EditForm>
+                    
+                    <hr class="my-4">
+                    
+                    @if (!string.IsNullOrEmpty(errorMessage))
+                    {
+                        <p class="alert alert-danger mt-3 text-center" role="alert">@errorMessage</p>
+                    }
+                </div>
             </div>
-            <div class="form-check">
-                <InputRadio class="form-check-input" Value="TenantSelectionMode.Join" id="tenantJoin" />
-                <label class="form-check-label" for="tenantJoin">Join an existing tenant</label>
-            </div>
-        </InputRadioGroup>
-
-        @if (Model.TenantMode == TenantSelectionMode.Create)
-        {
-            <div class="form-group mt-2">
-                <label for="tenantName">Tenant Name</label>
-                <InputText id="tenantName" class="form-control" @bind-Value="Model.NewTenantName" placeholder="e.g., Main Campus AV" />
-            </div>
-        }
-        else
-        {
-            <div class="form-group mt-2">
-                <label for="joinCode">Tenant Invite/Join Code</label>
-                <InputText id="joinCode" class="form-control" @bind-Value="Model.JoinCode" placeholder="tenant slug or code" />
-            </div>
-        }
-    </fieldset>
-
-    <div class="d-flex gap-2">
-        <button type="submit" class="btn btn-primary">Create Account</button>
-        <a class="btn btn-link" href="/signin">Already have an account?</a>
+        </div>
     </div>
-</EditForm>
+</div>
+
+
 
 @code {
     private SignUpRequest Model = new();
+    private string errorMessage = string.Empty;
 
     private async Task SubmitAsync()
     {
@@ -81,12 +83,16 @@
             password = Model.Password,
             confirmPassword = Model.ConfirmPassword,
             displayName = Model.DisplayName,
-            tenantMode = Model.TenantMode == TenantSelectionMode.Create ? 0 : 1, // enum as number
-            newTenantName = Model.NewTenantName,
             joinCode = Model.JoinCode
         });
 
-        if (resp.IsSuccessStatusCode) Nav.NavigateTo("/signin");
+        if (resp.IsSuccessStatusCode) Nav.NavigateTo("/"); // back to SignIn screen
+        else
+        {
+
+            errorMessage = await resp.Content.ReadAsStringAsync();
+            StateHasChanged();
+        }
         // TODO: show API errors via ValidationSummary
     }
 
@@ -96,9 +102,7 @@
         [Required, MinLength(8)] public string Password { get; set; } = string.Empty;
         [Compare(nameof(Password))] public string ConfirmPassword { get; set; } = string.Empty;
         public string? DisplayName { get; set; }
-        [Required] public TenantSelectionMode TenantMode { get; set; } = TenantSelectionMode.Create;
-        public string? NewTenantName { get; set; }
-        public string? JoinCode { get; set; }
+        public string JoinCode { get; set; }
     }
     public enum TenantSelectionMode { Create, Join }
 }
