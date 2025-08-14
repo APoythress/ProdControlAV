@@ -1,3 +1,5 @@
+using System;
+
 public sealed class AgentConfig
 {
     public string ApiBase { get; set; } = "https://your-api.example.com"; // HTTPS only

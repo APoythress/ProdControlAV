@@ -1,11 +1,17 @@
+using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Security.Claims;
+using System.Threading;
+using System.Threading.Tasks;
 using BCrypt.Net;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using ProdControlAV.API.Models;
 
 namespace ProdControlAV.API.Controllers;
@@ -44,7 +50,8 @@ public class AuthController : ControllerBase
         [Required] public string Password { get; set; } = string.Empty;
     }
 
-    public record SwitchTenantRequest(string TenantId);
+    // TenantId is now a Guid
+    public record SwitchTenantRequest(Guid TenantId);
 
     // ===== Registration =====
     [HttpPost("register")]
@@ -83,8 +90,8 @@ public class AuthController : ControllerBase
 
             _db.UserTenants.Add(new UserTenant
             {
-                UserId = user.Id,
-                TenantId = tenant.Id,
+                UserId = user.UserId,
+                TenantId = tenant.TenantId,
                 Role = "Owner"
             });
         }
@@ -99,8 +106,8 @@ public class AuthController : ControllerBase
 
             _db.UserTenants.Add(new UserTenant
             {
-                UserId = user.Id,
-                TenantId = tenant.Id,
+                UserId = user.UserId,
+                TenantId = tenant.TenantId,
                 Role = "Member"
             });
         }
@@ -123,17 +130,19 @@ public class AuthController : ControllerBase
         if (user is null || string.IsNullOrEmpty(user.PasswordHash) || !BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
             return Unauthorized(new { error = "invalid_credentials" });
 
-        var memberships = user.Memberships.Select(m => m.TenantId).ToList();
+        var memberships = user.Memberships.Select(m => m.TenantId).ToList(); // List<Guid>
 
         var claims = new List<Claim>
         {
-            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new(ClaimTypes.NameIdentifier, user.UserId.ToString()),
             new(ClaimTypes.Email, user.Email)
         };
+        
         if (memberships.Any())
         {
-            claims.Add(new("tenant_ids", string.Join(" ", memberships)));
-            claims.Add(new("tenant_id", memberships[0]));
+            var tenantIdsStr = string.Join(" ", memberships.Select(id => id.ToString()));
+            claims.Add(new("tenant_ids", tenantIdsStr));
+            claims.Add(new("tenant_id", memberships[0].ToString()));
         }
 
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme));
@@ -162,7 +171,7 @@ public class AuthController : ControllerBase
         var memberships = await _db.UserTenants
             .Where(x => x.UserId.ToString() == userId)
             .Select(x => x.TenantId)
-            .ToListAsync(ct);
+            .ToListAsync(ct); // List<Guid>
 
         if (!memberships.Contains(req.TenantId))
             return Forbid();
@@ -172,8 +181,8 @@ public class AuthController : ControllerBase
         {
             new(ClaimTypes.NameIdentifier, userId),
             new(ClaimTypes.Email, email),
-            new("tenant_ids", string.Join(" ", memberships)),
-            new("tenant_id", req.TenantId)
+            new("tenant_ids", string.Join(" ", memberships.Select(id => id.ToString()))),
+            new("tenant_id", req.TenantId.ToString())
         };
 
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme));

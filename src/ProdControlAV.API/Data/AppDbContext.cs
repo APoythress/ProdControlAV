@@ -1,3 +1,4 @@
+using System;
 using Microsoft.EntityFrameworkCore;
 using ProdControlAV.API.Models;
 using ProdControlAV.Core.Models;
@@ -45,6 +46,9 @@ public class AppDbContext : DbContext
         
         // Automatically pick up all IEntityTypeConfiguration<T> in this assembly
         b.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+
+        b.Entity<AppUser>()
+            .HasKey(x => x.UserId);
 
     }
 }

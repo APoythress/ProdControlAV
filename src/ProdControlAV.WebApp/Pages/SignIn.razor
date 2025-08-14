@@ -1,4 +1,6 @@
-@page "/signin"
+@page "/"
+@layout NonHeaderLayout
+
 @using System.ComponentModel.DataAnnotations
 @using System.Net.Http
 @using System.Net.Http.Json
@@ -9,38 +11,59 @@
 
 
 <PageTitle>Sign In</PageTitle>
-<h3 class="mb-3">Sign in</h3>
 
-<EditForm Model="@Model" OnValidSubmit="@SubmitAsync">
-    <DataAnnotationsValidator />
-    <ValidationSummary />
+<div class="modal modal-sheet position-static d-block bg-body-secondary p-4 py-md-5">
+    <div class="modal-dialog">
+        <div class="modal-content rounded-4 shadow">
+            <div class="modal-body p-5">
+                <div class="row align-items-center">
+                    <h3 class="fw-bold mb-3 text-center">Welcome!</h3>
 
-    <div class="form-group mb-3">
-        <label for="email">Email</label>
-        <InputText id="email" class="form-control" @bind-Value="Model.Email" />
+                    <EditForm Model="@Model" OnValidSubmit="@SubmitAsync">
+                        <DataAnnotationsValidator/>
+                        <ValidationSummary/>
+
+                        <div class="form-group mb-3">
+                            <label for="email">Email</label>
+                            <InputText id="email" class="form-control" @bind-Value="Model.Email"/>
+                        </div>
+
+                        <div class="form-group mb-3">
+                            <label for="password">Password</label>
+                            <InputText id="password" type="password" class="form-control" @bind-Value="Model.Password"/>
+                        </div>
+
+                        <div class="d-flex justify-content-center">
+                            <button type="submit" class="btn btn-primary text-center">Sign in</button>
+                        </div>
+                        
+                            @if (!string.IsNullOrEmpty(errorMessage))
+                            {
+                                <p class="alert alert-danger mt-3 text-center" role="alert">@errorMessage</p>
+                            }
+                    </EditForm>
+                </div>
+            </div>
+        </div>
     </div>
+</div>
 
-    <div class="form-group mb-3">
-        <label for="password">Password</label>
-        <InputText id="password" type="password" class="form-control" @bind-Value="Model.Password" />
-    </div>
-
-    <button type="submit" class="btn btn-primary">Sign in</button>
-</EditForm>
 
 @code {
     private SignInRequest Model = new();
+    private string errorMessage = String.Empty;
 
     private async Task SubmitAsync()
     {
         var resp = await Http.PostAsJsonAsync("/api/auth/login", Model);
         if (resp.IsSuccessStatusCode)
         {
-            Nav.NavigateTo("/");
+            Nav.NavigateTo("/dashboard");
         }
         else
         {
-            // TODO: show invalid credentials
+            errorMessage = "invalid username or password";
+            StateHasChanged();
         }
     }
 

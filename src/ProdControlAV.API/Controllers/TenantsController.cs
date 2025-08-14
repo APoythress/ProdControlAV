@@ -1,4 +1,9 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Security.Claims;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -47,7 +52,7 @@ public class TenantsController : ControllerBase
         _db.UserTenants.Add(new UserTenant
         {
             UserId = userGuid,
-            TenantId = tenant.Id,
+            TenantId = tenant.TenantId,
             Role = "Owner"
         });
 
@@ -65,12 +70,12 @@ public class TenantsController : ControllerBase
             new Claim(ClaimTypes.NameIdentifier, userGuid.ToString()),
             new Claim(ClaimTypes.Email, email),
             new Claim("tenant_ids", string.Join(" ", memberships)),
-            new Claim("tenant_id", tenant.Id)
+            new Claim("tenant_id", tenant.TenantId.ToString())
         };
 
         await HttpContext.SignInAsync(new ClaimsPrincipal(new ClaimsIdentity(claims, "AppCookie")));
 
-        return CreatedAtAction(nameof(Get), new { id = tenant.Id }, tenant);
+        return CreatedAtAction(nameof(Get), new { id = tenant.TenantId }, tenant);
     }
 
     [Authorize]

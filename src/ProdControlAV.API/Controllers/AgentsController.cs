@@ -1,8 +1,11 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using ProdControlAV.API.Models;
 using ProdControlAV.API.Services;
-using ProdControlAV.Core.Models;
 
 namespace ProdControlAV.API.Controllers;
 
