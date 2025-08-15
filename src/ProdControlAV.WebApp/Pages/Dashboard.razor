@@ -1,4 +1,4 @@
-@page "/dashboard"
+@page "/Dashboard"
 @using System.Diagnostics
 @using System.Net.Http
 @using System.Threading
@@ -16,7 +16,7 @@
         @foreach (var device in Devices)
         {
             Debugger.Log(1, null, @device.ToString());
-            
+
             <div class="col-12 col-sm-6 col-md-4 col-lg-3">
                 <div class="card text-center bg-dark border-light text-white h-100">
                     <div class="card-body">
@@ -53,7 +53,7 @@
     private IEnumerable<DeviceAction> Actions;
     private bool _loading = true;
     private string? _error;
-
+    
     private CancellationTokenSource? _refreshCts;
     private Task? _refreshTask;
 
@@ -61,8 +61,10 @@
     {
         try
         {
+            Console.WriteLine("Trying to initialize");
             _loading = true;
             Devices = await deviceApiClient.GetDevicesAsync();
+            Console.WriteLine(Devices);
             Actions = await deviceApiClient.GetDeviceActionsAsync();
         }
         catch (Exception ex)

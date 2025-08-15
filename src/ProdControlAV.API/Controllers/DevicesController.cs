@@ -28,7 +28,7 @@ public class DevicesController : ControllerBase
     public async Task<ActionResult<Device>> Get(string id)
         => await _db.Devices.FindAsync(id, _tenant.TenantId) is { } d ? Ok(d) : NotFound();
 
-    public record UpsertDevice(Guid? Id, string Name, string Ip, int? Port);
+    public record UpsertDevice(Guid? Id, string Name, string Model, string Brand, string Type, bool AllowTelNet, string Ip, int? Port);
 
     [HttpPost]
     public async Task<ActionResult<Device>> Create([FromBody] UpsertDevice dto)
@@ -41,6 +41,10 @@ public class DevicesController : ControllerBase
             Id = dto.Id ?? Guid.NewGuid(),
             TenantId = _tenant.TenantId,
             Name = dto.Name.Trim(),
+            Model = dto.Model.Trim(),
+            Brand = dto.Brand.Trim(),
+            Type = dto.Type.Trim(),
+            AllowTelNet = dto.AllowTelNet,
             Ip = dto.Ip.Trim(),
             Port = dto.Port.GetValueOrDefault(80),
             Status = false
