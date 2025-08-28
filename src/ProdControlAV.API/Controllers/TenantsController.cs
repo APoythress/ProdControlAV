@@ -5,15 +5,18 @@ using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies; // <-- add this
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProdControlAV.API.Models;
+using ProdControlAV.Core.Models;
 
 namespace ProdControlAV.API.Controllers;
 
 [ApiController]
 [Route("api/tenants")]
+[Authorize(Policy = "TenantMember")]
 public class TenantsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -44,6 +47,7 @@ public class TenantsController : ControllerBase
 
         var tenant = new Tenant
         {
+            TenantId = Guid.NewGuid(), // ensure a real PK is persisted
             Name = req.Name.Trim(),
             Slug = slug
         };
@@ -58,7 +62,7 @@ public class TenantsController : ControllerBase
 
         await _db.SaveChangesAsync(ct);
 
-        // Set newly created tenant as active in the session
+        // Re-issue cookie using the SAME scheme as login/switch-tenant
         var email = User.FindFirstValue(ClaimTypes.Email) ?? "";
         var memberships = await _db.UserTenants
             .Where(m => m.UserId == userGuid)
@@ -67,13 +71,19 @@ public class TenantsController : ControllerBase
 
         var claims = new List<Claim>
         {
-            new Claim(ClaimTypes.NameIdentifier, userGuid.ToString()),
-            new Claim(ClaimTypes.Email, email),
-            new Claim("tenant_ids", string.Join(" ", memberships)),
-            new Claim("tenant_id", tenant.TenantId.ToString())
+            new(ClaimTypes.NameIdentifier, userGuid.ToString()),
+            new(ClaimTypes.Email, email),
+            new("tenant_ids", string.Join(" ", memberships)),
+            new("tenant_id", tenant.TenantId.ToString())
         };
 
-        await HttpContext.SignInAsync(new ClaimsPrincipal(new ClaimsIdentity(claims, "AppCookie")));
+        var principal = new ClaimsPrincipal(
+            new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme));
+
+        await HttpContext.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            principal,
+            new AuthenticationProperties { IsPersistent = true });
 
         return CreatedAtAction(nameof(Get), new { id = tenant.TenantId }, tenant);
     }
@@ -85,5 +95,4 @@ public class TenantsController : ControllerBase
         var t = await _db.Tenants.FindAsync(new object?[] { id }, ct);
         return t is null ? NotFound() : Ok(t);
     }
-    
 }

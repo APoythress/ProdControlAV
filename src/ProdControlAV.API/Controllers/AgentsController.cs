@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProdControlAV.API.Services;
@@ -10,6 +11,7 @@ using ProdControlAV.API.Services;
 namespace ProdControlAV.API.Controllers;
 
 [ApiController]
+[Authorize(Policy = "TenantMember")]
 [Route("api/agents")]
 public sealed class AgentsController : ControllerBase
 {

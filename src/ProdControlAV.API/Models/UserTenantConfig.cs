@@ -3,23 +3,29 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace ProdControlAV.API.Models;
 
-public class UserTenantConfig : IEntityTypeConfiguration<UserTenant>
+public sealed class UserTenantConfig : IEntityTypeConfiguration<UserTenant>
 {
     public void Configure(EntityTypeBuilder<UserTenant> builder)
     {
         builder.ToTable("UserTenants");
 
-        // Composite key to ensure uniqueness per user+tenant
         builder.HasKey(ut => new { ut.UserId, ut.TenantId });
 
-        // Optional: constrain Role length
-        builder.Property(ut => ut.Role)
-            .HasMaxLength(50);
+        builder.Property(ut => ut.Role).IsRequired();
 
-        // Relationships
-        // builder.HasOne(ut => ut.Tenant)
-        //     .WithMany(/* t => t.UserTenants */) // use the nav here if you have it
-        //     .HasForeignKey(ut => ut.TenantId)
-        //     .OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne(ut => ut.User)
+            .WithMany(u => u.Memberships) // requires AppUser.Memberships
+            .HasForeignKey(ut => ut.UserId) // ONLY UserId is FK
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(ut => ut.Tenant)
+            .WithMany() // no back-collection required
+            .HasForeignKey(ut => ut.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasIndex(ut => ut.UserId);
+        builder.HasIndex(ut => ut.TenantId);
+
+        // No AppUserId property mapped — EF will ignore the extra DB column.
     }
 }

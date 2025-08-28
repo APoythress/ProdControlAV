@@ -5,13 +5,23 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ProdControlAV.API.Models;
 
+[Table("Users")]
 public class AppUser
 {
-    public Guid UserId { get; set; } = Guid.NewGuid();
+    [Key]
+    [Column("UserId")] // map to Users.Id
+    public Guid UserId { get; set; }
+
+    [Required]
+    public string Email { get; set; } = string.Empty;
+
+    public string? DisplayName { get; set; }
+
+    [Required]
+    public string PasswordHash { get; set; } = string.Empty;
     
     public Guid TenantId { get; set; }
-    public string Email { get; set; } = default!;
-    public string? DisplayName { get; set; }
-    public List<UserTenant> Memberships { get; set; } = new();
-    public string PasswordHash { get; set; }
+
+    // Needed for UserTenantConfig: WithMany(u => u.Memberships)
+    public ICollection<UserTenant> Memberships { get; set; } = new List<UserTenant>();
 }

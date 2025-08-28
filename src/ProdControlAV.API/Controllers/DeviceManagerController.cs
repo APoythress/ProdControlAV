@@ -1,11 +1,13 @@
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ProdControlAV.Core.Models;
 
 namespace ProdControlAV.API.Controllers.Device_Management;
 
+[Authorize(Policy = "TenantMember")]
 public class DeviceManagerController
 {
     private readonly HttpClient _http;

@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ProdControlAV.WebApp.Models;
 
@@ -7,6 +8,7 @@ namespace ProdControlAV.API.Controllers;
 
 [ApiController]
 [Route("api/devices")]
+[Authorize(Policy = "TenantMember")]
 public class StatusController : ControllerBase
 {
     private readonly IDeviceStatusRepository _repo;

@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 [ApiController]
 [Route("api/security")]
+[Authorize(Policy = "TenantMember")]
 public class SecurityController : ControllerBase
 {
     private readonly IAntiforgery _antiforgery;

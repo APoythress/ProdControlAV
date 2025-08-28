@@ -1,31 +1,50 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Claims;
+using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProdControlAV.Core.Models;
 
 [ApiController]
-[Route("api/devices")]
+[Authorize(Policy = "TenantMember")]
+[Route("api/[controller]")]
 public class DevicesController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly ITenantProvider _tenant;
     public DevicesController(AppDbContext db, ITenantProvider tenant) { _db = db; _tenant = tenant; }
-
-    // GET api/devices
-    [HttpGet]
-    public async Task<ActionResult<IEnumerable<Device>>> Devices()
-        => Ok(await _db.Devices.AsNoTracking().ToListAsync());
     
+    // GET api/devices/devices
+    [HttpGet("devices")]
+    public Task<List<Device>> Devices(CancellationToken ct)
+    {
+        var tenantId = _tenant.TenantId;
+        return _db.Devices
+            .AsNoTracking()
+            .Where(d => d.TenantId == tenantId)
+            .OrderBy(d => d.Name)
+            .ToListAsync(ct);
+    }
+
     // GET api/devices/actions
     [HttpGet("actions")]
     public async Task<ActionResult<IEnumerable<DeviceAction>>> Actions()
-        => Ok(await _db.DeviceActions.AsNoTracking().OrderBy(d => d.ActionName).ToListAsync());
+    {
+        var tenantId = _tenant.TenantId;
+        var items = await _db.DeviceActions
+            .AsNoTracking()
+            .Where(a => a.TenantId == tenantId)
+            .OrderBy(a => a.ActionName)
+            .ToListAsync();
+        return Ok(items);
+    }
 
-    [HttpGet("{id}")]
-    public async Task<ActionResult<Device>> Get(string id)
+    [HttpGet("{id:guid}")]
+    public async Task<ActionResult<Device>> Get(Guid id) // use Guid to match route
         => await _db.Devices.FindAsync(id, _tenant.TenantId) is { } d ? Ok(d) : NotFound();
 
     public record UpsertDevice(Guid? Id, string Name, string Model, string Brand, string Type, bool AllowTelNet, string Ip, int? Port);
@@ -54,8 +73,8 @@ public class DevicesController : ControllerBase
         return CreatedAtAction(nameof(Get), new { id = d.Id }, d);
     }
 
-    [HttpPut("{id}")]
-    public async Task<ActionResult<Device>> Update(string id, [FromBody] UpsertDevice dto)
+    [HttpPut("{id:guid}")]
+    public async Task<ActionResult<Device>> Update(Guid id, [FromBody] UpsertDevice dto)
     {
         var d = await _db.Devices.FindAsync(id, _tenant.TenantId);
         if (d is null) return NotFound();
@@ -68,8 +87,8 @@ public class DevicesController : ControllerBase
         return Ok(d);
     }
 
-    [HttpDelete("{id}")]
-    public async Task<IActionResult> Delete(string id)
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id)
     {
         var d = await _db.Devices.FindAsync(id, _tenant.TenantId);
         if (d is null) return NotFound();

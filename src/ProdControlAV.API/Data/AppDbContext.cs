@@ -33,22 +33,23 @@ public class AppDbContext : DbContext
             e.Property(x => x.Status).HasMaxLength(16).IsRequired();
             e.HasIndex(x => new { x.TenantId, x.Name });
         });
-
+        
         b.Entity<DeviceAction>(e =>
         {
-            e.HasKey(x => new { x.DeviceId, x.TenantId });
+            e.HasKey(x => x.ActionId);
             e.Property(x => x.ActionName).HasMaxLength(200).IsRequired();
             e.HasIndex(x => new { x.TenantId, x.ActionName });
         });
 
+
         // Use the instance property instead of capturing a local
-        b.Entity<Device>().HasQueryFilter(x => x.TenantId == CurrentTenantId);
+        b.Entity<Device>()
+            .HasQueryFilter(d => d.TenantId == _tenant.TenantId);
         
         // Automatically pick up all IEntityTypeConfiguration<T> in this assembly
         b.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
 
         b.Entity<AppUser>()
             .HasKey(x => x.UserId);
-
     }
 }

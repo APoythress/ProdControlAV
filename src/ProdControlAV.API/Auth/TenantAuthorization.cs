@@ -1,30 +1,35 @@
+// Policy marker
+
 using System;
-using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
 
-namespace ProdControlAV.API.Auth;
+public sealed class TenantMemberRequirement : IAuthorizationRequirement {}
 
-public sealed class TenantMemberRequirement : IAuthorizationRequirement { }
-
+// Handler: validate only, do NOT select/override tenant
 public sealed class TenantMemberHandler : AuthorizationHandler<TenantMemberRequirement>
 {
-    protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, TenantMemberRequirement requirement)
+    private readonly AppDbContext _db;
+    public TenantMemberHandler(AppDbContext db) => _db = db;
+
+    protected override async Task HandleRequirementAsync(
+        AuthorizationHandlerContext context, TenantMemberRequirement requirement)
     {
-        var currentTenant = context.User.FindFirst("tenant_id")?.Value;
-        var memberships = context.User.FindFirst("tenant_ids")?.Value ?? string.Empty;
+        var userIdStr = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                        ?? context.User.FindFirstValue("sub");
+        var tidValue  = context.User.FindFirstValue("tenant_id");
 
-        if (!string.IsNullOrWhiteSpace(currentTenant))
-        {
-            var set = memberships.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            if (set.Contains(currentTenant))
-            {
-                context.Succeed(requirement);
-            }
-        }
+        if (!Guid.TryParse(userIdStr, out var userId)) return; // not authenticated
+        if (!Guid.TryParse(tidValue, out var tenantId) || tenantId == Guid.Empty) return; // no active tenant
 
-        return Task.CompletedTask;
+        var isMember = await _db.UserTenants
+            .AsNoTracking()
+            .AnyAsync(ut => ut.UserId == userId && ut.TenantId == tenantId);
+
+        if (isMember)
+            context.Succeed(requirement);
     }
 }
+
