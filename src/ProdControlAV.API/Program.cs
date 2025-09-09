@@ -58,14 +58,28 @@ builder.Services
 // Authorization policy
 builder.Services.AddAuthorization(options =>
 {
+    options.AddPolicy("MustHaveTenantId", policy =>
+    {
+        policy.RequireClaim("tenant_id");
+    });
+    
+    options.AddPolicy("IsMember", policy =>
+    {
+        policy.RequireClaim("tenant_member", "member");
+    });
+    
     options.AddPolicy("TenantMember", policy =>
         policy.Requirements.Add(new TenantMemberRequirement()));
+    
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
 });
 
 // IMPORTANT: register the handler as Scoped (or Transient), not Singleton
 builder.Services.AddScoped<IAuthorizationHandler, TenantMemberHandler>();
 
-// Device/infra services (as you had)
+// Device/infra services
 builder.Services.AddSingleton<ICommandQueue>(new JsonCommandQueue("Data/Commands"));
 builder.Services.AddScoped<IDeviceCommandService, DeviceCommandService>();
 builder.Services.AddSingleton<IDeviceController>(new TelnetDeviceController());
@@ -117,7 +131,7 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
-app.UseAuthentication();   // IMPORTANT
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();

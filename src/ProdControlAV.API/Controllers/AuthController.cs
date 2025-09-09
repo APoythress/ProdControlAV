@@ -31,7 +31,6 @@ public class AuthController : ControllerBase
 
     // ===== DTOs =====
     public enum TenantMode { Create = 0, Join = 1 }
-
     public class RegisterRequest
     {
         [Required, EmailAddress] public string Email { get; set; } = string.Empty;
@@ -40,7 +39,6 @@ public class AuthController : ControllerBase
         public string? DisplayName { get; set; }
         [Required, MinLength(8)] public string JoinCode { get; set; } = string.Empty;
     }
-
     public class LoginRequest
     {
         [Required, EmailAddress] public string Email { get; set; } = string.Empty;
@@ -53,6 +51,7 @@ public class AuthController : ControllerBase
 
     // ===== Registration =====
     [HttpPost("register")]
+    [AllowAnonymous]
     public async Task<IActionResult> Register([FromBody] RegisterRequest req, CancellationToken ct)
     {
         if (!ModelState.IsValid) 
@@ -97,9 +96,9 @@ public class AuthController : ControllerBase
         return Ok(new { ok = true });
     }
 
-
     // ===== Login =====
     [HttpPost("login")]
+    [AllowAnonymous]
     public async Task<IActionResult> Login([FromBody] LoginRequest req, CancellationToken ct)
     {
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
@@ -112,10 +111,7 @@ public class AuthController : ControllerBase
             .FirstOrDefaultAsync(u => u.Email == email, ct);
 
         if (user is null)
-        {
-            _logger.LogWarning("Login failed: user not found for {Email}", email);
             return Unauthorized(new { error = "invalid_credentials" });
-        }
 
         // 2) Verify password explicitly
         bool passwordOk;
@@ -126,19 +122,12 @@ public class AuthController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Login failed: password verification threw for {Email}", email);
-            return Unauthorized(new { error = "invalid_credentials" });
-        }
-
-        if (!passwordOk)
-        {
-            _logger.LogWarning("Login failed: password mismatch for {Email}", email);
             return Unauthorized(new { error = "invalid_credentials" });
         }
 
         // 3) Load memberships via UserTenants keyed by UserId only
         var membershipList = await _db.UserTenants
-            .Where(m => m.UserId == user.UserId)
+            .Where(m => m.TenantId == user.TenantId)
             .Select(m => new { m.TenantId, m.Role })
             .Distinct()
             .ToListAsync(ct);
@@ -149,21 +138,12 @@ public class AuthController : ControllerBase
             return Unauthorized(new { error = "no_tenant_membership" });
         }
         
-        // In your Login action, replace the membership selection and active-tenant choice with this:
-        var userGuid = user.UserId;
-
         // Pull tenant IDs strictly from UserTenants WHERE UserId == userGuid
-        var tenantIds = await _db.UserTenants
-            .AsNoTracking()
-            .Where(m => m.UserId == userGuid)
-            .Select(m => m.TenantId)
-            .Distinct()
-            .OrderBy(id => id) // stable, deterministic order
-            .ToListAsync(ct);
+        var tenantIds = membershipList.Select(m => m.TenantId).ToList();
 
         if (tenantIds.Count == 0)
         {
-            _logger.LogWarning("Login failed: no tenant memberships for user {UserId}", userGuid);
+            _logger.LogWarning("Login failed: no tenant memberships for user {UserId}", user.UserId);
             return Unauthorized(new { error = "no_tenant_membership" });
         }
 
@@ -173,14 +153,17 @@ public class AuthController : ControllerBase
         {
             activeTenant = req.TenantId;
         }
+        
+        bool isMember = membershipList.Select(m => m.Role).Contains("Member");
 
         // Build claims ONLY from membership-derived tenantIds
         var claims = new List<Claim>
         {
-            new(ClaimTypes.NameIdentifier, userGuid.ToString()),
+            new(ClaimTypes.NameIdentifier, user.UserId.ToString()),
             new(ClaimTypes.Email, user.Email),
             new("tenant_ids", string.Join(" ", tenantIds.Select(t => t.ToString()))),
-            new("tenant_id", activeTenant.ToString())
+            new("tenant_id", activeTenant.ToString()),
+            new("tenant_member", isMember ? "member" : "deny")
         };
 
         var principal = new ClaimsPrincipal(

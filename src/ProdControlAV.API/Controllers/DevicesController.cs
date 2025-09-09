@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using ProdControlAV.Core.Models;
 
 [ApiController]
-[Authorize(Policy = "TenantMember")]
+[Authorize(Policy = "IsMember")]
 [Route("api/[controller]")]
 public class DevicesController : ControllerBase
 {
@@ -22,12 +22,14 @@ public class DevicesController : ControllerBase
     [HttpGet("devices")]
     public Task<List<Device>> Devices(CancellationToken ct)
     {
-        var tenantId = _tenant.TenantId;
-        return _db.Devices
+        var devices = _db.Devices
             .AsNoTracking()
-            .Where(d => d.TenantId == tenantId)
-            .OrderBy(d => d.Name)
+            .Where(dv => dv.TenantId == _tenant.TenantId)
+            .OrderBy(dv => dv.Name)
             .ToListAsync(ct);
+
+        
+        return devices;
     }
 
     // GET api/devices/actions
