@@ -40,9 +40,14 @@
         </div>
 
         <div class="row mt-2">
+            <div class="col-9 col-sm-6">
+                <label class="form-label">Device Ip</label>
+                <InputText class="form-control" @bind-Value="_device.Ip" />
+                <div class="form-text">What brand is your device?</div>
+            </div>
             <div class="col">
                 <div class="form-check form-switch">
-                    <InputCheckbox class="form-check-input" @bind-Value="_device.AllowTelNet" />
+                    <InputCheckbox class="form-check-input" @bind-Value="_device.AllowTelNet"/>
                     <label class="form-check-label">Allow TelNet Commands?</label>
                 </div>
             </div>
@@ -71,10 +76,19 @@
 
     private async Task HandleSubmit()
     {
-        Console.WriteLine("trying");
+        isSubmitting = true;
         try
         {
-            await deviceApiClient.AddNewDeviceAsync(_device);
+            var response = await Http.PostAsJsonAsync("api/devices", _device);
+            if (response.IsSuccessStatusCode)
+            {
+                statusMessage = "Device added successfully!";
+                _device = new Device(); // Reset the form
+            }
+            else
+            {
+                statusMessage = $"Error: {response.ReasonPhrase}";
+            }
         }
         catch (Exception ex)
         {

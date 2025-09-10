@@ -27,8 +27,6 @@ public class DevicesController : ControllerBase
             .Where(dv => dv.TenantId == _tenant.TenantId)
             .OrderBy(dv => dv.Name)
             .ToListAsync(ct);
-
-        
         return devices;
     }
 
@@ -52,6 +50,7 @@ public class DevicesController : ControllerBase
     public record UpsertDevice(Guid? Id, string Name, string Model, string Brand, string Type, bool AllowTelNet, string Ip, int? Port);
 
     [HttpPost]
+    [Authorize(Policy = "IsMember")]
     public async Task<ActionResult<Device>> Create([FromBody] UpsertDevice dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Name) || string.IsNullOrWhiteSpace(dto.Ip))
