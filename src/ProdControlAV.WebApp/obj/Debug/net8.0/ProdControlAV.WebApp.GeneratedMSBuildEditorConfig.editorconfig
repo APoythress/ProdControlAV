@@ -1,0 +1,59 @@
+is_global = true
+build_property.EnableAotAnalyzer = 
+build_property.EnableSingleFileAnalyzer = 
+build_property.EnableTrimAnalyzer = false
+build_property.IncludeAllContentForSelfExtract = 
+build_property.TargetFramework = net8.0
+build_property.TargetPlatformMinVersion = 
+build_property.UsingMicrosoftNETSdkWeb = 
+build_property.ProjectTypeGuids = 
+build_property.InvariantGlobalization = false
+build_property.PlatformNeutralAssembly = 
+build_property.EnforceExtendedAnalyzerRules = 
+build_property._SupportedPlatformList = browser
+build_property.RootNamespace = ProdControlAV.WebApp
+build_property.RootNamespace = ProdControlAV.WebApp
+build_property.ProjectDir = /home/runner/work/ProdControlAV/ProdControlAV/src/ProdControlAV.WebApp/
+build_property.EnableComHosting = 
+build_property.EnableGeneratedComInterfaceComImportInterop = false
+build_property.RazorLangVersion = 8.0
+build_property.SupportLocalizedComponentNames = 
+build_property.GenerateRazorMetadataSourceChecksumAttributes = 
+build_property.MSBuildProjectDirectory = /home/runner/work/ProdControlAV/ProdControlAV/src/ProdControlAV.WebApp
+build_property._RazorSourceGeneratorDebug = 
+
+[/home/runner/work/ProdControlAV/ProdControlAV/src/ProdControlAV.WebApp/App.razor]
+build_metadata.AdditionalFiles.TargetPath = QXBwLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[/home/runner/work/ProdControlAV/ProdControlAV/src/ProdControlAV.WebApp/Pages/Dashboard.razor]
+build_metadata.AdditionalFiles.TargetPath = UGFnZXMvRGFzaGJvYXJkLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[/home/runner/work/ProdControlAV/ProdControlAV/src/ProdControlAV.WebApp/Pages/DeviceManagement/DeviceManager.razor]
+build_metadata.AdditionalFiles.TargetPath = UGFnZXMvRGV2aWNlTWFuYWdlbWVudC9EZXZpY2VNYW5hZ2VyLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[/home/runner/work/ProdControlAV/ProdControlAV/src/ProdControlAV.WebApp/Pages/SignIn.razor]
+build_metadata.AdditionalFiles.TargetPath = UGFnZXMvU2lnbkluLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[/home/runner/work/ProdControlAV/ProdControlAV/src/ProdControlAV.WebApp/Pages/SignUp.razor]
+build_metadata.AdditionalFiles.TargetPath = UGFnZXMvU2lnblVwLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[/home/runner/work/ProdControlAV/ProdControlAV/src/ProdControlAV.WebApp/Pages/_Imports.razor]
+build_metadata.AdditionalFiles.TargetPath = UGFnZXMvX0ltcG9ydHMucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[/home/runner/work/ProdControlAV/ProdControlAV/src/ProdControlAV.WebApp/Shared/MainLayout.razor]
+build_metadata.AdditionalFiles.TargetPath = U2hhcmVkL01haW5MYXlvdXQucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[/home/runner/work/ProdControlAV/ProdControlAV/src/ProdControlAV.WebApp/Shared/NavMenu.razor]
+build_metadata.AdditionalFiles.TargetPath = U2hhcmVkL05hdk1lbnUucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[/home/runner/work/ProdControlAV/ProdControlAV/src/ProdControlAV.WebApp/Shared/NonHeaderLayout.razor]
+build_metadata.AdditionalFiles.TargetPath = U2hhcmVkL05vbkhlYWRlckxheW91dC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 

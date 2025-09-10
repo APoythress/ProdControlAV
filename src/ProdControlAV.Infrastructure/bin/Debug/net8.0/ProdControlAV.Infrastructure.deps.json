@@ -1,0 +1,36 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "ProdControlAV.Infrastructure/1.0.0": {
+        "dependencies": {
+          "ProdControlAV.Core": "1.0.0"
+        },
+        "runtime": {
+          "ProdControlAV.Infrastructure.dll": {}
+        }
+      },
+      "ProdControlAV.Core/1.0.0": {
+        "runtime": {
+          "ProdControlAV.Core.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "ProdControlAV.Infrastructure/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "ProdControlAV.Core/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}
