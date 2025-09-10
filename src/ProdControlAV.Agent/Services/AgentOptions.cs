@@ -17,6 +17,9 @@ public sealed class ApiOptions
     public required string DevicesEndpoint { get; init; }
     public required string StatusEndpoint { get; init; }
     public string? HeartbeatEndpoint { get; init; }
+    public string? CommandsEndpoint { get; init; }
+    public string? CommandCompleteEndpoint { get; init; }
     public string? ApiKey { get; init; }
     public int RefreshDevicesSeconds { get; init; } = 30;
+    public int CommandPollIntervalSeconds { get; init; } = 10;
 }
