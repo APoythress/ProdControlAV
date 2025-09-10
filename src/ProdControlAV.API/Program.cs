@@ -70,10 +70,6 @@ builder.Services.AddAuthorization(options =>
     
     options.AddPolicy("TenantMember", policy =>
         policy.Requirements.Add(new TenantMemberRequirement()));
-    
-    options.FallbackPolicy = new AuthorizationPolicyBuilder()
-        .RequireAuthenticatedUser()
-        .Build();
 });
 
 // IMPORTANT: register the handler as Scoped (or Transient), not Singleton
@@ -146,6 +142,19 @@ app.Use(async (ctx, next) =>
     {
         ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
         await ctx.Response.WriteAsJsonAsync(new { error = "missing_tenant" });
+        return;
+    }
+    await next();
+});
+
+// Allow anonymous access to /signin and static files
+app.Use(async (context, next) =>
+{
+    var path = context.Request.Path.Value?.ToLowerInvariant();
+    if (path == "/signin" || path == "/signin/" || path.StartsWith("/_framework") || path.StartsWith("/static") || path == "/")
+    {
+        // Allow anonymous access
+        await next();
         return;
     }
     await next();
