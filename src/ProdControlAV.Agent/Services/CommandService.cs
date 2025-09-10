@@ -7,16 +7,48 @@ using Device = ProdControlAV.Agent.Models.Device;
 
 namespace ProdControlAV.Agent.Services;
 
-public class CommandService
+public sealed class CommandPullRequest 
+{ 
+    public string AgentKey { get; set; } = string.Empty; 
+    public int Max { get; set; } = 10; 
+}
+
+public sealed class CommandEnvelope 
+{ 
+    public Guid CommandId { get; set; } = default!; 
+    public Guid DeviceId { get; set; } = default!; 
+    public string Verb { get; set; } = default!; 
+    public string? Payload { get; set; }
+}
+
+public sealed class CommandPullResponse 
+{ 
+    public List<CommandEnvelope> Commands { get; set; } = new(); 
+}
+
+public sealed class CommandCompleteRequest 
+{ 
+    public string AgentKey { get; set; } = string.Empty; 
+    public Guid CommandId { get; set; } 
+    public bool Success { get; set; } 
+    public string? Message { get; set; } 
+    public int? DurationMs { get; set; } 
+}
+
+public interface ICommandService
+{
+    Task<List<CommandEnvelope>> PollCommandsAsync(CancellationToken ct);
+    Task ExecuteCommandAsync(CommandEnvelope command, CancellationToken ct);
+    Task CompleteCommandAsync(Guid commandId, bool success, string? message, int? durationMs, CancellationToken ct);
+}
+
+public class CommandService : ICommandService
 {
     private readonly HttpClient _http;
-    private readonly ILogger<DeviceSource> _logger;
+    private readonly ILogger<CommandService> _logger;
     private readonly ApiOptions _api;
-    private readonly Device _device;
-    private readonly object _gate = new();
-    private readonly AppDbContext _db;
 
-    public CommandService(HttpClient http, ILogger<DeviceSource> logger, IOptions<ApiOptions> api)
+    public CommandService(HttpClient http, ILogger<CommandService> logger, IOptions<ApiOptions> api)
     {
         _http = http;
         _logger = logger;
@@ -24,8 +56,127 @@ public class CommandService
         _http.BaseAddress = new Uri(_api.BaseUrl);
     }
 
-    public async Task RunAsync(DeviceAction action)
+    public async Task<List<CommandEnvelope>> PollCommandsAsync(CancellationToken ct)
     {
-        
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_api.CommandsEndpoint))
+                return new List<CommandEnvelope>();
+
+            var request = new CommandPullRequest
+            {
+                AgentKey = _api.ApiKey ?? "",
+                Max = 10
+            };
+
+            using var req = new HttpRequestMessage(HttpMethod.Post, _api.CommandsEndpoint)
+            {
+                Content = JsonContent.Create(request)
+            };
+
+            using var res = await _http.SendAsync(req, ct);
+            if (!res.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Failed to poll commands: {StatusCode}", res.StatusCode);
+                return new List<CommandEnvelope>();
+            }
+
+            var response = await res.Content.ReadFromJsonAsync<CommandPullResponse>(ct);
+            return response?.Commands ?? new List<CommandEnvelope>();
+        }
+        catch (OperationCanceledException)
+        {
+            return new List<CommandEnvelope>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error polling for commands");
+            return new List<CommandEnvelope>();
+        }
+    }
+
+    public async Task ExecuteCommandAsync(CommandEnvelope command, CancellationToken ct)
+    {
+        var startTime = DateTime.UtcNow;
+        bool success = false;
+        string message = "";
+
+        try
+        {
+            // For security, only execute whitelisted commands
+            switch (command.Verb?.ToUpperInvariant())
+            {
+                case "PING":
+                    await ExecutePingCommand(command, ct);
+                    success = true;
+                    message = "Ping command executed successfully";
+                    break;
+                
+                case "STATUS":
+                    await ExecuteStatusCommand(command, ct);
+                    success = true;
+                    message = "Status command executed successfully";
+                    break;
+                    
+                default:
+                    message = $"Unknown or unauthorized command: {command.Verb}";
+                    _logger.LogWarning(message);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            message = $"Command execution failed: {ex.Message}";
+            _logger.LogError(ex, "Error executing command {CommandId} - {Verb}", command.CommandId, command.Verb);
+        }
+
+        var durationMs = (int)(DateTime.UtcNow - startTime).TotalMilliseconds;
+        await CompleteCommandAsync(command.CommandId, success, message, durationMs, ct);
+    }
+
+    public async Task CompleteCommandAsync(Guid commandId, bool success, string? message, int? durationMs, CancellationToken ct)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_api.CommandCompleteEndpoint))
+                return;
+
+            var request = new CommandCompleteRequest
+            {
+                AgentKey = _api.ApiKey ?? "",
+                CommandId = commandId,
+                Success = success,
+                Message = message,
+                DurationMs = durationMs
+            };
+
+            using var req = new HttpRequestMessage(HttpMethod.Post, _api.CommandCompleteEndpoint)
+            {
+                Content = JsonContent.Create(request)
+            };
+
+            using var res = await _http.SendAsync(req, ct);
+            res.EnsureSuccessStatusCode();
+            
+            _logger.LogInformation("Command {CommandId} completed: {Success}", commandId, success);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to report command completion for {CommandId}", commandId);
+        }
+    }
+
+    private async Task ExecutePingCommand(CommandEnvelope command, CancellationToken ct)
+    {
+        // For security, this is a controlled ping operation
+        _logger.LogInformation("Executing ping command for device {DeviceId}", command.DeviceId);
+        await Task.Delay(100, ct); // Simulate ping operation
+    }
+
+    private async Task ExecuteStatusCommand(CommandEnvelope command, CancellationToken ct)
+    {
+        // For security, this is a controlled status check operation
+        _logger.LogInformation("Executing status command for device {DeviceId}", command.DeviceId);
+        await Task.Delay(50, ct); // Simulate status check
     }
 }

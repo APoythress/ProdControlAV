@@ -21,6 +21,10 @@ builder.Services.AddHttpClient<IDeviceSource, DeviceSource>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(5);
 });
+builder.Services.AddHttpClient<ICommandService, CommandService>(c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(10);
+});
 
 // Hosted worker
 builder.Services.AddHostedService<AgentService>();

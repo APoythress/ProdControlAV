@@ -9,13 +9,16 @@ namespace ProdControlAV.Agent.Services;
 public sealed class AgentService : BackgroundService
 {
     private readonly AgentOptions _opt;
+    private readonly ApiOptions _apiOpt;
     private readonly IDeviceSource _deviceSource;
     private readonly IStatusPublisher _publisher;
+    private readonly ICommandService _commandService;
     private readonly ILogger<AgentService> _logger;
 
     private SemaphoreSlim _gate = null!;
     private PeriodicTimer _tick = null!;
     private PeriodicTimer _heartbeat = null!;
+    private PeriodicTimer _commandPoll = null!;
 
     private readonly ConcurrentDictionary<string, State> _state = new();
 
@@ -32,13 +35,17 @@ public sealed class AgentService : BackgroundService
 
     public AgentService(
         IOptions<AgentOptions> opt,
+        IOptions<ApiOptions> apiOpt,
         IDeviceSource deviceSource,
         IStatusPublisher publisher,
+        ICommandService commandService,
         ILogger<AgentService> logger)
     {
         _opt = opt.Value;
+        _apiOpt = apiOpt.Value;
         _deviceSource = deviceSource;
         _publisher = publisher;
+        _commandService = commandService;
         _logger = logger;
     }
 
@@ -47,12 +54,14 @@ public sealed class AgentService : BackgroundService
         _gate = new SemaphoreSlim(_opt.Concurrency);
         _tick = new PeriodicTimer(TimeSpan.FromMilliseconds(_opt.IntervalMs));
         _heartbeat = new PeriodicTimer(TimeSpan.FromSeconds(_opt.HeartbeatSeconds));
+        _commandPoll = new PeriodicTimer(TimeSpan.FromSeconds(_apiOpt.CommandPollIntervalSeconds));
 
         // Wait once for device source to populate initially
         await Task.Delay(1000, stoppingToken);
 
         _ = RunPollLoop(stoppingToken);
         _ = RunHeartbeatLoop(stoppingToken);
+        _ = RunCommandPollLoop(stoppingToken);
     }
 
     private async Task RunPollLoop(CancellationToken ct)
@@ -150,6 +159,46 @@ public sealed class AgentService : BackgroundService
                 s.IsUp = false;
                 s.ChangedAt = DateTimeOffset.UtcNow;
                 await _publisher.PublishAsync(new DeviceStatus(d.Id, d.Name, d.Ip, "OFFLINE", s.ChangedAt), ct);
+            }
+        }
+    }
+
+    private async Task RunCommandPollLoop(CancellationToken ct)
+    {
+        while (await _commandPoll.WaitForNextTickAsync(ct))
+        {
+            try
+            {
+                var commands = await _commandService.PollCommandsAsync(ct);
+                if (commands.Count > 0)
+                {
+                    _logger.LogInformation("Received {Count} commands to execute", commands.Count);
+                    
+                    // Execute commands concurrently but limit concurrency
+                    var semaphore = new SemaphoreSlim(Math.Min(5, commands.Count));
+                    var tasks = commands.Select(async cmd =>
+                    {
+                        await semaphore.WaitAsync(ct);
+                        try
+                        {
+                            await _commandService.ExecuteCommandAsync(cmd, ct);
+                        }
+                        finally
+                        {
+                            semaphore.Release();
+                        }
+                    });
+
+                    await Task.WhenAll(tasks);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error in command polling loop");
             }
         }
     }

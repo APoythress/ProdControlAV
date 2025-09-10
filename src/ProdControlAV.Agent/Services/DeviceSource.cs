@@ -6,6 +6,14 @@ using ProdControlAV.Agent.Models;
 
 namespace ProdControlAV.Agent.Services;
 
+public sealed class DeviceTargetDto
+{
+    public Guid Id { get; set; }
+    public string IpAddress { get; set; } = default!;
+    public string? Type { get; set; }
+    public int? TcpPort { get; set; }
+}
+
 public interface IDeviceSource
 {
     IReadOnlyCollection<Device> Current { get; }
@@ -39,20 +47,28 @@ public sealed class DeviceSource : BackgroundService, IDeviceSource
     {
         try
         {
-            using var req = new HttpRequestMessage(HttpMethod.Get, _api.DevicesEndpoint);
-            if (!string.IsNullOrWhiteSpace(_api.ApiKey))
-                req.Headers.Add("X-Api-Key", _api.ApiKey);
+            var url = $"{_api.DevicesEndpoint}?agentKey={Uri.EscapeDataString(_api.ApiKey ?? "")}";
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
 
             using var res = await _http.SendAsync(req, ct);
             res.EnsureSuccessStatusCode();
 
             var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            var list = await res.Content.ReadFromJsonAsync<List<Device>>(options, ct) ?? new List<Device>();
+            var deviceTargets = await res.Content.ReadFromJsonAsync<List<DeviceTargetDto>>(options, ct) ?? new List<DeviceTargetDto>();
+
+            // Convert DeviceTargetDto to Device
+            var devices = deviceTargets.Select(dt => new Device
+            {
+                Id = dt.Id.ToString(),
+                Name = dt.IpAddress, // Use IP as name for now since Name is not in DTO
+                Ip = dt.IpAddress,
+                PreferTcp = dt.TcpPort.HasValue
+            }).ToList();
 
             lock (_gate)
             {
                 _devices.Clear();
-                _devices.AddRange(list);
+                _devices.AddRange(devices);
             }
         }
         catch (OperationCanceledException) { }
