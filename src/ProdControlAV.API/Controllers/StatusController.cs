@@ -7,7 +7,7 @@ using ProdControlAV.WebApp.Models;
 namespace ProdControlAV.API.Controllers;
 
 [ApiController]
-[Route("api/devices")]
+[Route("api/devicestatus")]
 [Authorize(Policy = "TenantMember")]
 public class StatusController : ControllerBase
 {

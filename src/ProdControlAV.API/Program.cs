@@ -127,11 +127,14 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
+app.UseMiddleware<ApiKeyMiddleware>();
+
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
 app.MapFallbackToFile("index.html");
+
 
 // Global
 app.Use(async (ctx, next) =>

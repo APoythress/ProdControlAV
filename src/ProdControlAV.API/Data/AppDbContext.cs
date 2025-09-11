@@ -27,7 +27,7 @@ public class AppDbContext : DbContext
 
         b.Entity<Device>(e =>
         {
-            e.HasKey(x => new { x.Id, x.TenantId });
+            e.HasKey(x => new { x.Id });
             e.Property(x => x.Name).HasMaxLength(200).IsRequired();
             e.Property(x => x.Ip).HasMaxLength(64).IsRequired();
             e.Property(x => x.Status).HasMaxLength(16).IsRequired();

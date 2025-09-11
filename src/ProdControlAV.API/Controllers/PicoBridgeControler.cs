@@ -18,7 +18,7 @@ public class PicoBridgeController : ControllerBase
     public PicoBridgeController(IHttpClientFactory factory, IConfiguration cfg)
     {
         _http = factory.CreateClient();
-        _picoBase = cfg["Pico:BaseUrl"] ?? "http://192.168.1.50/";
+        _picoBase = cfg["Pico:BaseUrl"] ?? "http://192.168.1.61/";
     }
 
     [HttpGet("devices")]

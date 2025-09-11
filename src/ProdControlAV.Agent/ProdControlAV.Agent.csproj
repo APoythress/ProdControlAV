@@ -16,4 +16,20 @@
   <ItemGroup>
     <ProjectReference Include="..\ProdControlAV.API\ProdControlAV.API.csproj" />
   </ItemGroup>
+  <!-- Keep ONLY the Agent's own appsettings*.json in publish -->
+  <Target Name="StripForeignAppsettings" BeforeTargets="ProcessPublishFiles">
+    <ItemGroup>
+      <!-- Remove appsettings* that originate from the API project -->
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+                             Condition="
+          (
+            $([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').ToLower()) == 'appsettings.json'
+            OR
+            $([System.Text.RegularExpressions.Regex]::IsMatch('%(ResolvedFileToPublish.RelativePath)', '^appsettings\..*\.json$', System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+          )
+          AND
+          $([System.String]::Copy('%(ResolvedFileToPublish.Identity)').ToLower()).Contains('prodcontrolav.api')
+        " />
+    </ItemGroup>
+  </Target>
 </Project>

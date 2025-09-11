@@ -1,9 +1,5 @@
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
-using ProdControlAV.API.Controllers;
-using ProdControlAV.Core.Models;
-using Device = ProdControlAV.Agent.Models.Device;
 
 namespace ProdControlAV.Agent.Services;
 
