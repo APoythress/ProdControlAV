@@ -1,7 +1,7 @@
 using System;
 using System.ComponentModel.DataAnnotations;
 
-namespace ProdControlAV.API.Models;
+namespace ProdControlAV.Core.Models;
 
 public class Agent
 {

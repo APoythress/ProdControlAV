@@ -1,11 +1,11 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using ProdControlAV.Agent.Models;
-using ProdControlAV.API.Controllers;
+using ProdControlAV.Core.Models;
+using AgentDevice = ProdControlAV.Agent.Models.Device;
 
 public interface ILocalDevicePoller
 {
-    Task<IReadOnlyList<AgentsController.StatusReading>> CollectAsync(IReadOnlyList<Device> devices, CancellationToken ct);
-    Task<(bool Success, string Message)> ExecuteAsync(AgentsController.CommandEnvelope command, CancellationToken ct);
+    Task<IReadOnlyList<StatusReading>> CollectAsync(IReadOnlyList<AgentDevice> devices, CancellationToken ct);
+    Task<(bool Success, string Message)> ExecuteAsync(CommandEnvelope command, CancellationToken ct);
 }

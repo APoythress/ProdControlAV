@@ -1,19 +1,46 @@
 [Unit]
-Description=ProdControlAV Agent
+Description=ProdControlAV Device Monitoring Agent
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=0
 
 [Service]
-WorkingDirectory=/opt/prodcontrolav/agent
-# If you published self-contained, use the binary directly:
-# ExecStart=/opt/prodcontrolav/agent/ProdControlAV.Agent
-# If framework-dependent:
-ExecStart=/usr/bin/dotnet /opt/prodcontrolav/agent/ProdControlAV.Agent.dll
-Restart=always
+Type=notify
 User=prodctl
+Group=prodctl
+WorkingDirectory=/opt/prodcontrolav/agent
+ExecStart=/opt/prodcontrolav/agent/ProdControlAV.Agent
+EnvironmentFile=/opt/prodcontrolav/agent/.env
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/prodcontrolav/agent
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictNamespaces=true
+
+# Network capabilities for ICMP ping
 AmbientCapabilities=CAP_NET_RAW
 CapabilityBoundingSet=CAP_NET_RAW
-NoNewPrivileges=true
+
+# Network restrictions (adjust IP ranges as needed for your environment)
+IPAddressDeny=any
+IPAddressAllow=localhost
+IPAddressAllow=192.168.0.0/16
+IPAddressAllow=10.0.0.0/8
+IPAddressAllow=172.16.0.0/12
 
 [Install]
 WantedBy=multi-user.target

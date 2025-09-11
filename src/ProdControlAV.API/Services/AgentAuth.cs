@@ -4,7 +4,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using ProdControlAV.API.Models;
+using ProdControlAV.Core.Models;
 
 namespace ProdControlAV.API.Services;
 

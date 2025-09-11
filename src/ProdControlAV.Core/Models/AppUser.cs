@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace ProdControlAV.API.Models;
+namespace ProdControlAV.Core.Models;
 
 [Table("Users")]
 public class AppUser

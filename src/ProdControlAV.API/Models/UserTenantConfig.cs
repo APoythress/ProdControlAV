@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using ProdControlAV.Core.Models;
 
 namespace ProdControlAV.API.Models;
 

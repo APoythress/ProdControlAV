@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
 using ProdControlAV.Agent.Services;
+using ProdControlAV.Core.Models;
 using Xunit;
 
 namespace ProdControlAV.Tests;

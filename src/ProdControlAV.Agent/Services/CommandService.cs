@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
+using ProdControlAV.Core.Models;
 
 namespace ProdControlAV.Agent.Services;
 
@@ -7,14 +8,6 @@ public sealed class CommandPullRequest
 { 
     public string AgentKey { get; set; } = string.Empty; 
     public int Max { get; set; } = 10; 
-}
-
-public sealed class CommandEnvelope 
-{ 
-    public Guid CommandId { get; set; } = default!; 
-    public Guid DeviceId { get; set; } = default!; 
-    public string Verb { get; set; } = default!; 
-    public string? Payload { get; set; }
 }
 
 public sealed class CommandPullResponse 

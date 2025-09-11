@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ProdControlAV.API.Models;
+using ProdControlAV.Core.Models;
 
 namespace ProdControlAV.API.Controllers;
 
