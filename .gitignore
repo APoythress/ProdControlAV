@@ -50,3 +50,6 @@ Desktop.ini
 *.tmp
 *.temp
 *~
+
+# Publish output
+publish/
