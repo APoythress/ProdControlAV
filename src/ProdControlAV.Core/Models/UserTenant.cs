@@ -1,8 +1,7 @@
 using System;
 using System.ComponentModel.DataAnnotations.Schema;
-using ProdControlAV.Core.Models; // Tenant lives here
 
-namespace ProdControlAV.API.Models;
+namespace ProdControlAV.Core.Models;
 
 [Table("UserTenants")]
 public class UserTenant

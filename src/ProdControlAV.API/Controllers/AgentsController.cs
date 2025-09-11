@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProdControlAV.API.Services;
+using ProdControlAV.Core.Models;
 
 namespace ProdControlAV.API.Controllers;
 
@@ -42,14 +43,6 @@ public sealed class AgentsController : ControllerBase
         return Ok(new { ok = true });
     }
 
-    public sealed class DeviceTargetDto
-    {
-        public Guid Id { get; set; }
-        public string IpAddress { get; set; } = default!;
-        public string? Type { get; set; }
-        public int? TcpPort { get; set; }
-    }
-
     [HttpGet("devices")]
     public async Task<ActionResult<List<DeviceTargetDto>>> GetDevices([FromQuery] string agentKey, CancellationToken ct)
     {
@@ -78,14 +71,6 @@ public sealed class AgentsController : ControllerBase
         public List<StatusReading> Readings { get; set; } = new();
     }
 
-    public sealed class StatusReading
-    {
-        public string DeviceId { get; set; } = default!;
-        public bool IsOnline { get; set; }
-        public int? LatencyMs { get; set; }
-        public string? Message { get; set; }
-    }
-
     [HttpPost("status")]
     public async Task<IActionResult> Status([FromBody] StatusUploadRequest req, CancellationToken ct)
     {
@@ -110,7 +95,6 @@ public sealed class AgentsController : ControllerBase
     }
 
     public sealed class CommandPullRequest { public string AgentKey { get; set; } = string.Empty; public int Max { get; set; } = 10; }
-    public sealed class CommandEnvelope { public Guid CommandId { get; set; } = default!; public Guid DeviceId { get; set; } = default!; public string Verb { get; set; } = default!; public string? Payload { get; set; } }
     public sealed class CommandPullResponse { public List<CommandEnvelope> Commands { get; set; } = new(); }
 
     [HttpPost("commands/next")]

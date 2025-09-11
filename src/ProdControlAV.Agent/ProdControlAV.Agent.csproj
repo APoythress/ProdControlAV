@@ -14,7 +14,8 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.8" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\ProdControlAV.API\ProdControlAV.API.csproj" />
+    <ProjectReference Include="..\ProdControlAV.Core\ProdControlAV.Core.csproj" />
+    <ProjectReference Include="..\ProdControlAV.Infrastructure\ProdControlAV.Infrastructure.csproj" />
   </ItemGroup>
   <!-- Keep ONLY the Agent's own appsettings*.json in publish -->
   <Target Name="StripForeignAppsettings" BeforeTargets="ProcessPublishFiles">
