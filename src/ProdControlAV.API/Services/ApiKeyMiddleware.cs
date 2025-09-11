@@ -6,8 +6,20 @@
     public ApiKeyMiddleware(RequestDelegate next, IConfiguration config)
     {
         _next = next;
-        // Read from a nested section for clarity and security
-        _apiKey = config["Api:AgentApiKey"];
+        
+        // Try configuration first, then environment variable
+        _apiKey = config["Api:AgentApiKey"] 
+                  ?? Environment.GetEnvironmentVariable("PRODCONTROL_AGENT_APIKEY")
+                  ?? throw new InvalidOperationException(
+                      "Agent API Key must be provided either in configuration (Api:AgentApiKey) " +
+                      "or via environment variable (PRODCONTROL_AGENT_APIKEY)");
+        
+        // Validate API key format
+        if (_apiKey.Length < 32)
+        {
+            throw new InvalidOperationException(
+                "Agent API Key must be at least 32 characters long for security");
+        }
     }
 
     public async Task Invoke(HttpContext context)
