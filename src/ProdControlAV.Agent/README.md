@@ -125,6 +125,7 @@ getcap /opt/prodcontrolav/agent/ProdControlAV.Agent
 # Create environment file for the service
 sudo tee /opt/prodcontrolav/agent/.env << 'EOF'
 # ProdControlAV Agent Configuration
+PRODCONTROL_API_URL=https://your-api-server.com/api
 PRODCONTROL_AGENT_APIKEY=your-secure-32plus-character-api-key-here
 EOF
 
@@ -236,6 +237,7 @@ sudo journalctl -u prodcontrolav-agent -f
 
 The agent supports secure configuration via environment variables with the `PRODCONTROL_` prefix:
 
+- **`PRODCONTROL_API_URL`** - Base URL of the ProdControlAV API server (required if not in config)
 - **`PRODCONTROL_AGENT_APIKEY`** - API key for authentication (required, 32+ characters)
 
 ### Configuration Options

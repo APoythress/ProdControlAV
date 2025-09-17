@@ -84,31 +84,46 @@ else
     exit 1
 fi
 
-# Prompt for API key
+# Prompt for configuration
 echo
 echo "=================================="
 print_status "Configuration Setup"
 echo "=================================="
 echo
-print_warning "You need to configure the API key for the agent"
+print_warning "You need to configure the API URL and API key for the agent"
 echo "The API key must be at least 32 characters long"
 echo
 
 # Check if .env already exists
 if [[ -f "/opt/prodcontrolav/agent/.env" ]]; then
     print_warning "Environment file already exists"
-    read -p "Do you want to update the API key? (y/N): " -n 1 -r
+    read -p "Do you want to update the configuration? (y/N): " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "Skipping API key configuration"
+        echo "Skipping configuration update"
     else
-        UPDATE_API_KEY=true
+        UPDATE_CONFIG=true
     fi
 else
-    UPDATE_API_KEY=true
+    UPDATE_CONFIG=true
 fi
 
-if [[ "$UPDATE_API_KEY" == "true" ]]; then
+if [[ "$UPDATE_CONFIG" == "true" ]]; then
+    # Prompt for API URL
+    while true; do
+        read -p "Enter API Base URL (e.g., https://your-api-server.com/api): " API_URL
+        if [[ -z "$API_URL" ]]; then
+            print_error "API URL cannot be empty"
+            continue
+        fi
+        if [[ ! "$API_URL" =~ ^https?:// ]]; then
+            print_error "API URL must start with http:// or https://"
+            continue
+        fi
+        break
+    done
+    
+    # Prompt for API key
     while true; do
         read -s -p "Enter API key (32+ characters): " API_KEY
         echo
@@ -123,6 +138,7 @@ if [[ "$UPDATE_API_KEY" == "true" ]]; then
     sudo tee /opt/prodcontrolav/agent/.env > /dev/null << EOF
 # ProdControlAV Agent Configuration
 # This file contains sensitive information - keep it secure
+PRODCONTROL_API_URL=${API_URL}
 PRODCONTROL_AGENT_APIKEY=${API_KEY}
 EOF
 

@@ -13,7 +13,7 @@ public sealed class AgentOptions
 
 public sealed class ApiOptions
 {
-    public required string BaseUrl { get; init; }
+    public string BaseUrl { get; set; } = string.Empty; // Changed to set for runtime configuration
     public required string DevicesEndpoint { get; init; }
     public required string StatusEndpoint { get; init; }
     public string? HeartbeatEndpoint { get; init; }

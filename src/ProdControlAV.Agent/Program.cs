@@ -18,10 +18,37 @@ builder.Services.Configure<ApiOptions>(builder.Configuration.GetSection("Api"));
 // Post-configure ApiOptions to handle environment variable fallback and validation
 builder.Services.PostConfigure<ApiOptions>(options =>
 {
+    // If BaseUrl is not set in config, try environment variable
+    var envApiUrl = Environment.GetEnvironmentVariable("PRODCONTROL_API_URL");
+    if (!string.IsNullOrWhiteSpace(envApiUrl))
+    {
+        options.BaseUrl = envApiUrl;
+    }
+    
     // If ApiKey is not set in config, try environment variable
     if (string.IsNullOrWhiteSpace(options.ApiKey))
     {
         options.ApiKey = Environment.GetEnvironmentVariable("PRODCONTROL_AGENT_APIKEY");
+    }
+    
+    // Validate that BaseUrl is provided and is a valid URI
+    if (string.IsNullOrWhiteSpace(options.BaseUrl))
+    {
+        throw new InvalidOperationException(
+            "Agent API Base URL must be provided either in configuration (Api:BaseUrl) " +
+            "or via environment variable (PRODCONTROL_API_URL)");
+    }
+    
+    if (!Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var baseUri))
+    {
+        throw new InvalidOperationException(
+            $"Agent API Base URL '{options.BaseUrl}' is not a valid URI");
+    }
+    
+    if (baseUri.Scheme != "https" && baseUri.Scheme != "http")
+    {
+        throw new InvalidOperationException(
+            $"Agent API Base URL '{options.BaseUrl}' must use http or https scheme");
     }
     
     // Validate that ApiKey is provided
