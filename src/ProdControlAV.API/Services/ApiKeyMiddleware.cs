@@ -1,4 +1,9 @@
-﻿public class ApiKeyMiddleware
+﻿using System;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+
+public class ApiKeyMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly string _apiKey;

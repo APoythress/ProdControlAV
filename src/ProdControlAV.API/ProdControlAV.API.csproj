@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <StaticWebAssetBasePath>_server</StaticWebAssetBasePath>
     <UserSecretsId>2f161643-69a3-4662-96ec-46805f4b2a51</UserSecretsId>
+    <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
   </PropertyGroup>
 
   <ItemGroup>
@@ -189,6 +190,12 @@
 
   <ItemGroup>
     <Folder Include="wwwroot\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\.dockerignore">
+      <Link>.dockerignore</Link>
+    </Content>
   </ItemGroup>
 
   <Target Name="CopyBlazorOutput" AfterTargets="Publish">

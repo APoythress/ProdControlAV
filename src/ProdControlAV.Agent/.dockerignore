@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.idea/
+**/node_modules/
+**/*.user
+**/*.suo
+**/*.pdb
+publish/
+.vscode/
+.git/

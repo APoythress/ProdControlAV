@@ -53,3 +53,6 @@ Desktop.ini
 
 # Publish output
 publish/
+
+# Deploy env files
+deploy/
