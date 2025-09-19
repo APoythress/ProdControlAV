@@ -47,6 +47,10 @@ public sealed class AgentService : BackgroundService
         _publisher = publisher;
         _commandService = commandService;
         _logger = logger;
+        
+        // Log the actual values being used for timer intervals
+        _logger.LogInformation("AgentService config: IntervalMs={IntervalMs}, HeartbeatSeconds={HeartbeatSeconds}, CommandPollIntervalSeconds={CommandPollIntervalSeconds}",
+            _opt.IntervalMs, _opt.HeartbeatSeconds, _apiOpt.CommandPollIntervalSeconds);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
