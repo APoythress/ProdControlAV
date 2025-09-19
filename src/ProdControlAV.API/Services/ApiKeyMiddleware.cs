@@ -23,20 +23,28 @@ public class ApiKeyMiddleware
         if (_apiKey.Length < 32)
         {
             throw new InvalidOperationException(
-                "Agent API Key must be at least 32 characters long for security");
+                $"Agent API Key must be at least 32 characters long for security. Current length: {_apiKey.Length}");
         }
     }
 
     public async Task Invoke(HttpContext context)
     {
-        if (!context.Request.Headers.TryGetValue("X-Api-Key", out var providedKey) ||
-            providedKey != _apiKey)
+        // Only apply API key validation to specific agent endpoints
+        var path = context.Request.Path.Value?.ToLowerInvariant();
+        bool requiresApiKey = path?.StartsWith("/api/edge/") == true;
+        
+        if (requiresApiKey)
         {
-            context.Response.StatusCode = 401;
-            // Do not reveal any info about the key
-            await context.Response.WriteAsync("Unauthorized");
-            return;
+            if (!context.Request.Headers.TryGetValue("X-Api-Key", out var providedKey) ||
+                providedKey != _apiKey)
+            {
+                context.Response.StatusCode = 401;
+                // Do not reveal any info about the key
+                await context.Response.WriteAsync("Unauthorized");
+                return;
+            }
         }
+        
         await _next(context);
     }
 }
