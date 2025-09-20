@@ -46,4 +46,18 @@ jobs:
           _buildArgumentsKey_: |
             _buildArgumentsValues_
 
+      - name: Apply secret & env vars
+        run: |
+          az containerapp secret set \
+            -n prodcontrolav-api \
+            -g prodcontrolav-rg \
+            --secrets db-connstr='${{ secrets.SQL_CONNECTION_STRING }}'
+      
+          az containerapp update \
+            -n prodcontrolav-api \
+            -g prodcontrolav-rg \
+            --set-env-vars ConnectionStrings__DefaultConnection=secretref:db-connstr ASPNETCORE_URLS=http://+:8080
+
+
+
 
