@@ -34,6 +34,10 @@ ScaffoldingReadMe.txt
 *.userosscache
 *.sln.docstates
 
+# Deployment temporary files
+/tmp/prodcontrol-deploy-*
+scripts/deploy-*.log
+
 # JetBrains Rider
 .idea/
 *.sln.iml
