@@ -1,6 +1,13 @@
+using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ProdControlAV.Agent.Models;
 
@@ -68,6 +75,7 @@ public sealed class AgentService : BackgroundService
         _ = RunCommandPollLoop(stoppingToken);
     }
 
+    // File: `AgentService.cs`
     private async Task RunPollLoop(CancellationToken ct)
     {
         var rnd = new Random();
@@ -75,10 +83,11 @@ public sealed class AgentService : BackgroundService
         while (await _tick.WaitForNextTickAsync(ct))
         {
             var devices = _deviceSource.Current;
-            EnsureState(devices);
+            var deviceList = devices.ToList(); // materialize so we can use Count
+            EnsureState(deviceList);
 
-            var tasks = new List<Task>(devices.Count);
-            foreach (var d in devices)
+            var tasks = new List<Task>(deviceList.Count);
+            foreach (var d in deviceList)
             {
                 await _gate.WaitAsync(ct);
                 var delay = rnd.Next(0, 200);
@@ -108,6 +117,7 @@ public sealed class AgentService : BackgroundService
             await Task.WhenAll(tasks);
         }
     }
+
 
     private void EnsureState(IEnumerable<Device> devices)
     {
@@ -177,7 +187,7 @@ public sealed class AgentService : BackgroundService
                 if (commands.Count > 0)
                 {
                     _logger.LogInformation("Received {Count} commands to execute", commands.Count);
-                    
+
                     // Execute commands concurrently but limit concurrency
                     var semaphore = new SemaphoreSlim(Math.Min(5, commands.Count));
                     var tasks = commands.Select(async cmd =>
@@ -193,7 +203,7 @@ public sealed class AgentService : BackgroundService
                         }
                     });
 
-                    await Task.WhenAll(tasks);
+                    await Task.WhenAll((IEnumerable<Task>)tasks);
                 }
             }
             catch (OperationCanceledException)

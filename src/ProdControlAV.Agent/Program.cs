@@ -1,4 +1,3 @@
-using ProdControlAV.Agent.Models;
 using ProdControlAV.Agent.Services;
 
 var builder = Host.CreateApplicationBuilder(args);

@@ -1,21 +1,29 @@
+using System;
+using System.Collections.Generic;
+using System.Net.Http;
 using System.Net.Http.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ProdControlAV.Core.Models;
+using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace ProdControlAV.Agent.Services;
 
-public sealed class CommandPullRequest 
+public class CommandPullRequest 
 { 
     public string AgentKey { get; set; } = string.Empty; 
     public int Max { get; set; } = 10; 
 }
 
-public sealed class CommandPullResponse 
+public class CommandPullResponse 
 { 
     public List<CommandEnvelope> Commands { get; set; } = new(); 
 }
 
-public sealed class CommandCompleteRequest 
+public class CommandCompleteRequest 
 { 
     public string AgentKey { get; set; } = string.Empty; 
     public Guid CommandId { get; set; } 
@@ -36,6 +44,12 @@ public class CommandService : ICommandService
     private readonly HttpClient _http;
     private readonly ILogger<CommandService> _logger;
     private readonly ApiOptions _api;
+
+    // Explicit JsonSerializerOptions with a TypeInfoResolver to opt-out of the reflection-disabled behavior
+    private static readonly JsonSerializerOptions s_jsonOptions = new()
+    {
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver()
+    };
 
     public CommandService(HttpClient http, ILogger<CommandService> logger, IOptions<ApiOptions> api)
     {
@@ -60,7 +74,7 @@ public class CommandService : ICommandService
 
             using var req = new HttpRequestMessage(HttpMethod.Post, _api.CommandsEndpoint)
             {
-                Content = JsonContent.Create(request)
+                Content = JsonContent.Create(request, options: s_jsonOptions)
             };
 
             using var res = await _http.SendAsync(req, ct);
@@ -70,7 +84,7 @@ public class CommandService : ICommandService
                 return new List<CommandEnvelope>();
             }
 
-            var response = await res.Content.ReadFromJsonAsync<CommandPullResponse>(ct);
+            var response = await res.Content.ReadFromJsonAsync<CommandPullResponse>(s_jsonOptions, ct);
             return response?.Commands ?? new List<CommandEnvelope>();
         }
         catch (OperationCanceledException)
@@ -141,7 +155,7 @@ public class CommandService : ICommandService
 
             using var req = new HttpRequestMessage(HttpMethod.Post, _api.CommandCompleteEndpoint)
             {
-                Content = JsonContent.Create(request)
+                Content = JsonContent.Create(request, options: s_jsonOptions)
             };
 
             using var res = await _http.SendAsync(req, ct);

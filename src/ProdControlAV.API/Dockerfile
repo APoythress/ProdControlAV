@@ -1,25 +1,23 @@
-﻿# (multi-stage, references project by repo-relative path to avoid path duplication)
+﻿# build stage
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 ARG BUILD_CONFIGURATION=Release
-WORKDIR /workspace
+WORKDIR /src
 
-# Copy everything (context must be repo root when building)
-COPY . .
+# copy solution + src (paths must match your repo)
+COPY ProdControlAV.sln ./
+COPY src/ ./src/
 
-# Restore using the API csproj path relative to the workspace
-RUN dotnet restore "src/ProdControlAV.API/ProdControlAV.API.csproj"
+# restore
+RUN dotnet restore ./src/ProdControlAV.Agent/ProdControlAV.Agent.csproj
 
-# Build the API project (outputs to /app/build)
-RUN dotnet build "src/ProdControlAV.API/ProdControlAV.API.csproj" -c $BUILD_CONFIGURATION -o /app/build
+# publish to /out (glibc, arm64, self-contained; no trim/single-file for now)
+RUN dotnet publish ./src/ProdControlAV.Agent/ProdControlAV.Agent.csproj \
+    -c $BUILD_CONFIGURATION \
+    -r linux-arm64 \
+    --self-contained true \
+    -p:PublishSingleFile=false \
+    -p:PublishTrimmed=false \
+    -o /out
 
-FROM build AS publish
-RUN dotnet publish "src/ProdControlAV.API/ProdControlAV.API.csproj" -c $BUILD_CONFIGURATION -o /app/publish
-
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
-WORKDIR /app
-COPY --from=publish /app/publish .
-
-ENV ASPNETCORE_URLS=http://+:5000;https://+:5001
-EXPOSE 5000 5001
-
-ENTRYPOINT ["dotnet", "ProdControlAV.API.dll"]
+# sanity: fail the build if output missing
+RUN test -f /out/ProdControlAV.Agent || (echo "Publish missing /out/ProdControlAV.Agent"; ls -R /out; exit 1)
