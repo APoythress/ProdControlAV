@@ -26,6 +26,47 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ---- Diagnostics to catch path/layout issues quickly ----
+      - name: Show repo layout
+        run: |
+          pwd
+          ls -la
+          echo "--- API dir ---"
+          ls -la ${{ env.APP_SOURCE_PATH }}
+
+      # Ensure we are not triggering Docker/ACR path (no Dockerfile in API dir)
+      - name: Ensure no Dockerfile in API path
+        run: |
+          if [ -f "${{ env.APP_SOURCE_PATH }}/Dockerfile" ]; then
+            echo "::error::Dockerfile found in ${{ env.APP_SOURCE_PATH }}. Rename or remove it to force Oryx source build."
+            exit 1
+          fi
+
+      # Pin .NET SDK so Oryx picks the same version as your local box
+      - name: Add/Update global.json (pin .NET SDK)
+        run: |
+          echo '{ "sdk": { "version": "8.0.402", "rollForward": "latestFeature" } }' > global.json
+          cat global.json
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Dotnet info
+        run: dotnet --info
+
+      # ---- Build locally in CI first to surface restore/build issues early ----
+      - name: Restore
+        run: dotnet restore ${{ env.APP_SOURCE_PATH }}
+
+      - name: Build (Release)
+        run: dotnet build ${{ env.APP_SOURCE_PATH }} -c Release --no-restore
+
+      - name: Publish (Release) - sanity check
+        run: dotnet publish ${{ env.APP_SOURCE_PATH }} -c Release -o out --no-restore
+      # ---------------------------------------------------------
+
       - name: Azure login (OIDC)
         uses: azure/login@v2
         with:
@@ -41,7 +82,7 @@ jobs:
           az extension add --name containerapp --upgrade || az extension update --name containerapp
           az config set extension.use_dynamic_install=yes_without_prompt
 
-      # Source build (no Dockerfile present, so no ACR path)
+      # Oryx/buildpacks source build & deploy (no Dockerfile, so no ACR)
       - name: Build & Deploy (source) to Container Apps
         uses: azure/container-apps-deploy-action@v2
         with:
@@ -51,14 +92,16 @@ jobs:
           appSourcePath: ${{ env.APP_SOURCE_PATH }}
           targetPort: ${{ env.TARGET_PORT }}
           ingress: external
+          # keep environmentVariables empty here to avoid --container-name conflicts
 
-      # Resolve internal container name
+      # Resolve internal container name (needed for subsequent az update)
       - name: Resolve internal container name
         id: cname
         run: |
           NAME=$(az containerapp show -n "${{ env.CONTAINERAPP_NAME }}" -g "${{ env.RESOURCE_GROUP }}" \
             --query "properties.template.containers[0].name" -o tsv)
           echo "container_name=$NAME" >> $GITHUB_OUTPUT
+          echo "Resolved container name: $NAME"
 
       # Secret & envs
       - name: Set DB secret
