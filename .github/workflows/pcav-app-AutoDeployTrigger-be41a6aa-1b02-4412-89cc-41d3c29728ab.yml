@@ -40,7 +40,6 @@ jobs:
 
       - name: Ensure provider & extension
         run: |
-          az provider register --namespace Microsoft.App --wait
           az extension add --name containerapp --upgrade || az extension update --name containerapp
           az config set extension.use_dynamic_install=yes_without_prompt
 
@@ -73,5 +72,6 @@ jobs:
             -n ${{ env.CONTAINERAPP_NAME }} \
             -g ${{ env.RESOURCE_GROUP }} \
             --set-env-vars ConnectionStrings__DefaultConnection=secretref:db-connstr
+
 
 
