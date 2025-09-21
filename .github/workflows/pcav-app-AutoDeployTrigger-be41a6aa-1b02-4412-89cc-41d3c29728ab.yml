@@ -12,7 +12,7 @@ env:
   AZURE_REGION: eastus
   RESOURCE_GROUP: ProdControlAV-Group
   CONTAINERAPP_NAME: pcav-app
-  APP_SOURCE_PATH: .                 # <-- build from repo root so ProjectReferences resolve
+  APP_SOURCE_PATH: src                 # ⬅️ build context trimmed to src/
   TARGET_PORT: "80"
 
 jobs:
@@ -29,19 +29,18 @@ jobs:
       - name: Show repo layout
         run: |
           pwd
+          du -sh . | sed 's/^/repo size: /'
           ls -la
           echo "--- src ---"
           ls -la src || true
-          echo "--- API dir ---"
-          ls -la src/ProdControlAV.API || true
 
-      # Ensure we don’t trigger the ACR/Docker path:
-      - name: Ensure no Dockerfile at repo root or API dir
+      # Make sure no Dockerfile is in build context (forces pure Oryx build)
+      - name: Ensure no Dockerfile in context
         run: |
-          test ! -f "Dockerfile" || (echo "::error::Dockerfile found at repo root. Rename/remove to force Oryx build." && exit 1)
-          test ! -f "src/ProdControlAV.API/Dockerfile" || (echo "::error::Dockerfile found in API dir. Rename/remove to force Oryx build." && exit 1)
+          test ! -f "Dockerfile" || (echo "::error::Dockerfile at repo root; remove/rename" && exit 1)
+          test ! -f "src/ProdControlAV.API/Dockerfile" || (echo "::error::Dockerfile in API dir; remove/rename" && exit 1)
 
-      # Pin SDK so Oryx uses the same .NET as local
+      # Pin SDK so Oryx and local match
       - name: Add/Update global.json
         run: |
           echo '{ "sdk": { "version": "8.0.402", "rollForward": "latestFeature" } }' > global.json
@@ -52,11 +51,37 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
-      - name: Local CI sanity build (uses full repo)
+      # Local sanity build (to surface errors early) → publish to /tmp, not the repo
+      - name: Restore
+        run: dotnet restore src/ProdControlAV.API/ProdControlAV.API.csproj
+
+      - name: Build (Release)
+        run: dotnet build src/ProdControlAV.API/ProdControlAV.API.csproj -c Release --no-restore
+
+      - name: Publish to temp (Release)
+        run: dotnet publish src/ProdControlAV.API/ProdControlAV.API.csproj -c Release -o /tmp/publish --no-restore
+
+      # Exclude heavy folders from Oryx upload
+      - name: Create .oryxignore
         run: |
-          dotnet restore src/ProdControlAV.API/ProdControlAV.API.csproj
-          dotnet build src/ProdControlAV.API/ProdControlAV.API.csproj -c Release --no-restore
-          dotnet publish src/ProdControlAV.API/ProdControlAV.API.csproj -c Release -o out --no-restore
+          cat > .oryxignore << 'EOF'
+          # Exclude large/unneeded dirs from source upload
+          **/bin/
+          **/obj/
+          **/out/
+          **/node_modules/
+          .git/
+          .github/
+          /tmp/
+          EOF
+          echo "--- .oryxignore ---"; cat .oryxignore
+
+      # Extra safety: remove any stray out/bin/obj in the repo (not needed for source build)
+      - name: Prune build artifacts
+        run: |
+          rm -rf out || true
+          find . -type d -name bin -prune -exec rm -rf {} + || true
+          find . -type d -name obj -prune -exec rm -rf {} + || true
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -73,11 +98,11 @@ jobs:
           az extension add --name containerapp --upgrade || az extension update --name containerapp
           az config set extension.use_dynamic_install=yes_without_prompt
 
-      # Build from repo root, but tell the buildpack which project to publish.
+      # Build from src/ (contains API + Core + Infra), tell buildpack which project to publish
       - name: Build & Deploy (source) to Container Apps
         uses: azure/container-apps-deploy-action@v2
         env:
-          BP_DOTNET_PROJECT_PATH: src/ProdControlAV.API   # <-- select the API project for the buildpack
+          BP_DOTNET_PROJECT_PATH: ProdControlAV.API   # relative to APP_SOURCE_PATH (src/)
         with:
           resourceGroup: ${{ env.RESOURCE_GROUP }}
           containerAppName: ${{ env.CONTAINERAPP_NAME }}
@@ -85,11 +110,8 @@ jobs:
           appSourcePath: ${{ env.APP_SOURCE_PATH }}
           targetPort: ${{ env.TARGET_PORT }}
           ingress: external
-          # Some versions of the action support:
-          # buildEnvironmentVariables: |
-          #   BP_DOTNET_PROJECT_PATH=src/ProdControlAV.API
 
-      # Resolve internal container name for updates
+      # Resolve internal container name
       - name: Resolve internal container name
         id: cname
         run: |
@@ -98,7 +120,7 @@ jobs:
           echo "container_name=$NAME" >> $GITHUB_OUTPUT
           echo "Resolved container name: $NAME"
 
-      # Secret & env
+      # Secret & envs
       - name: Set DB secret
         run: |
           az containerapp secret set \
