@@ -24,12 +24,33 @@ jobs:
       - name: Checkout to the branch
         uses: actions/checkout@v2
 
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.PCAVAPP_AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.PCAVAPP_AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.PCAVAPP_AZURE_SUBSCRIPTION_ID }}
+          - name: Azure login (OIDC)
+            uses: azure/login@v2
+            with:
+              client-id: ${{ secrets.AZURE_CLIENT_ID }}
+              tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+              subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      
+          - name: Sanity check Azure CLI
+            run: |
+              az account show
+              az version
+      
+          - name: Ensure provider & extension
+            run: |
+              # Make sure Container Apps resource provider is registered
+              az provider register --namespace Microsoft.App --wait
+      
+              # Container Apps extension (idempotent)
+              az extension add --name containerapp --upgrade || az extension update --name containerapp
+      
+              # Optional but nice to have
+              az config set extension.use_dynamic_install=yes_without_prompt
+      
+          - name: Ensure Resource Group exists
+            run: |
+              az group show -n prodcontrolav-rg || az group create -n prodcontrolav-rg -l eastus
+
 
       - name: Build and push container image to registry
         uses: azure/container-apps-deploy-action@v2
@@ -57,6 +78,7 @@ jobs:
             -n prodcontrolav-api \
             -g prodcontrolav-rg \
             --set-env-vars ConnectionStrings__DefaultConnection=secretref:db-connstr ASPNETCORE_URLS=http://+:8080
+
 
 
 
