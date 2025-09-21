@@ -1,85 +1,75 @@
-name: Trigger auto deployment for pcav-app
+name: Build & Deploy API (Source → Azure Container Apps)
 
-# When this action will be executed
 on:
-  # Automatically trigger it when detected changes in repo
   push:
-    branches: 
-      [ main ]
+    branches: [ "main" ]
     paths:
-    - '**'
-    - '.github/workflows/pcav-app-AutoDeployTrigger-be41a6aa-1b02-4412-89cc-41d3c29728ab.yml'
+      - "src/ProdControlAV.API/**"
+      - ".github/workflows/aca-source-deploy.yml"
+  workflow_dispatch:
 
-  # Allow manual trigger 
-  workflow_dispatch:      
+env:
+  AZURE_REGION: eastus
+  RESOURCE_GROUP: prodcontrolav-rg          # <-- keep this consistent everywhere
+  CONTAINERAPP_NAME: prodcontrolav-api      # <-- the actual Container App name in Azure
+  APP_SOURCE_PATH: src/ProdControlAV.API    # <-- path to your API project
+  TARGET_PORT: "8080"                       # <-- change to 5000 if that’s your Target port
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
-    permissions: 
-      id-token: write #This is required for requesting the OIDC JWT Token
-      contents: read #Required when GH token is used to authenticate with private repo
+    permissions:
+      id-token: write
+      contents: read
 
     steps:
-      - name: Checkout to the branch
-        uses: actions/checkout@v2
+      - name: Checkout
+        uses: actions/checkout@v4
 
-          - name: Azure login (OIDC)
-            uses: azure/login@v2
-            with:
-              client-id: ${{ secrets.AZURE_CLIENT_ID }}
-              tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-              subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      
-          - name: Sanity check Azure CLI
-            run: |
-              az account show
-              az version
-      
-          - name: Ensure provider & extension
-            run: |
-              # Make sure Container Apps resource provider is registered
-              az provider register --namespace Microsoft.App --wait
-      
-              # Container Apps extension (idempotent)
-              az extension add --name containerapp --upgrade || az extension update --name containerapp
-      
-              # Optional but nice to have
-              az config set extension.use_dynamic_install=yes_without_prompt
-      
-          - name: Ensure Resource Group exists
-            run: |
-              az group show -n prodcontrolav-rg || az group create -n prodcontrolav-rg -l eastus
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Sanity check Azure CLI
+        run: |
+          az account show
+          az version
 
-      - name: Build and push container image to registry
+      - name: Ensure provider & extension
+        run: |
+          az provider register --namespace Microsoft.App --wait
+          az extension add --name containerapp --upgrade || az extension update --name containerapp
+          az config set extension.use_dynamic_install=yes_without_prompt
+
+      - name: Ensure Resource Group exists
+        run: |
+          az group show -n ${{ env.RESOURCE_GROUP }} || az group create -n ${{ env.RESOURCE_GROUP }} -l ${{ env.AZURE_REGION }}
+
+      # Build from source and deploy (Oryx/buildpacks)
+      - name: Build & Deploy to Container Apps
         uses: azure/container-apps-deploy-action@v2
         with:
-          appSourcePath: ${{ github.workspace }}
-          _dockerfilePathKey_: _dockerfilePath_
-          _targetLabelKey_: _targetLabel_
-          registryUrl: 
-          registryUsername: ${{ secrets.PCAVAPP_REGISTRY_USERNAME }}
-          registryPassword: ${{ secrets.PCAVAPP_REGISTRY_PASSWORD }}
-          containerAppName: pcav-app
-          resourceGroup: ProdControlAV-Group
-          imageToBuild: default/[parameters('containerAppName')]:${{ github.sha }}
-          _buildArgumentsKey_: |
-            _buildArgumentsValues_
+          resourceGroup: ${{ env.RESOURCE_GROUP }}
+          containerAppName: ${{ env.CONTAINERAPP_NAME }}
+          location: ${{ env.AZURE_REGION }}
+          appSourcePath: ${{ env.APP_SOURCE_PATH }}
+          targetPort: ${{ env.TARGET_PORT }}
+          ingress: external
+          environmentVariables: |
+            ASPNETCORE_URLS=http://+:${{ env.TARGET_PORT }}
 
+      # Apply DB secret and bind EF connection string
       - name: Apply secret & env vars
         run: |
           az containerapp secret set \
-            -n prodcontrolav-api \
-            -g prodcontrolav-rg \
+            -n ${{ env.CONTAINERAPP_NAME }} \
+            -g ${{ env.RESOURCE_GROUP }} \
             --secrets db-connstr='${{ secrets.SQL_CONNECTION_STRING }}'
-      
+
           az containerapp update \
-            -n prodcontrolav-api \
-            -g prodcontrolav-rg \
-            --set-env-vars ConnectionStrings__DefaultConnection=secretref:db-connstr ASPNETCORE_URLS=http://+:8080
-
-
-
-
-
+            -n ${{ env.CONTAINERAPP_NAME }} \
+            -g ${{ env.RESOURCE_GROUP }} \
+            --set-env-vars ConnectionStrings__DefaultConnection=secretref:db-connstr
