@@ -204,6 +204,12 @@ sudo systemctl disable prodcontrolav-agent
 - Verify API connectivity from Pi
 - Check environment file: `/opt/prodcontrolav/agent/.env`
 
+**Docker Build Issues**
+- Verify all project files exist: `ls -la src/ProdControlAV.*/`
+- Test local build: `dotnet publish src/ProdControlAV.API/ProdControlAV.API.csproj -c Release -o /tmp/test`
+- Check network connectivity in build environment
+- Verify Dockerfile references correct project paths
+
 ## Integration with CI/CD
 
 The deployment scripts can be integrated into CI/CD pipelines:

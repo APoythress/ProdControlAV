@@ -5,7 +5,7 @@ on:
     branches: [ "main" ]
     paths:
       - "src/ProdControlAV.API/**"
-      - ".github/workflows/aca-docker-deploy.yml"
+      - ".github/workflows/pcav-app-AutoDeployTrigger-be41a6aa-1b02-4412-89cc-41d3c29728ab.yml"
   workflow_dispatch:
 
 env:
