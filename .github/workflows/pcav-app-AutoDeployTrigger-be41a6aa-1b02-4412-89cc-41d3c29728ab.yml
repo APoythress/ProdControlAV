@@ -50,6 +50,17 @@ jobs:
       - name: Install Container Apps extension
         run: az extension add --name containerapp --upgrade || az extension update --name containerapp
 
+      # Install EF Core tools and apply database migrations before deploying app
+      - name: Install EF Core tools
+        run: dotnet tool install --global dotnet-ef
+
+      - name: Apply database migrations
+        run: |
+          cd src/ProdControlAV.API
+          dotnet ef database update --connection "${{ secrets.SQL_CONNECTION_STRING }}" --verbose
+        env:
+          ConnectionStrings__DefaultConnection: ${{ secrets.SQL_CONNECTION_STRING }}
+
       # Point the app at the new image and bind to port 80
       - name: Deploy image to Container App
         run: |
