@@ -83,7 +83,7 @@ builder.Services.AddSingleton<IDeviceStatusRepository, InMemoryDeviceStatusRepos
 builder.Services.AddSingleton<INetworkMonitor, PingNetworkMonitor>();
 builder.Services.AddScoped<ITenantProvider, CompositeTenantProvider>();
 
-// Database (SQLite in dev)
+// Database configuration - supports both SQLite (development) and SQL Server (production)
 var dbSection = builder.Configuration.GetSection("Database");
 var provider = dbSection["Provider"] ?? "Sqlite";
 
@@ -110,6 +110,22 @@ if (provider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase))
     }
 
     builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlite(connectionString));
+}
+else if (provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
+{
+    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
+                          ?? dbSection.GetSection("SqlServer")["ConnectionString"];
+    
+    if (string.IsNullOrWhiteSpace(connectionString))
+    {
+        throw new InvalidOperationException("SQL Server connection string must be provided when using SqlServer provider");
+    }
+    
+    builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlServer(connectionString));
+}
+else
+{
+    throw new InvalidOperationException($"Unsupported database provider: {provider}. Supported providers are: Sqlite, SqlServer");
 }
 
 var app = builder.Build();
