@@ -57,7 +57,10 @@ jobs:
       - name: Apply database migrations
         run: |
           cd src/ProdControlAV.API
-          dotnet ef database update --verbose
+          dotnet ef database update --connection "${CONNECTION_STRING}" --verbose
+        env:
+          CONNECTION_STRING: ${{ secrets.SQL_CONNECTION_STRING }}
+          ConnectionStrings__DefaultConnection: ${{ secrets.SQL_CONNECTION_STRING }}
 
       # Point the app at the new image and bind to port 80
       - name: Deploy image to Container App
@@ -68,6 +71,19 @@ jobs:
             --container-name "${{ env.CONTAINER_NAME }}" \
             --image "${{ env.IMAGE }}" \
             --set-env-vars ASPNETCORE_URLS=http://+:${{ env.TARGET_PORT }}
+
+      # Ensure DB secret & EF connection string mapping
+      - name: Set DB secret & env
+        run: |
+          az containerapp secret set \
+            -n "${{ env.CONTAINERAPP_NAME }}" \
+            -g "${{ env.RESOURCE_GROUP }}" \
+            --secrets db-connstr='${{ secrets.SQL_CONNECTION_STRING }}'
+          az containerapp update \
+            -n "${{ env.CONTAINERAPP_NAME }}" \
+            -g "${{ env.RESOURCE_GROUP }}" \
+            --container-name "${{ env.CONTAINER_NAME }}" \
+            --set-env-vars ConnectionStrings__DefaultConnection=secretref:db-connstr
 
 
 
