@@ -31,14 +31,14 @@ jobs:
         run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USER }}" --password-stdin
 
       - name: Build & Push image
-        working-directory: src/ProdControlAV.API
         run: |
-          IMAGE_SHA="docker.io/${{ secrets.DOCKERHUB_USER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          IMAGE_MAIN="docker.io/${{ secrets.DOCKERHUB_USER }}/${{ env.IMAGE_NAME }}:main"
-          docker build -f ./Dockerfile -t "$IMAGE_SHA" -t "$IMAGE_MAIN" .
+          IMAGE_SHA="docker.io/${{ secrets.DOCKERHUB_USER }}/prodcontrolavapi:${{ github.sha }}"
+          IMAGE_MAIN="docker.io/${{ secrets.DOCKERHUB_USER }}/prodcontrolavapi:main"
+          docker build -f ./Dockerfile.api -t "$IMAGE_SHA" -t "$IMAGE_MAIN" .
           docker push "$IMAGE_SHA"
           docker push "$IMAGE_MAIN"
           echo "IMAGE=$IMAGE_SHA" >> $GITHUB_ENV
+
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -72,5 +72,6 @@ jobs:
             -g "${{ env.RESOURCE_GROUP }}" \
             --container-name "${{ env.CONTAINER_NAME }}" \
             --set-env-vars ConnectionStrings__DefaultConnection=secretref:db-connstr
+
 
 
