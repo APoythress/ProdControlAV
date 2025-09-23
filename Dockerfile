@@ -2,15 +2,14 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /workspace
 
-# Copy solution + project files first (to leverage layer cache)
-COPY ProdControlAV.sln ./
+# Copy project files needed for API build (to leverage layer cache)
 COPY src/ProdControlAV.Core/ProdControlAV.Core.csproj                     src/ProdControlAV.Core/
 COPY src/ProdControlAV.Infrastructure/ProdControlAV.Infrastructure.csproj src/ProdControlAV.Infrastructure/
 COPY src/ProdControlAV.WebApp/ProdControlAV.WebApp.csproj                 src/ProdControlAV.WebApp/
 COPY src/ProdControlAV.API/ProdControlAV.API.csproj                       src/ProdControlAV.API/
 
-# Restore the whole solution so all ProjectReferences (incl. WebApp) resolve
-RUN dotnet restore ProdControlAV.sln
+# Restore only the API project and its dependencies (more efficient)
+RUN dotnet restore src/ProdControlAV.API/ProdControlAV.API.csproj
 
 # Now copy the rest of the source
 COPY src/ ./src/
