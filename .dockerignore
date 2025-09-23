@@ -1,4 +1,4 @@
-﻿**/bin/
+**/bin/
 **/obj/
 **/out/
 **/*.user
@@ -6,5 +6,7 @@
 .vscode/
 .idea/
 .git/
-.gitignore
+.github/
 node_modules/
+# If your WebApp emits big artifacts:
+src/ProdControlAV.WebApp/wwwroot/dist/

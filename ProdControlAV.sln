@@ -13,6 +13,9 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProdControlAV.Agent", "src\ProdControlAV.Agent\ProdControlAV.Agent.csproj", "{A6AE9CDC-C982-498D-AE08-F7771738342C}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Scripts_Deployments", "Scripts_Deployments", "{2CB5E39C-5C61-4C97-9310-E57542FF072F}"
+	ProjectSection(SolutionItems) = preProject
+		Dockerfile = Dockerfile
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
