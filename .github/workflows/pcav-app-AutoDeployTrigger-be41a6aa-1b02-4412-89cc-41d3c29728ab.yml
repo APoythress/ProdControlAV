@@ -72,3 +72,4 @@ jobs:
             -g "${{ env.RESOURCE_GROUP }}" \
             --container-name "${{ env.CONTAINER_NAME }}" \
             --set-env-vars ConnectionStrings__DefaultConnection=secretref:db-connstr
+
