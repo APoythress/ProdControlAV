@@ -1,19 +1,20 @@
-name: Build & Deploy API (Source → Azure Container Apps)
+name: Build (Docker) & Deploy to Azure Container Apps
 
 on:
   push:
     branches: [ "main" ]
     paths:
       - "src/ProdControlAV.API/**"
-      - ".github/workflows/aca-source-deploy.yml"
+      - ".github/workflows/aca-docker-deploy.yml"
   workflow_dispatch:
 
 env:
   AZURE_REGION: eastus
   RESOURCE_GROUP: ProdControlAV-Group
-  CONTAINERAPP_NAME: pcav-app                 # set to your exact Container App name
-  APP_SOURCE_PATH: src/ProdControlAV.API
-  TARGET_PORT: "8080"                         # change to 5000 if your Container App uses 5000
+  CONTAINERAPP_NAME: pcav-app
+  CONTAINER_NAME: pcav-app        # internal container name inside your Container App
+  IMAGE_NAME: prodcontrolavapi     # repo name in Docker Hub (user is from secret)
+  TARGET_PORT: "80"
 
 jobs:
   deploy:
@@ -23,8 +24,21 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      # Build+push with an immutable tag (commit SHA) and a "rolling" tag (main)
+      - name: Docker Hub login
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USER }}" --password-stdin
+
+      - name: Build & Push image
+        working-directory: src/ProdControlAV.API
+        run: |
+          IMAGE_SHA="docker.io/${{ secrets.DOCKERHUB_USER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          IMAGE_MAIN="docker.io/${{ secrets.DOCKERHUB_USER }}/${{ env.IMAGE_NAME }}:main"
+          docker build -t "$IMAGE_SHA" -t "$IMAGE_MAIN" .
+          docker push "$IMAGE_SHA"
+          docker push "$IMAGE_MAIN"
+          echo "IMAGE=$IMAGE_SHA" >> $GITHUB_ENV
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -33,49 +47,28 @@ jobs:
           tenant-id: ${{ secrets.PCAVAPP_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.PCAVAPP_AZURE_SUBSCRIPTION_ID }}
 
-      - name: Set subscription context
-        run: az account set --subscription "${{ secrets.PCAVAPP_AZURE_SUBSCRIPTION_ID }}"
-
       - name: Install Container Apps extension
+        run: az extension add --name containerapp --upgrade || az extension update --name containerapp
+
+      # Point the app at the new image and bind to port 80
+      - name: Deploy image to Container App
         run: |
-          az extension add --name containerapp --upgrade || az extension update --name containerapp
-          az config set extension.use_dynamic_install=yes_without_prompt
+          az containerapp update \
+            -n "${{ env.CONTAINERAPP_NAME }}" \
+            -g "${{ env.RESOURCE_GROUP }}" \
+            --container-name "${{ env.CONTAINER_NAME }}" \
+            --image "${{ env.IMAGE }}" \
+            --set-env-vars ASPNETCORE_URLS=http://+:${{ env.TARGET_PORT }}
 
-      # Build from source and deploy (Oryx/buildpacks).
-      # IMPORTANT: do NOT pass environmentVariables here; we'll set them afterward to avoid the --container-name issue.
-      - name: Build & Deploy (source) to Container Apps
-        uses: azure/container-apps-deploy-action@v2
-        with:
-          resourceGroup: ${{ env.RESOURCE_GROUP }}
-          containerAppName: ${{ env.CONTAINERAPP_NAME }}
-          location: ${{ env.AZURE_REGION }}
-          appSourcePath: ${{ env.APP_SOURCE_PATH }}
-          targetPort: ${{ env.TARGET_PORT }}
-          ingress: external
-
-      # Discover the internal container name for subsequent az updates
-      - name: Resolve internal container name
-        id: cname
-        run: |
-          NAME=$(az containerapp show -n "${{ env.CONTAINERAPP_NAME }}" -g "${{ env.RESOURCE_GROUP }}" \
-            --query "properties.template.containers[0].name" -o tsv)
-          echo "container_name=$NAME" >> $GITHUB_OUTPUT
-
-      # Store SQL connection string as a secret on the app
-      - name: Set DB secret
+      # Ensure DB secret & EF connection string mapping
+      - name: Set DB secret & env
         run: |
           az containerapp secret set \
             -n "${{ env.CONTAINERAPP_NAME }}" \
             -g "${{ env.RESOURCE_GROUP }}" \
             --secrets db-connstr='${{ secrets.SQL_CONNECTION_STRING }}'
-
-      # Apply env vars (now that we know --container-name)
-      - name: Apply env vars (ASPNETCORE_URLS + EF connection)
-        run: |
           az containerapp update \
             -n "${{ env.CONTAINERAPP_NAME }}" \
             -g "${{ env.RESOURCE_GROUP }}" \
-            --container-name "${{ steps.cname.outputs.container_name }}" \
-            --set-env-vars \
-              ASPNETCORE_URLS=http://+:${{ env.TARGET_PORT }} \
-              ConnectionStrings__DefaultConnection=secretref:db-connstr
+            --container-name "${{ env.CONTAINER_NAME }}" \
+            --set-env-vars ConnectionStrings__DefaultConnection=secretref:db-connstr
