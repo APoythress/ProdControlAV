@@ -57,8 +57,9 @@ jobs:
       - name: Apply database migrations
         run: |
           cd src/ProdControlAV.API
-          dotnet ef database update --connection "${{ secrets.SQL_CONNECTION_STRING }}" --verbose
+          dotnet ef database update --connection "${CONNECTION_STRING}" --verbose
         env:
+          CONNECTION_STRING: ${{ secrets.SQL_CONNECTION_STRING }}
           ConnectionStrings__DefaultConnection: ${{ secrets.SQL_CONNECTION_STRING }}
 
       # Point the app at the new image and bind to port 80
