@@ -66,3 +66,9 @@ deploy/
 *.db-shm
 *.db-wal
 data/
+
+# Generated database scripts
+database-scripts/
+
+# Temporary script generation files
+appsettings.ScriptGeneration.json
