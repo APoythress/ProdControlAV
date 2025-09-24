@@ -83,32 +83,17 @@ builder.Services.AddSingleton<IDeviceStatusRepository, InMemoryDeviceStatusRepos
 builder.Services.AddSingleton<INetworkMonitor, PingNetworkMonitor>();
 builder.Services.AddScoped<ITenantProvider, CompositeTenantProvider>();
 
-// Database configuration - SQLite for development and production
+// Database configuration - SQL Server only
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
-// Default to SQLite if no connection string is provided
+// Require connection string for SQL Server
 if (string.IsNullOrWhiteSpace(connectionString))
 {
-    // Ensure the data directory exists
-    var dataDir = Path.Combine(Directory.GetCurrentDirectory(), "data");
-    Directory.CreateDirectory(dataDir);
-    connectionString = $"Data Source={Path.Combine(dataDir, "prodcontrol.db")}";
+    throw new InvalidOperationException("DefaultConnection connection string is required for SQL Server database.");
 }
 
-// Check if this is a SQL Server connection string (for production Azure deployment)
-var useSqlServer = !string.IsNullOrEmpty(connectionString) && 
-                   (connectionString.Contains("Server=", StringComparison.OrdinalIgnoreCase) ||
-                    connectionString.Contains("database.windows.net", StringComparison.OrdinalIgnoreCase)) &&
-                   !connectionString.EndsWith(".db", StringComparison.OrdinalIgnoreCase);
-
-if (useSqlServer)
-{
-    builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlServer(connectionString));
-}
-else
-{
-    builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlite(connectionString));
-}
+// Always use SQL Server
+builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlServer(connectionString));
 
 var app = builder.Build();
 
