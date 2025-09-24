@@ -34,77 +34,24 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
 
     private static void ConfigureDatabase(DbContextOptionsBuilder<AppDbContext> optionsBuilder, IConfiguration configuration, string[] args)
     {
-        string? connectionString = null;
-        string? databaseProvider = null;
-        
         // Check environment variables first (for CI/CD scenarios)
-        var envConnectionString = configuration.GetConnectionString("DefaultConnection");
-        if (!string.IsNullOrEmpty(envConnectionString))
-        {
-            connectionString = envConnectionString;
-            // Auto-detect provider based on connection string
-            if (IsAzureSqlConnectionString(connectionString) || IsSqlServerConnectionString(connectionString))
-            {
-                databaseProvider = "SqlServer";
-            }
-        }
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
         
-        // Fallback to configuration file
         if (string.IsNullOrEmpty(connectionString))
         {
-            var dbSection = configuration.GetSection("Database");
-            databaseProvider = dbSection["Provider"] ?? "Sqlite";
-
-            if (databaseProvider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
-            {
-                connectionString = dbSection["SqlServer:ConnectionString"]
-                                 ?? dbSection.GetSection("SqlServer")["ConnectionString"];
-            }
-            else
-            {
-                // Handle SQLite configuration
-                var configured = dbSection["Sqlite:ConnectionString"] 
-                               ?? dbSection.GetSection("Sqlite")["ConnectionString"];
-                
-                if (string.IsNullOrWhiteSpace(configured))
-                {
-                    // Default SQLite path for design time
-                    var dbPath = Path.Combine(Directory.GetCurrentDirectory(), "data", "prodcontrol.db");
-                    Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
-                    connectionString = $"Data Source={dbPath}";
-                }
-                else if (configured.StartsWith("Data Source=./", StringComparison.OrdinalIgnoreCase))
-                {
-                    var relative = configured.Substring("Data Source=".Length).Trim();
-                    var dbPath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), relative));
-                    Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
-                    connectionString = $"Data Source={dbPath}";
-                }
-                else
-                {
-                    connectionString = configured;
-                }
-            }
+            throw new InvalidOperationException(
+                "SQL Server connection string must be provided via ConnectionStrings:DefaultConnection environment variable or configuration. " +
+                "In Azure Container Apps, this is mapped from the 'db-connstr' secret. SQLite is no longer supported.");
         }
 
-        // Absolute fallback for design time
-        if (string.IsNullOrEmpty(connectionString))
+        // Verify it's a SQL Server connection string
+        if (!IsAzureSqlConnectionString(connectionString) && !IsSqlServerConnectionString(connectionString))
         {
-            var fallbackDbPath = Path.Combine(Directory.GetCurrentDirectory(), "data", "prodcontrol.db");
-            Directory.CreateDirectory(Path.GetDirectoryName(fallbackDbPath)!);
-            connectionString = $"Data Source={fallbackDbPath}";
-            databaseProvider = "Sqlite";
+            throw new InvalidOperationException(
+                "Connection string must be for SQL Server or Azure SQL Database. SQLite is no longer supported.");
         }
 
-        // Configure the appropriate provider
-        if (databaseProvider == "SqlServer" || IsAzureSqlConnectionString(connectionString) || IsSqlServerConnectionString(connectionString))
-        {
-            optionsBuilder.UseSqlServer(connectionString);
-        }
-        else
-        {
-            optionsBuilder.UseSqlite(connectionString);
-        }
+        optionsBuilder.UseSqlServer(connectionString);
     }
 
     private static bool IsAzureSqlConnectionString(string connectionString)
