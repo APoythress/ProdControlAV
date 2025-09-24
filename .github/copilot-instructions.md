@@ -28,7 +28,7 @@ All commands must be run from the repository root directory.
   ```
   - API serves on: http://localhost:5000 and https://localhost:5001
   - Includes integrated Blazor WebAssembly frontend
-  - Uses SQLite database (`./data/prodcontrol.db`)
+  - Uses SQL database hosted in Azure SQL DB
   - Supports authentication and multi-tenancy
 
 #### Run the Monitoring Agent (for Raspberry Pi)
@@ -98,7 +98,7 @@ dotnet publish src/ProdControlAV.Agent/ProdControlAV.Agent.csproj -c Release -r 
 ### Architecture Overview
 - **Frontend**: Blazor WebAssembly (runs in browser)
 - **Backend**: ASP.NET Core Web API with Entity Framework Core
-- **Database**: SQLite (development and production)
+- **Database**: Azure SQL DB (development and production)
 - **Authentication**: Cookie-based with multi-tenant support
 - **Monitoring**: Raspberry Pi agent with ICMP/TCP probes
 - **Communication**: REST API between agent and backend
@@ -106,7 +106,7 @@ dotnet publish src/ProdControlAV.Agent/ProdControlAV.Agent.csproj -c Release -r 
 ## Common Development Tasks
 
 ### Working with the Database
-- SQLite database file: `./data/prodcontrol.db` (auto-created)
+- Azure SQL DB
 - **Entity Framework tools are NOT installed by default**
 - To install EF tools: `dotnet tool install --global dotnet-ef`
 - Connection string in `src/ProdControlAV.API/appsettings.json`
@@ -149,7 +149,7 @@ dotnet publish src/ProdControlAV.Agent/ProdControlAV.Agent.csproj -c Release -r 
 - **HTTPS certificate warnings**: Use development certificate or configure for production
 
 ### Development Environment
-- Uses SQLite for both development and production
+- Uses Azure SQL DB for both development and production
 - No external dependencies required
 - CORS configured for localhost development
 - Authentication uses secure cookies
