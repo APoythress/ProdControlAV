@@ -18,6 +18,7 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
             .AddJsonFile("appsettings.json", optional: false)
             .AddJsonFile("appsettings.Development.json", optional: true)
             .AddJsonFile("appsettings.Production.json", optional: true)
+            .AddJsonFile("appsettings.ScriptGeneration.json", optional: true)
             .AddEnvironmentVariables()
             .Build();
 
