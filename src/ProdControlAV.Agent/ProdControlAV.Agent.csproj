@@ -17,6 +17,9 @@
     <ProjectReference Include="..\ProdControlAV.Core\ProdControlAV.Core.csproj" />
     <ProjectReference Include="..\ProdControlAV.Infrastructure\ProdControlAV.Infrastructure.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Docker\" />
+  </ItemGroup>
   <!-- Keep ONLY the Agent's own appsettings*.json in publish -->
   <Target Name="StripForeignAppsettings" BeforeTargets="ProcessPublishFiles">
     <ItemGroup>

@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+**/out/
+**/*.user
+**/*.Secrets.json
+.vscode/
+.idea/
+.git/
+.github/
+node_modules/
+# If your WebApp emits big artifacts:
+src/ProdControlAV.WebApp/wwwroot/dist/

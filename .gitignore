@@ -34,6 +34,10 @@ ScaffoldingReadMe.txt
 *.userosscache
 *.sln.docstates
 
+# Deployment temporary files
+/tmp/prodcontrol-deploy-*
+scripts/deploy-*.log
+
 # JetBrains Rider
 .idea/
 *.sln.iml
@@ -53,3 +57,12 @@ Desktop.ini
 
 # Publish output
 publish/
+
+# Deploy env files
+deploy/
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+data/

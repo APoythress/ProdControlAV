@@ -14,7 +14,7 @@ namespace ProdControlAV.Agent.Services;
 public interface IStatusPublisher
 {
     Task PublishAsync(DeviceStatus status, CancellationToken ct);
-    Task HeartbeatAsync(IEnumerable<DeviceStatus> snapshot, CancellationToken ct);
+    Task HeartbeatAsync(DeviceStatus[] snapshot, CancellationToken ct);
 }
 
 public sealed record DeviceStatus(string Id, string Name, string Ip, string State, DateTimeOffset ChangedAtUtc);
@@ -89,7 +89,7 @@ public sealed class StatusPublisher : IStatusPublisher
         }
     }
 
-    public async Task HeartbeatAsync(IEnumerable<DeviceStatus> snapshot, CancellationToken ct)
+    public async Task HeartbeatAsync(DeviceStatus[] snapshot, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(_api.HeartbeatEndpoint)) return;
 

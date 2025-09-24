@@ -125,6 +125,7 @@ getcap /opt/prodcontrolav/agent/ProdControlAV.Agent
 # Create environment file for the service
 sudo tee /opt/prodcontrolav/agent/.env << 'EOF'
 # ProdControlAV Agent Configuration
+PRODCONTROL_API_URL=https://your-api-server.com/api
 PRODCONTROL_AGENT_APIKEY=your-secure-32plus-character-api-key-here
 EOF
 
@@ -139,6 +140,7 @@ Create the service file:
 
 ```bash
 sudo tee /etc/systemd/system/prodcontrolav-agent.service << 'EOF'
+# /etc/systemd/system/prodcontrolav-agent.service
 [Unit]
 Description=ProdControlAV Device Monitoring Agent
 After=network-online.target
@@ -146,21 +148,21 @@ Wants=network-online.target
 StartLimitIntervalSec=0
 
 [Service]
-Type=notify
+Type=simple
 User=prodctl
 Group=prodctl
 WorkingDirectory=/opt/prodcontrolav/agent
 ExecStart=/opt/prodcontrolav/agent/ProdControlAV.Agent
 EnvironmentFile=/opt/prodcontrolav/agent/.env
-Restart=always
-RestartSec=5
-KillSignal=SIGTERM
-TimeoutStopSec=30
 
-# Security settings
-NoNewPrivileges=true
+# Let systemd supply CAP_NET_RAW; do NOT rely on file caps
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+
+# Reasonable hardening that won't break .NET
+NoNewPrivileges=false
 PrivateTmp=true
-ProtectSystem=strict
+ProtectSystem=full
 ProtectHome=true
 ReadWritePaths=/opt/prodcontrolav/agent
 ProtectControlGroups=true
@@ -169,18 +171,27 @@ ProtectKernelTunables=true
 RestrictRealtime=true
 RestrictSUIDSGID=true
 LockPersonality=true
-MemoryDenyWriteExecute=true
+# MemoryDenyWriteExecute DISABLED (JIT needs exec pages)
+# MemoryDenyWriteExecute=true
 RestrictNamespaces=true
 
-# Network restrictions
+# Network policy: allow local RFC1918 + loopback
 IPAddressDeny=any
 IPAddressAllow=localhost
 IPAddressAllow=192.168.0.0/16
 IPAddressAllow=10.0.0.0/8
 IPAddressAllow=172.16.0.0/12
 
+# Headroom for connections/files
+LimitNOFILE=65536
+TasksMax=infinity
+
+Restart=always
+RestartSec=3
+
 [Install]
 WantedBy=multi-user.target
+
 EOF
 ```
 
@@ -236,6 +247,7 @@ sudo journalctl -u prodcontrolav-agent -f
 
 The agent supports secure configuration via environment variables with the `PRODCONTROL_` prefix:
 
+- **`PRODCONTROL_API_URL`** - Base URL of the ProdControlAV API server (required if not in config)
 - **`PRODCONTROL_AGENT_APIKEY`** - API key for authentication (required, 32+ characters)
 
 ### Configuration Options
