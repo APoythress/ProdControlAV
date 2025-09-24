@@ -83,19 +83,32 @@ builder.Services.AddSingleton<IDeviceStatusRepository, InMemoryDeviceStatusRepos
 builder.Services.AddSingleton<INetworkMonitor, PingNetworkMonitor>();
 builder.Services.AddScoped<ITenantProvider, CompositeTenantProvider>();
 
-// Database configuration - Azure SQL Server only
-// In Azure Container Apps, this reads from the 'db-connstr' secret via environment variable mapping:
-// ConnectionStrings__DefaultConnection=secretref:db-connstr
+// Database configuration - SQLite for development and production
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
+// Default to SQLite if no connection string is provided
 if (string.IsNullOrWhiteSpace(connectionString))
 {
-    throw new InvalidOperationException(
-        "SQL Server connection string must be provided via ConnectionStrings:DefaultConnection. " +
-        "In Azure Container Apps, this is mapped from the 'db-connstr' secret.");
+    // Ensure the data directory exists
+    var dataDir = Path.Combine(Directory.GetCurrentDirectory(), "data");
+    Directory.CreateDirectory(dataDir);
+    connectionString = $"Data Source={Path.Combine(dataDir, "prodcontrol.db")}";
 }
 
-builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlServer(connectionString));
+// Check if this is a SQL Server connection string (for production Azure deployment)
+var useSqlServer = !string.IsNullOrEmpty(connectionString) && 
+                   (connectionString.Contains("Server=", StringComparison.OrdinalIgnoreCase) ||
+                    connectionString.Contains("database.windows.net", StringComparison.OrdinalIgnoreCase)) &&
+                   !connectionString.EndsWith(".db", StringComparison.OrdinalIgnoreCase);
+
+if (useSqlServer)
+{
+    builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlServer(connectionString));
+}
+else
+{
+    builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlite(connectionString));
+}
 
 var app = builder.Build();
 

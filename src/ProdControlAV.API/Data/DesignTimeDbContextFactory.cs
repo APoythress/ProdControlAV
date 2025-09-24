@@ -34,24 +34,29 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
 
     private static void ConfigureDatabase(DbContextOptionsBuilder<AppDbContext> optionsBuilder, IConfiguration configuration, string[] args)
     {
-        // Check environment variables first (for CI/CD scenarios)
         var connectionString = configuration.GetConnectionString("DefaultConnection");
         
+        // Default to SQLite if no connection string is provided
         if (string.IsNullOrEmpty(connectionString))
         {
-            throw new InvalidOperationException(
-                "SQL Server connection string must be provided via ConnectionStrings:DefaultConnection environment variable or configuration. " +
-                "In Azure Container Apps, this is mapped from the 'db-connstr' secret. SQLite is no longer supported.");
+            // Ensure the data directory exists
+            var dataDir = Path.Combine(Directory.GetCurrentDirectory(), "data");
+            Directory.CreateDirectory(dataDir);
+            connectionString = $"Data Source={Path.Combine(dataDir, "prodcontrol.db")}";
         }
 
-        // Verify it's a SQL Server connection string
-        if (!IsAzureSqlConnectionString(connectionString) && !IsSqlServerConnectionString(connectionString))
+        // Check if this is a SQL Server connection string (for production scenarios)
+        var useSqlServer = !string.IsNullOrEmpty(connectionString) && 
+                           (IsAzureSqlConnectionString(connectionString) || IsSqlServerConnectionString(connectionString));
+
+        if (useSqlServer)
         {
-            throw new InvalidOperationException(
-                "Connection string must be for SQL Server or Azure SQL Database. SQLite is no longer supported.");
+            optionsBuilder.UseSqlServer(connectionString);
         }
-
-        optionsBuilder.UseSqlServer(connectionString);
+        else
+        {
+            optionsBuilder.UseSqlite(connectionString);
+        }
     }
 
     private static bool IsAzureSqlConnectionString(string connectionString)
