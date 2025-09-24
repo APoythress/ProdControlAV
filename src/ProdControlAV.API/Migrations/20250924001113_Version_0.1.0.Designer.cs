@@ -10,8 +10,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ProdControlAV.API.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20250813232413_InitialCreate")]
-    partial class InitialCreate
+    [Migration("20250924001113_Version_0.1.0")]
+    partial class Version_010
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -47,7 +47,7 @@ namespace ProdControlAV.API.Migrations
                     b.ToTable("DeviceStatusLogs");
                 });
 
-            modelBuilder.Entity("ProdControlAV.API.Models.Agent", b =>
+            modelBuilder.Entity("ProdControlAV.Core.Models.Agent", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -81,7 +81,7 @@ namespace ProdControlAV.API.Migrations
                     b.ToTable("Agents");
                 });
 
-            modelBuilder.Entity("ProdControlAV.API.Models.AgentCommand", b =>
+            modelBuilder.Entity("ProdControlAV.Core.Models.AgentCommand", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -123,11 +123,12 @@ namespace ProdControlAV.API.Migrations
                     b.ToTable("AgentCommands");
                 });
 
-            modelBuilder.Entity("ProdControlAV.API.Models.AppUser", b =>
+            modelBuilder.Entity("ProdControlAV.Core.Models.AppUser", b =>
                 {
-                    b.Property<Guid>("Id")
+                    b.Property<Guid>("UserId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
+                        .HasColumnType("TEXT")
+                        .HasColumnName("UserId");
 
                     b.Property<string>("DisplayName")
                         .HasColumnType("TEXT");
@@ -140,63 +141,18 @@ namespace ProdControlAV.API.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.HasKey("Id");
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("UserId");
 
                     b.ToTable("Users");
-                });
-
-            modelBuilder.Entity("ProdControlAV.API.Models.Tenant", b =>
-                {
-                    b.Property<string>("Id")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Slug")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("Tenants");
-                });
-
-            modelBuilder.Entity("ProdControlAV.API.Models.UserTenant", b =>
-                {
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TenantId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("AppUserId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("UserId", "TenantId");
-
-                    b.HasIndex("AppUserId");
-
-                    b.HasIndex("TenantId");
-
-                    b.ToTable("UserTenants", (string)null);
                 });
 
             modelBuilder.Entity("ProdControlAV.Core.Models.Device", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("TenantId")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("AllowTelNet")
@@ -211,7 +167,7 @@ namespace ProdControlAV.API.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("LastChecked")
+                    b.Property<DateTimeOffset?>("LastChecked")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("LastResponse")
@@ -233,11 +189,14 @@ namespace ProdControlAV.API.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("INTEGER");
 
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.HasKey("Id", "TenantId");
+                    b.HasKey("Id");
 
                     b.HasIndex("TenantId", "Name");
 
@@ -246,10 +205,8 @@ namespace ProdControlAV.API.Migrations
 
             modelBuilder.Entity("ProdControlAV.Core.Models.DeviceAction", b =>
                 {
-                    b.Property<Guid>("DeviceId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("TenantId")
+                    b.Property<Guid>("ActionId")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ActionName")
@@ -260,30 +217,80 @@ namespace ProdControlAV.API.Migrations
                     b.Property<string>("Command")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("HttpMethod")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Response")
                         .HasColumnType("TEXT");
 
-                    b.HasKey("DeviceId", "TenantId");
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("ActionId");
 
                     b.HasIndex("TenantId", "ActionName");
 
                     b.ToTable("DeviceActions");
                 });
 
-            modelBuilder.Entity("ProdControlAV.API.Models.UserTenant", b =>
+            modelBuilder.Entity("ProdControlAV.Core.Models.Tenant", b =>
                 {
-                    b.HasOne("ProdControlAV.API.Models.AppUser", null)
-                        .WithMany("Memberships")
-                        .HasForeignKey("AppUserId");
+                    b.Property<Guid>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("Id");
 
-                    b.HasOne("ProdControlAV.API.Models.Tenant", "Tenant")
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("TenantId");
+
+                    b.ToTable("Tenants");
+                });
+
+            modelBuilder.Entity("ProdControlAV.Core.Models.UserTenant", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("UserId", "TenantId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("UserTenants", (string)null);
+                });
+
+            modelBuilder.Entity("ProdControlAV.Core.Models.UserTenant", b =>
+                {
+                    b.HasOne("ProdControlAV.Core.Models.Tenant", "Tenant")
                         .WithMany()
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ProdControlAV.API.Models.AppUser", "User")
-                        .WithMany()
+                    b.HasOne("ProdControlAV.Core.Models.AppUser", "User")
+                        .WithMany("Memberships")
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -293,7 +300,7 @@ namespace ProdControlAV.API.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("ProdControlAV.API.Models.AppUser", b =>
+            modelBuilder.Entity("ProdControlAV.Core.Models.AppUser", b =>
                 {
                     b.Navigation("Memberships");
                 });
