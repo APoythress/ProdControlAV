@@ -71,6 +71,7 @@ public class DatabaseConfigurationTests
             factory.CreateDbContext(Array.Empty<string>()));
         
         Assert.Contains("SQL Server connection string must be provided", exception.Message);
+        Assert.Contains("db-connstr", exception.Message);
         Assert.Contains("SQLite is no longer supported", exception.Message);
     }
 

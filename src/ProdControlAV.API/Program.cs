@@ -84,11 +84,15 @@ builder.Services.AddSingleton<INetworkMonitor, PingNetworkMonitor>();
 builder.Services.AddScoped<ITenantProvider, CompositeTenantProvider>();
 
 // Database configuration - Azure SQL Server only
+// In Azure Container Apps, this reads from the 'db-connstr' secret via environment variable mapping:
+// ConnectionStrings__DefaultConnection=secretref:db-connstr
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
 if (string.IsNullOrWhiteSpace(connectionString))
 {
-    throw new InvalidOperationException("SQL Server connection string must be provided via ConnectionStrings:DefaultConnection");
+    throw new InvalidOperationException(
+        "SQL Server connection string must be provided via ConnectionStrings:DefaultConnection. " +
+        "In Azure Container Apps, this is mapped from the 'db-connstr' secret.");
 }
 
 builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlServer(connectionString));

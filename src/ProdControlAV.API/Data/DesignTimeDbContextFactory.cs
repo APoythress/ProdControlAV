@@ -41,7 +41,7 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
         {
             throw new InvalidOperationException(
                 "SQL Server connection string must be provided via ConnectionStrings:DefaultConnection environment variable or configuration. " +
-                "SQLite is no longer supported.");
+                "In Azure Container Apps, this is mapped from the 'db-connstr' secret. SQLite is no longer supported.");
         }
 
         // Verify it's a SQL Server connection string
