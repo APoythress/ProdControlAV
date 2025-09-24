@@ -1,11 +1,7 @@
 ﻿// Controllers/PicoBridgeController.cs
 
-using System.Net.Http;
-using System.Net.Http.Json;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
 
 [ApiController]
 [Route("api/pico")]

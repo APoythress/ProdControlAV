@@ -83,17 +83,10 @@ builder.Services.AddSingleton<IDeviceStatusRepository, InMemoryDeviceStatusRepos
 builder.Services.AddSingleton<INetworkMonitor, PingNetworkMonitor>();
 builder.Services.AddScoped<ITenantProvider, CompositeTenantProvider>();
 
-// Database configuration - SQL Server only
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-
-// Require connection string for SQL Server
-if (string.IsNullOrWhiteSpace(connectionString))
-{
-    throw new InvalidOperationException("DefaultConnection connection string is required for SQL Server database.");
-}
-
-// Always use SQL Server
-builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlServer(connectionString));
+// Database (Always use SQL Server)
+var connectionString = builder.Configuration.GetConnectionString("Default");
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlServer(connectionString));
 
 var app = builder.Build();
 

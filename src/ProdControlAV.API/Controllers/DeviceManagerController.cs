@@ -1,8 +1,4 @@
-using System.Net.Http;
-using System.Net.Http.Json;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
 using ProdControlAV.Core.Models;
 
 namespace ProdControlAV.API.Controllers.Device_Management;
@@ -17,7 +13,7 @@ public class DeviceManagerController
         _http = http;
     }
 
-    public async Task<string> AddNewDeviceAsync(Core.Models.Device device, string csrfToken)
+    public async Task<string> AddNewDeviceAsync(Device device, string csrfToken)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "api/devices")
         {
