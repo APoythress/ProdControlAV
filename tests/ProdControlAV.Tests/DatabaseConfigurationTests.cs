@@ -60,23 +60,26 @@ public class DatabaseConfigurationTests
     }
 
     [Fact]
-    public void DesignTimeDbContextFactory_WithNoConnectionString_ShouldThrowException()
+    public void DesignTimeDbContextFactory_WithNoConnectionString_ShouldCreateSqliteContext()
     {
         // Arrange
         var factory = new DesignTimeDbContextFactory();
         Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", null);
 
-        // Act & Assert
-        var exception = Assert.Throws<InvalidOperationException>(() => 
-            factory.CreateDbContext(Array.Empty<string>()));
+        // Act
+        var context = factory.CreateDbContext(Array.Empty<string>());
         
-        Assert.Contains("SQL Server connection string must be provided", exception.Message);
-        Assert.Contains("db-connstr", exception.Message);
-        Assert.Contains("SQLite is no longer supported", exception.Message);
+        // Assert
+        Assert.NotNull(context);
+        Assert.IsType<AppDbContext>(context);
+        
+        // Verify it's using SQLite as fallback
+        var options = context.Database.GetDbConnection();
+        Assert.Contains("Microsoft.Data.Sqlite", options.GetType().FullName ?? "");
     }
 
     [Fact]
-    public void DesignTimeDbContextFactory_WithSqliteConnectionString_ShouldThrowException()
+    public void DesignTimeDbContextFactory_WithSqliteConnectionString_ShouldCreateSqliteContext()
     {
         // Arrange
         var factory = new DesignTimeDbContextFactory();
@@ -85,12 +88,16 @@ public class DatabaseConfigurationTests
 
         try
         {
-            // Act & Assert
-            var exception = Assert.Throws<InvalidOperationException>(() => 
-                factory.CreateDbContext(Array.Empty<string>()));
+            // Act
+            var context = factory.CreateDbContext(Array.Empty<string>());
             
-            Assert.Contains("Connection string must be for SQL Server", exception.Message);
-            Assert.Contains("SQLite is no longer supported", exception.Message);
+            // Assert
+            Assert.NotNull(context);
+            Assert.IsType<AppDbContext>(context);
+            
+            // Verify it's using SQLite
+            var options = context.Database.GetDbConnection();
+            Assert.Contains("Microsoft.Data.Sqlite", options.GetType().FullName ?? "");
         }
         finally
         {

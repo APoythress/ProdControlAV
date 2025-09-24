@@ -22,7 +22,7 @@ public sealed class UserTenantConfig : IEntityTypeConfiguration<UserTenant>
         builder.HasOne(ut => ut.Tenant)
             .WithMany() // no back-collection required
             .HasForeignKey(ut => ut.TenantId)
-            .OnDelete(DeleteBehavior.Cascade);
+            .OnDelete(DeleteBehavior.NoAction); // Prevent multiple cascade paths in SQL Server
 
         builder.HasIndex(ut => ut.UserId);
         builder.HasIndex(ut => ut.TenantId);
