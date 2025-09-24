@@ -1,0 +1,133 @@
+using System;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
+using ProdControlAV.Core.Interfaces;
+
+namespace ProdControlAV.Tests;
+
+public class DatabaseConfigurationTests
+{
+    [Fact]
+    public void DesignTimeDbContextFactory_WithValidSqlServerConnectionString_ShouldCreateContext()
+    {
+        // Arrange
+        var factory = new DesignTimeDbContextFactory();
+        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", 
+            "Server=localhost;Database=TestDB;Trusted_Connection=true;");
+
+        try
+        {
+            // Act
+            var context = factory.CreateDbContext(Array.Empty<string>());
+
+            // Assert
+            Assert.NotNull(context);
+            Assert.IsType<AppDbContext>(context);
+            
+            // Verify it's using SQL Server
+            var options = context.Database.GetDbConnection();
+            Assert.Contains("Microsoft.Data.SqlClient", options.GetType().FullName ?? "");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", null);
+        }
+    }
+
+    [Fact]
+    public void DesignTimeDbContextFactory_WithAzureSqlConnectionString_ShouldCreateContext()
+    {
+        // Arrange
+        var factory = new DesignTimeDbContextFactory();
+        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", 
+            "Server=tcp:myserver.database.windows.net,1433;Database=TestDB;User ID=user;Password=pass;");
+
+        try
+        {
+            // Act
+            var context = factory.CreateDbContext(Array.Empty<string>());
+
+            // Assert
+            Assert.NotNull(context);
+            Assert.IsType<AppDbContext>(context);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", null);
+        }
+    }
+
+    [Fact]
+    public void DesignTimeDbContextFactory_WithNoConnectionString_ShouldThrowException()
+    {
+        // Arrange
+        var factory = new DesignTimeDbContextFactory();
+        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", null);
+
+        // Act & Assert
+        var exception = Assert.Throws<InvalidOperationException>(() => 
+            factory.CreateDbContext(Array.Empty<string>()));
+        
+        Assert.Contains("SQL Server connection string must be provided", exception.Message);
+        Assert.Contains("SQLite is no longer supported", exception.Message);
+    }
+
+    [Fact]
+    public void DesignTimeDbContextFactory_WithSqliteConnectionString_ShouldThrowException()
+    {
+        // Arrange
+        var factory = new DesignTimeDbContextFactory();
+        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", 
+            "Data Source=./data/test.db");
+
+        try
+        {
+            // Act & Assert
+            var exception = Assert.Throws<InvalidOperationException>(() => 
+                factory.CreateDbContext(Array.Empty<string>()));
+            
+            Assert.Contains("Connection string must be for SQL Server", exception.Message);
+            Assert.Contains("SQLite is no longer supported", exception.Message);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", null);
+        }
+    }
+
+    [Theory]
+    [InlineData("Server=localhost;Database=TestDB;Trusted_Connection=true;")]
+    [InlineData("Server=tcp:myserver.database.windows.net,1433;Database=TestDB;User ID=user;Password=pass;")]
+    [InlineData("Data Source=localhost;Initial Catalog=TestDB;Integrated Security=true;")]
+    public void DatabaseConfiguration_WithValidSqlServerConnectionStrings_ShouldWork(string connectionString)
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new[]
+            {
+                new System.Collections.Generic.KeyValuePair<string, string?>("ConnectionStrings:DefaultConnection", connectionString)
+            })
+            .Build();
+
+        services.AddSingleton<IConfiguration>(configuration);
+        
+        // Add mock tenant provider
+        services.AddScoped<ITenantProvider>(_ => new TestTenantProvider());
+        
+        // Act & Assert - Should not throw
+        services.AddDbContext<AppDbContext>(o => o.UseSqlServer(connectionString));
+        var serviceProvider = services.BuildServiceProvider();
+        var context = serviceProvider.GetRequiredService<AppDbContext>();
+        
+        Assert.NotNull(context);
+    }
+
+    // Test implementation of ITenantProvider
+    private class TestTenantProvider : ITenantProvider
+    {
+        public Guid TenantId => Guid.Empty;
+    }
+}

@@ -9,10 +9,12 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.4.5" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.10.0" />
     <PackageReference Include="Moq" Version="4.20.70" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.6" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\ProdControlAV.Core\ProdControlAV.Core.csproj" />
     <ProjectReference Include="..\..\src\ProdControlAV.Infrastructure\ProdControlAV.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\ProdControlAV.Agent\ProdControlAV.Agent.csproj" />
+    <ProjectReference Include="..\..\src\ProdControlAV.API\ProdControlAV.API.csproj" />
   </ItemGroup>
 </Project>

@@ -83,50 +83,15 @@ builder.Services.AddSingleton<IDeviceStatusRepository, InMemoryDeviceStatusRepos
 builder.Services.AddSingleton<INetworkMonitor, PingNetworkMonitor>();
 builder.Services.AddScoped<ITenantProvider, CompositeTenantProvider>();
 
-// Database configuration - supports both SQLite (development) and SQL Server (production)
-var dbSection = builder.Configuration.GetSection("Database");
-var provider = dbSection["Provider"] ?? "Sqlite";
+// Database configuration - Azure SQL Server only
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
-if (provider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase))
+if (string.IsNullOrWhiteSpace(connectionString))
 {
-    var configured = dbSection.GetSection("Sqlite")["ConnectionString"];
-    string connectionString;
-    if (string.IsNullOrWhiteSpace(configured))
-    {
-        var dbPath = Path.Combine(builder.Environment.ContentRootPath, "data", "prodcontrol.db");
-        Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
-        connectionString = $"Data Source={dbPath}";
-    }
-    else if (configured.StartsWith("Data Source=./", StringComparison.OrdinalIgnoreCase))
-    {
-        var relative = configured.Substring("Data Source=".Length).Trim();
-        var dbPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, relative));
-        Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
-        connectionString = $"Data Source={dbPath}";
-    }
-    else
-    {
-        connectionString = configured;
-    }
+    throw new InvalidOperationException("SQL Server connection string must be provided via ConnectionStrings:DefaultConnection");
+}
 
-    builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlite(connectionString));
-}
-else if (provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
-{
-    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
-                          ?? dbSection.GetSection("SqlServer")["ConnectionString"];
-    
-    if (string.IsNullOrWhiteSpace(connectionString))
-    {
-        throw new InvalidOperationException("SQL Server connection string must be provided when using SqlServer provider");
-    }
-    
-    builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlServer(connectionString));
-}
-else
-{
-    throw new InvalidOperationException($"Unsupported database provider: {provider}. Supported providers are: Sqlite, SqlServer");
-}
+builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlServer(connectionString));
 
 var app = builder.Build();
 
