@@ -83,34 +83,10 @@ builder.Services.AddSingleton<IDeviceStatusRepository, InMemoryDeviceStatusRepos
 builder.Services.AddSingleton<INetworkMonitor, PingNetworkMonitor>();
 builder.Services.AddScoped<ITenantProvider, CompositeTenantProvider>();
 
-// Database (SQLite in dev)
-var dbSection = builder.Configuration.GetSection("Database");
-var provider = dbSection["Provider"] ?? "Sqlite";
-
-if (provider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase))
-{
-    var configured = dbSection.GetSection("Sqlite")["ConnectionString"];
-    string connectionString;
-    if (string.IsNullOrWhiteSpace(configured))
-    {
-        var dbPath = Path.Combine(builder.Environment.ContentRootPath, "data", "prodcontrol.db");
-        Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
-        connectionString = $"Data Source={dbPath}";
-    }
-    else if (configured.StartsWith("Data Source=./", StringComparison.OrdinalIgnoreCase))
-    {
-        var relative = configured.Substring("Data Source=".Length).Trim();
-        var dbPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, relative));
-        Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
-        connectionString = $"Data Source={dbPath}";
-    }
-    else
-    {
-        connectionString = configured;
-    }
-
-    builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlite(connectionString));
-}
+// Database (Always use SQL Server)
+var connectionString = builder.Configuration.GetConnectionString("Default");
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlServer(connectionString));
 
 var app = builder.Build();
 

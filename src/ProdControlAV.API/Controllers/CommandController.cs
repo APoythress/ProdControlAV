@@ -1,7 +1,3 @@
-using System;
-using System.Security.Claims;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ProdControlAV.API.Services;

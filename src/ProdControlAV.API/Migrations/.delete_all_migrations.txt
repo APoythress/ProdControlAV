@@ -1,0 +1,2 @@
+﻿Delete all migration files in this folder before regenerating for SQL Server compatibility.
+
