@@ -1,6 +1,6 @@
 # ProdControlAV - Production Control Audio/Visual System
 
-A .NET 8 distributed system for monitoring and controlling audio/visual production equipment. The system consists of a Blazor WebAssembly frontend, ASP.NET Core Web API backend with SQLite database, and a Raspberry Pi agent for device monitoring via ping/TCP probes.
+A .NET 8 distributed system for monitoring and controlling audio/visual production equipment. The system consists of a Blazor WebAssembly frontend, ASP.NET Core Web API backend with Azure SQL DB, and a Raspberry Pi agent for device monitoring via ping/TCP probes.
 
 Always reference these instructions first and fallback to search or bash commands only when you encounter unexpected information that does not match the info here.
 
