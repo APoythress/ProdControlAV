@@ -36,43 +36,15 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
     {
         var connectionString = configuration.GetConnectionString("DefaultConnection");
         
-        // Default to SQLite if no connection string is provided
+        // Require connection string for SQL Server
         if (string.IsNullOrEmpty(connectionString))
         {
-            // Ensure the data directory exists
-            var dataDir = Path.Combine(Directory.GetCurrentDirectory(), "data");
-            Directory.CreateDirectory(dataDir);
-            connectionString = $"Data Source={Path.Combine(dataDir, "prodcontrol.db")}";
+            throw new InvalidOperationException("DefaultConnection connection string is required for SQL Server database.");
         }
 
-        // Check if this is a SQL Server connection string (for production scenarios)
-        var useSqlServer = !string.IsNullOrEmpty(connectionString) && 
-                           (IsAzureSqlConnectionString(connectionString) || IsSqlServerConnectionString(connectionString));
-
-        if (useSqlServer)
-        {
-            optionsBuilder.UseSqlServer(connectionString);
-        }
-        else
-        {
-            optionsBuilder.UseSqlite(connectionString);
-        }
-    }
-
-    private static bool IsAzureSqlConnectionString(string connectionString)
-    {
-        return connectionString.Contains("database.windows.net", StringComparison.OrdinalIgnoreCase) ||
-               connectionString.Contains("Server=tcp:", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsSqlServerConnectionString(string connectionString)
-    {
-        return connectionString.Contains("Server=", StringComparison.OrdinalIgnoreCase) ||
-               connectionString.Contains("Data Source=", StringComparison.OrdinalIgnoreCase) && 
-               !connectionString.EndsWith(".db", StringComparison.OrdinalIgnoreCase) &&
-               !connectionString.Contains("./", StringComparison.OrdinalIgnoreCase) &&
-               !connectionString.Contains("/", StringComparison.OrdinalIgnoreCase);
-    }
+        // Always use SQL Server
+        optionsBuilder.UseSqlServer(connectionString);
+}
 }
 
 /// <summary>

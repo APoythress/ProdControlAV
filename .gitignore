@@ -61,7 +61,7 @@ publish/
 # Deploy env files
 deploy/
 
-# SQLite database files (no longer used)
+# Database files
 *.db
 *.db-shm
 *.db-wal

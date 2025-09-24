@@ -10,8 +10,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ProdControlAV.API.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20250924001113_Version_0.1.0")]
-    partial class Version_010
+    [Migration("20250924140900_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -286,7 +286,7 @@ namespace ProdControlAV.API.Migrations
                     b.HasOne("ProdControlAV.Core.Models.Tenant", "Tenant")
                         .WithMany()
                         .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
                     b.HasOne("ProdControlAV.Core.Models.AppUser", "User")

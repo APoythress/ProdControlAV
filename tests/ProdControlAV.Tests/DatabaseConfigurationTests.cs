@@ -60,49 +60,15 @@ public class DatabaseConfigurationTests
     }
 
     [Fact]
-    public void DesignTimeDbContextFactory_WithNoConnectionString_ShouldCreateSqliteContext()
+    public void DesignTimeDbContextFactory_WithNoConnectionString_ShouldThrowException()
     {
         // Arrange
         var factory = new DesignTimeDbContextFactory();
         Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", null);
 
-        // Act
-        var context = factory.CreateDbContext(Array.Empty<string>());
-        
-        // Assert
-        Assert.NotNull(context);
-        Assert.IsType<AppDbContext>(context);
-        
-        // Verify it's using SQLite as fallback
-        var options = context.Database.GetDbConnection();
-        Assert.Contains("Microsoft.Data.Sqlite", options.GetType().FullName ?? "");
-    }
-
-    [Fact]
-    public void DesignTimeDbContextFactory_WithSqliteConnectionString_ShouldCreateSqliteContext()
-    {
-        // Arrange
-        var factory = new DesignTimeDbContextFactory();
-        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", 
-            "Data Source=./data/test.db");
-
-        try
-        {
-            // Act
-            var context = factory.CreateDbContext(Array.Empty<string>());
-            
-            // Assert
-            Assert.NotNull(context);
-            Assert.IsType<AppDbContext>(context);
-            
-            // Verify it's using SQLite
-            var options = context.Database.GetDbConnection();
-            Assert.Contains("Microsoft.Data.Sqlite", options.GetType().FullName ?? "");
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", null);
-        }
+        // Act & Assert
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateDbContext(Array.Empty<string>()));
+        Assert.Contains("DefaultConnection connection string is required", exception.Message);
     }
 
     [Theory]
