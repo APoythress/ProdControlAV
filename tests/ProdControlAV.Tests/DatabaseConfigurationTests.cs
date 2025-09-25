@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,7 +15,7 @@ public class DatabaseConfigurationTests
     {
         // Arrange
         var factory = new DesignTimeDbContextFactory();
-        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", 
+        Environment.SetEnvironmentVariable("ConnectionStrings__Default", 
             "Server=localhost;Database=TestDB;Trusted_Connection=true;");
 
         try
@@ -41,7 +42,7 @@ public class DatabaseConfigurationTests
     {
         // Arrange
         var factory = new DesignTimeDbContextFactory();
-        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", 
+        Environment.SetEnvironmentVariable("ConnectionStrings__Default", 
             "Server=tcp:myserver.database.windows.net,1433;Database=TestDB;User ID=user;Password=pass;");
 
         try
@@ -55,7 +56,7 @@ public class DatabaseConfigurationTests
         }
         finally
         {
-            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", null);
+            Environment.SetEnvironmentVariable("ConnectionStrings__Default", null);
         }
     }
 
@@ -64,11 +65,34 @@ public class DatabaseConfigurationTests
     {
         // Arrange
         var factory = new DesignTimeDbContextFactory();
-        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", null);
-
-        // Act & Assert
-        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateDbContext(Array.Empty<string>()));
-        Assert.Contains("DefaultConnection connection string is required", exception.Message);
+        
+        // Clear all possible environment variables and config sources
+        Environment.SetEnvironmentVariable("ConnectionStrings__Default", null);
+        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", null);
+        
+        // Create a temporary directory with empty appsettings files (no connection string)
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+        var originalDir = Directory.GetCurrentDirectory();
+        
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            
+            // Create empty appsettings files
+            File.WriteAllText("appsettings.json", "{}");
+            File.WriteAllText("appsettings.Development.json", "{}");
+            File.WriteAllText("appsettings.Production.json", "{}");
+            
+            // Act & Assert
+            var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateDbContext(Array.Empty<string>()));
+            Assert.Contains("Default connection string is required", exception.Message);
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalDir);
+            Directory.Delete(tempDir, true);
+        }
     }
 
     [Theory]
@@ -82,7 +106,7 @@ public class DatabaseConfigurationTests
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new[]
             {
-                new System.Collections.Generic.KeyValuePair<string, string?>("ConnectionStrings:DefaultConnection", connectionString)
+                new System.Collections.Generic.KeyValuePair<string, string?>("ConnectionStrings:Default", connectionString)
             })
             .Build();
 

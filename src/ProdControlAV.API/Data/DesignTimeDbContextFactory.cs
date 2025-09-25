@@ -35,12 +35,12 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
 
     private static void ConfigureDatabase(DbContextOptionsBuilder<AppDbContext> optionsBuilder, IConfiguration configuration, string[] args)
     {
-        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        var connectionString = configuration.GetConnectionString("Default");
         
         // Require connection string for SQL Server
         if (string.IsNullOrEmpty(connectionString))
         {
-            throw new InvalidOperationException("DefaultConnection connection string is required for SQL Server database.");
+            throw new InvalidOperationException("Default connection string is required for SQL Server database.");
         }
 
         // Always use SQL Server
