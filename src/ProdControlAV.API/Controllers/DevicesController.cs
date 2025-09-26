@@ -77,6 +77,7 @@ public class DevicesController : ControllerBase
         if (!string.IsNullOrWhiteSpace(dto.Name)) d.Name = dto.Name.Trim();
         if (!string.IsNullOrWhiteSpace(dto.Ip))   d.Ip   = dto.Ip.Trim();
         if (dto.Port.HasValue && dto.Port.Value > 0) d.Port = dto.Port.Value;
+        d.AllowTelNet = dto.AllowTelNet;
 
         await _db.SaveChangesAsync();
         return Ok(d);
