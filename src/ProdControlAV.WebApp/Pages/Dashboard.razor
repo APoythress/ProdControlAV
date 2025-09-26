@@ -9,6 +9,7 @@
 
 @inject HttpClient Http
 @inject DeviceApiClient deviceApiClient
+@inject IJSRuntime JSRuntime
 
 <div class="container mt-5 text-white">
     <h3 class="text-center mb-4"><u>Device Status</u></h3>
@@ -17,7 +18,8 @@
         @foreach (var device in Devices)
         {
             <div class="col-12 col-sm-6 col-md-4 col-lg-3">
-                <div class="card text-center bg-dark border-light text-white h-100">
+                <div class="card text-center bg-dark border-light text-white h-100" style="cursor: pointer;" 
+                     @onclick="@(() => OpenDeviceModal(device))">
                     <div class="card-body">
                         <h5 class="card-title">@device.Name</h5>
                         <p class="card-text">
@@ -28,6 +30,126 @@
                 </div>
             </div>
         }
+    </div>
+
+    <!-- Device Modal -->
+    <div class="modal fade" id="deviceModal" tabindex="-1" aria-labelledby="deviceModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content bg-dark text-white">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="deviceModalLabel">Device: @(selectedDevice?.Name ?? "")</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    @if (selectedDevice != null)
+                    {
+                        <!-- Device Details Section -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h6 class="mb-3"><u>Device Details</u></h6>
+                            </div>
+                            
+                            <div class="col-md-6 mb-3">
+                                <label for="deviceName" class="form-label">Name</label>
+                                <input type="text" class="form-control" id="deviceName" @bind="deviceForm.Name">
+                            </div>
+                            
+                            <div class="col-md-6 mb-3">
+                                <label for="deviceModel" class="form-label">Model</label>
+                                <input type="text" class="form-control" id="deviceModel" @bind="deviceForm.Model" readonly>
+                            </div>
+                            
+                            <div class="col-md-6 mb-3">
+                                <label for="deviceIp" class="form-label">IP Address</label>
+                                <input type="text" class="form-control" id="deviceIp" @bind="deviceForm.Ip">
+                            </div>
+                            
+                            <div class="col-md-6 mb-3">
+                                <label for="deviceStatus" class="form-label">Status</label>
+                                <input type="text" class="form-control" id="deviceStatus" value="@(selectedDevice.Status ? "Online" : "Offline")" readonly>
+                            </div>
+                            
+                            <div class="col-12 mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="allowTelnet" @bind="deviceForm.AllowTelNet">
+                                    <label class="form-check-label" for="allowTelnet">
+                                        Allow Telnet
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Device Actions Section -->
+                        <div class="row">
+                            <div class="col-12">
+                                <h6 class="mb-3"><u>Device Actions</u></h6>
+                                @if (deviceActions.Any())
+                                {
+                                    <div class="table-responsive">
+                                        <table class="table table-dark table-striped">
+                                            <thead>
+                                                <tr>
+                                                    <th>Action Name</th>
+                                                    <th>Execute</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var action in deviceActions)
+                                                {
+                                                    <tr>
+                                                        <td>@action.ActionName</td>
+                                                        <td>
+                                                            <button class="btn btn-sm btn-outline-light" 
+                                                                    @onclick="@(() => ExecuteDeviceCommandAsync(action.ActionId))"
+                                                                    disabled="@isExecutingCommand">
+                                                                @if (isExecutingCommand)
+                                                                {
+                                                                    <span class="spinner-border spinner-border-sm" role="status"></span>
+                                                                }
+                                                                else
+                                                                {
+                                                                    <text>Execute</text>
+                                                                }
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <p class="text-muted">No actions available for this device.</p>
+                                }
+                            </div>
+                        </div>
+                    }
+                    
+                    @if (!string.IsNullOrEmpty(modalMessage))
+                    {
+                        <div class="alert @modalMessageCss mt-3" role="alert">
+                            @modalMessage
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-success" @onclick="SaveDeviceChanges" disabled="@isSaving">
+                        @if (isSaving)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status"></span>
+                            <text> Saving...</text>
+                        }
+                        else
+                        {
+                            <text>Save Changes</text>
+                        }
+                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-outline-light" disabled>Manage Actions</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <h4 class="text-center mt-5"><u>Actions</u></h4>
@@ -205,6 +327,132 @@
         {
             try { await _refreshTask; }
             catch (OperationCanceledException) { }
+        }
+    }
+
+    // Modal-related fields and methods
+    private Device? selectedDevice;
+    private DeviceForm deviceForm = new();
+    private List<DeviceAction> deviceActions = new();
+    private bool isSaving = false;
+    private bool isExecutingCommand = false;
+    private string? modalMessage;
+    private string modalMessageCss = "alert-info";
+
+    private class DeviceForm
+    {
+        public string Name { get; set; } = "";
+        public string Model { get; set; } = "";
+        public string Ip { get; set; } = "";
+        public bool AllowTelNet { get; set; }
+    }
+
+    private async Task OpenDeviceModal(Device device)
+    {
+        selectedDevice = device;
+        
+        // Initialize form with device data
+        deviceForm = new DeviceForm
+        {
+            Name = device.Name,
+            Model = device.Model,
+            Ip = device.Ip,
+            AllowTelNet = device.AllowTelNet
+        };
+        
+        // Get actions for this device
+        try
+        {
+            var allActions = await GetActionsAcync() ?? [];
+            deviceActions = allActions.Where(a => a.DeviceId == device.Id).ToList();
+        }
+        catch (Exception ex)
+        {
+            deviceActions = [];
+            modalMessage = $"Error loading actions: {ex.Message}";
+            modalMessageCss = "alert-danger";
+        }
+        
+        // Clear previous messages
+        modalMessage = null;
+        StateHasChanged();
+        
+        // Show modal using JavaScript interop
+        await ShowModal();
+    }
+
+    private async Task SaveDeviceChanges()
+    {
+        if (selectedDevice == null) return;
+
+        isSaving = true;
+        modalMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            // Create UpsertDevice DTO for the API call
+            var updateDto = new
+            {
+                Id = selectedDevice.Id,
+                Name = deviceForm.Name,
+                Model = deviceForm.Model,
+                Brand = selectedDevice.Brand,
+                Type = selectedDevice.Type,
+                AllowTelNet = deviceForm.AllowTelNet,
+                Ip = deviceForm.Ip,
+                Port = selectedDevice.Port
+            };
+
+            var response = await Http.PutAsJsonAsync($"api/devices/{selectedDevice.Id}", updateDto);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                // Update the device in our local list
+                var deviceIndex = Devices.FindIndex(d => d.Id == selectedDevice.Id);
+                if (deviceIndex >= 0)
+                {
+                    Devices[deviceIndex].Name = deviceForm.Name;
+                    Devices[deviceIndex].Ip = deviceForm.Ip;
+                    Devices[deviceIndex].AllowTelNet = deviceForm.AllowTelNet;
+                }
+
+                // Update selected device
+                selectedDevice.Name = deviceForm.Name;
+                selectedDevice.Ip = deviceForm.Ip;
+                selectedDevice.AllowTelNet = deviceForm.AllowTelNet;
+
+                modalMessage = "Device updated successfully!";
+                modalMessageCss = "alert-success";
+            }
+            else
+            {
+                modalMessage = $"Failed to update device: {response.ReasonPhrase}";
+                modalMessageCss = "alert-danger";
+            }
+        }
+        catch (Exception ex)
+        {
+            modalMessage = $"Error updating device: {ex.Message}";
+            modalMessageCss = "alert-danger";
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ShowModal()
+    {
+        // Use JavaScript to show the Bootstrap modal
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('deviceModal')).show()");
+        }
+        catch (Exception)
+        {
+            // Modal should still work with Bootstrap's built-in functionality if JS fails
         }
     }
 
