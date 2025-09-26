@@ -34,7 +34,7 @@
 
     <!-- Device Modal -->
     <div class="modal fade" id="deviceModal" tabindex="-1" aria-labelledby="deviceModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content bg-dark text-white">
                 <div class="modal-header">
                     <h5 class="modal-title" id="deviceModalLabel">Device: @(selectedDevice?.Name ?? "")</h5>
@@ -55,13 +55,13 @@
                             </div>
                             
                             <div class="col-md-6 mb-3">
-                                <label for="deviceModel" class="form-label">Model</label>
-                                <input type="text" class="form-control" id="deviceModel" @bind="deviceForm.Model" readonly>
+                                <label for="deviceIp" class="form-label">IP Address</label>
+                                <input type="text" class="form-control" id="deviceIp" @bind="deviceForm.Ip">
                             </div>
                             
                             <div class="col-md-6 mb-3">
-                                <label for="deviceIp" class="form-label">IP Address</label>
-                                <input type="text" class="form-control" id="deviceIp" @bind="deviceForm.Ip">
+                                <label for="deviceModel" class="form-label">Model</label>
+                                <input type="text" class="form-control" id="deviceModel" @bind="deviceForm.Model" readonly>
                             </div>
                             
                             <div class="col-md-6 mb-3">
@@ -76,6 +76,11 @@
                                         Allow Telnet
                                     </label>
                                 </div>
+                            </div>
+                            
+                            <div class="col-12 mb-3">
+                                <label for="deviceLocation" class="form-label">Location</label>
+                                <input type="text" class="form-control" id="deviceLocation" @bind="deviceForm.Location" placeholder="Enter device location (optional)">
                             </div>
                         </div>
 
@@ -145,8 +150,49 @@
                             <text>Save Changes</text>
                         }
                     </button>
+                    <button type="button" class="btn btn-danger" @onclick="ShowDeleteConfirmation" disabled="@(isSaving || isDeleting)">
+                        @if (isDeleting)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status"></span>
+                            <text> Deleting...</text>
+                        }
+                        else
+                        {
+                            <text>Delete Device</text>
+                        }
+                    </button>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                     <button type="button" class="btn btn-outline-light" disabled>Manage Actions</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div class="modal fade" id="deleteConfirmationModal" tabindex="-1" aria-labelledby="deleteConfirmationModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content bg-dark text-white">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="deleteConfirmationModalLabel">Confirm Delete</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete the device "<strong>@(selectedDevice?.Name ?? "")</strong>"?</p>
+                    <p class="text-warning"><i class="fas fa-exclamation-triangle"></i> This action cannot be undone.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-danger" @onclick="ConfirmDeleteDevice" disabled="@isDeleting">
+                        @if (isDeleting)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status"></span>
+                            <text> Deleting...</text>
+                        }
+                        else
+                        {
+                            <text>Delete</text>
+                        }
+                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 </div>
             </div>
         </div>
@@ -335,6 +381,7 @@
     private DeviceForm deviceForm = new();
     private List<DeviceAction> deviceActions = new();
     private bool isSaving = false;
+    private bool isDeleting = false;
     private bool isExecutingCommand = false;
     private string? modalMessage;
     private string modalMessageCss = "alert-info";
@@ -345,6 +392,7 @@
         public string Model { get; set; } = "";
         public string Ip { get; set; } = "";
         public bool AllowTelNet { get; set; }
+        public string Location { get; set; } = "";
     }
 
     private async Task OpenDeviceModal(Device device)
@@ -357,7 +405,8 @@
             Name = device.Name,
             Model = device.Model,
             Ip = device.Ip,
-            AllowTelNet = device.AllowTelNet
+            AllowTelNet = device.AllowTelNet,
+            Location = device.Location ?? ""
         };
         
         // Get actions for this device
@@ -401,7 +450,8 @@
                 Type = selectedDevice.Type,
                 AllowTelNet = deviceForm.AllowTelNet,
                 Ip = deviceForm.Ip,
-                Port = selectedDevice.Port
+                Port = selectedDevice.Port,
+                Location = deviceForm.Location
             };
 
             var response = await Http.PutAsJsonAsync($"api/devices/{selectedDevice.Id}", updateDto);
@@ -415,12 +465,14 @@
                     Devices[deviceIndex].Name = deviceForm.Name;
                     Devices[deviceIndex].Ip = deviceForm.Ip;
                     Devices[deviceIndex].AllowTelNet = deviceForm.AllowTelNet;
+                    Devices[deviceIndex].Location = deviceForm.Location;
                 }
 
                 // Update selected device
                 selectedDevice.Name = deviceForm.Name;
                 selectedDevice.Ip = deviceForm.Ip;
                 selectedDevice.AllowTelNet = deviceForm.AllowTelNet;
+                selectedDevice.Location = deviceForm.Location;
 
                 modalMessage = "Device updated successfully!";
                 modalMessageCss = "alert-success";
@@ -453,6 +505,73 @@
         catch (Exception)
         {
             // Modal should still work with Bootstrap's built-in functionality if JS fails
+        }
+    }
+
+    private async Task ShowDeleteConfirmation()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('deleteConfirmationModal')).show()");
+        }
+        catch (Exception)
+        {
+            // Modal should still work with Bootstrap's built-in functionality if JS fails
+        }
+    }
+
+    private async Task ConfirmDeleteDevice()
+    {
+        if (selectedDevice == null) return;
+
+        isDeleting = true;
+        StateHasChanged();
+
+        try
+        {
+            var response = await Http.DeleteAsync($"api/devices/{selectedDevice.Id}");
+            
+            if (response.IsSuccessStatusCode)
+            {
+                // Remove device from local list
+                Devices.RemoveAll(d => d.Id == selectedDevice.Id);
+                
+                // Close both modals
+                await JSRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deleteConfirmationModal')).hide()");
+                await JSRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deviceModal')).hide()");
+                
+                // Reset selected device
+                selectedDevice = null;
+                StateHasChanged();
+            }
+            else
+            {
+                modalMessage = $"Failed to delete device: {response.ReasonPhrase}";
+                modalMessageCss = "alert-danger";
+                
+                // Close confirmation modal but keep device modal open to show error
+                await JSRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deleteConfirmationModal')).hide()");
+            }
+        }
+        catch (Exception ex)
+        {
+            modalMessage = $"Error deleting device: {ex.Message}";
+            modalMessageCss = "alert-danger";
+            
+            // Close confirmation modal but keep device modal open to show error
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deleteConfirmationModal')).hide()");
+            }
+            catch (Exception)
+            {
+                // Ignore JS errors
+            }
+        }
+        finally
+        {
+            isDeleting = false;
+            StateHasChanged();
         }
     }
 
