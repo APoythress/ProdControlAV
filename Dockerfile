@@ -20,8 +20,8 @@ RUN dotnet publish src/ProdControlAV.API/ProdControlAV.API.csproj -c Release -o 
 # ---------- Runtime stage ----------
 FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
-EXPOSE 80
-ENV ASPNETCORE_URLS=http://+:80 \
+EXPOSE 8080
+ENV ASPNETCORE_URLS=http://0.0.0.0:8080 \
     DOTNET_EnableDiagnostics=0 \
     COMPlus_GCHeapCount=1
 COPY --from=build /app .

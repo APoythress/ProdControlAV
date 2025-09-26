@@ -72,7 +72,7 @@ public class DevicesController : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<Device>> Update(Guid id, [FromBody] UpsertDevice dto)
     {
-        var d = await _db.Devices.FindAsync(id, _tenant.TenantId);
+        var d = await _db.Devices.FindAsync(id);
         if (d is null) return NotFound();
 
         if (!string.IsNullOrWhiteSpace(dto.Name)) d.Name = dto.Name.Trim();

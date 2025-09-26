@@ -18,15 +18,17 @@
         @foreach (var device in Devices)
         {
             <div class="col-12 col-sm-6 col-md-4 col-lg-3">
-                <div class="card text-center bg-dark border-light text-white h-100" style="cursor: pointer;" 
+                <div class="card text-center bg-dark border-light text-white" style="cursor: pointer;"
                      @onclick="@(() => OpenDeviceModal(device))">
                     <div class="card-body">
                         <h5 class="card-title">@device.Name</h5>
+                        <br/>
                         <p class="card-text">
                             Status:
-                            <span class="badge @GetStatusClass(device)">@device.Status</span>
+                            <span class="badge @GetStatusClass(device)">@(device.Status ? "online" : "offline")</span>
                         </p>
                     </div>
+
                 </div>
             </div>
         }
@@ -549,7 +551,7 @@
                 modalMessage = $"Failed to delete device: {response.ReasonPhrase}";
                 modalMessageCss = "alert-danger";
                 
-                // Close confirmation modal but keep device modal open to show error
+                // Close confirmation modal but keep device modal open to show the error
                 await JSRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deleteConfirmationModal')).hide()");
             }
         }
@@ -558,7 +560,7 @@
             modalMessage = $"Error deleting device: {ex.Message}";
             modalMessageCss = "alert-danger";
             
-            // Close confirmation modal but keep device modal open to show error
+            // Close confirmation modal but keep device modal open to show the error
             try
             {
                 await JSRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deleteConfirmationModal')).hide()");
