@@ -24,8 +24,7 @@ public class CommandController : ControllerBase
         _svc = svc;
     }
 
-    [Route("api/commands/getqueue")]
-    [HttpGet("{deviceId}")]
+    [HttpGet("getqueue/{deviceId}")]
     public async Task<IActionResult> GetCommands(string deviceId)
     {
         var commands = await _queue.FetchPendingCommandsAsync(deviceId);
@@ -53,7 +52,7 @@ public class CommandController : ControllerBase
         });
     }
 
-    [HttpGet("{deviceId}")]
+    [HttpGet("{id}")]
     public async Task<ActionResult<DeviceAction>> Get(string id)
         => await _db.DeviceActions.FindAsync(id, id) is { } d ? Ok(d) : NotFound();
 
@@ -77,6 +76,6 @@ public class CommandController : ControllerBase
         _db.DeviceActions.Add(d);
         await _db.SaveChangesAsync(ct);
 
-        return CreatedAtAction(nameof(GetCommands), new { id = d.DeviceId }, d);
+        return CreatedAtAction(nameof(GetCommands), new { deviceId = d.DeviceId }, d);
     }
 }

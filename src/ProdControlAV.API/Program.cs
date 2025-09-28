@@ -86,10 +86,62 @@ builder.Services.AddScoped<ITenantProvider, CompositeTenantProvider>();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// Add Swagger/OpenAPI support
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+    {
+        Title = "ProdControlAV API",
+        Version = "v1",
+        Description = "API for monitoring and controlling audio/visual production equipment. Includes multi-tenant authentication and device management endpoints.",
+        Contact = new Microsoft.OpenApi.Models.OpenApiContact
+        {
+            Name = "ProdControlAV Security Team",
+            Email = "security@prodcontrolav.com"
+        }
+    });
+    // Add XML comments if available
+    var xmlFile = $"ProdControlAV.API.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+    if (File.Exists(xmlPath))
+        options.IncludeXmlComments(xmlPath);
+    // Add security definition for cookie auth
+    options.AddSecurityDefinition("cookieAuth", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+        Name = "prodcontrolav.auth",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Cookie,
+        Description = "Cookie-based authentication."
+    });
+    options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    {
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id = "cookieAuth"
+                }
+            },
+            new List<string>()
+        }
+    });
+});
 
 var app = builder.Build();
 
-if (!app.Environment.IsDevelopment())
+app.UseSwagger();
+app.UseSwaggerUI(options =>
+{
+    // options.SwaggerEndpoint("/swagger/v1/swagger.json", "ProdControlAV API v1");
+    options.SwaggerEndpoint("https://localhost:5001/swagger/v1/swagger.json", "ProdControlAV API v1");
+    
+    options.DocumentTitle = "ProdControlAV API Documentation";
+});
+
+if (app.Environment.IsDevelopment())
 {
     app.UseHsts();
 }
@@ -137,5 +189,6 @@ app.Use(async (context, next) =>
     }
     await next();
 });
+
 
 app.Run();

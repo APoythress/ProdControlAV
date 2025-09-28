@@ -37,11 +37,68 @@
 
 @code {
     private string displayName = "Loading...";
+    private DateTime _lastActivity = DateTime.UtcNow;
+    private System.Timers.Timer _inactivityTimer;
+    private const int InactivityTimeoutMinutes = 15;
 
     protected override async Task OnInitializedAsync()
     {
         await LoadUserInfo();
+        SetupInactivityTimer();
+        RegisterActivityEvents();
+        RegisterUnloadEvent();
     }
+
+    private void SetupInactivityTimer()
+    {
+        _inactivityTimer = new System.Timers.Timer(60000); // check every minute
+        _inactivityTimer.Elapsed += async (_, __) => await CheckInactivity();
+        _inactivityTimer.Start();
+    }
+
+    private async Task CheckInactivity()
+    {
+        // Use static field for inactivity check
+        if ((DateTime.UtcNow - _lastActivityStatic).TotalMinutes > InactivityTimeoutMinutes)
+        {
+            _inactivityTimer.Stop();
+            await SignOut();
+        }
+    }
+
+    private void RegisterActivityEvents()
+    {
+        JSRuntime.InvokeVoidAsync("eval", @"
+            window.addEventListener('mousemove', () => DotNet.invokeMethodAsync('ProdControlAV.WebApp', 'ReportActivity'));
+            window.addEventListener('keydown', () => DotNet.invokeMethodAsync('ProdControlAV.WebApp', 'ReportActivity'));
+        ");
+    }
+
+    private void RegisterUnloadEvent()
+    {
+        JSRuntime.InvokeVoidAsync("eval", @"
+            window.addEventListener('beforeunload', function() {
+                DotNet.invokeMethodAsync('ProdControlAV.WebApp', 'SignOutOnUnload');
+            });
+        ");
+    }
+
+    [JSInvokable]
+    public static void ReportActivity()
+    {
+        // Use a static field to track last activity
+        _lastActivityStatic = DateTime.UtcNow;
+    }
+
+    [JSInvokable]
+    public static void SignOutOnUnload()
+    {
+        // Optionally, you could call an API endpoint here to log out, but since browser unload is async,
+        // this is best effort. Most secure apps rely on cookie expiration and server-side checks.
+        // You may want to clear local storage or cookies here if needed.
+    }
+
+    private static DateTime _lastActivityStatic = DateTime.UtcNow;
 
     private async Task LoadUserInfo()
     {
@@ -55,6 +112,14 @@
             displayName = "User";
         }
         StateHasChanged();
+    }
+
+    private async Task SignOut()
+    {
+        displayName = "Signing out...";
+        StateHasChanged();
+        await Http.PostAsync("/api/auth/logout", content: null);
+        await JSRuntime.InvokeVoidAsync("window.location.replace", "/login");
     }
 
     private class UserInfoResponse
