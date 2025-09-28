@@ -16,11 +16,11 @@
           </div>
           <div class="offcanvas-body">
             <ul class="navbar-nav justify-content-end flex-grow-1 pe-3">
-              <li class="nav-item">
+              <li class="nav-item" data-bs-dismiss="offcanvas">
                 <a class="nav-link active" aria-current="page" href="/Dashboard">Home</a>
               </li>
-              <li class="nav-item">
-                <a class="nav-link" href="/devicemanager" @onclick="CloseMenu">Add New Device</a>
+              <li class="nav-item" data-bs-dismiss="offcanvas">
+                <a class="nav-link" href="/devicemanager" >Add New Device</a>
               </li>
             </ul>
           </div>
@@ -29,19 +29,6 @@
 </nav>
 </aside>
 
-@inject IJSRuntime JSRuntime
-@using Microsoft.JSInterop
-
 @code {
-    private async Task CloseMenu()
-    {
-        try
-        {
-            await JSRuntime.InvokeVoidAsync("eval", "bootstrap.Offcanvas.getInstance(document.getElementById('offcanvasDarkNavbar'))?.hide()");
-        }
-        catch (Exception)
-        {
-            // Ignore JS errors - menu will still work with default Bootstrap behavior
-        }
-    }
+    
 }
