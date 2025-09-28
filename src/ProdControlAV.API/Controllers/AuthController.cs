@@ -230,7 +230,7 @@ public class AuthController : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         
         return Ok(new { 
-            displayName = displayName ?? email ?? "User",
+            displayName,
             email,
             userId
         });
