@@ -1,9 +1,15 @@
+@inject IJSRuntime JSRuntime
+@inject HttpClient Http
+@using Microsoft.JSInterop
+@using System.Net.Http
+@using System.Net.Http.Json
+
 <aside class="w-full md:w-64 bg-gray-900 text-white min-h-screen px-4 py-6">
     <nav class="navbar navbar-dark bg-dark fixed-top border-bottom border-light">
       <div class="container-fluid">
         <span class="d-flex align-items-center">
           <i class="bi bi-person-circle" style="font-size: 2rem; padding:0 0.5rem;"></i>
-          UserNameHere
+          @displayName
         </span>
         
         <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas" data-bs-target="#offcanvasDarkNavbar" aria-controls="offcanvasDarkNavbar" aria-label="Toggle navigation">
@@ -16,11 +22,11 @@
           </div>
           <div class="offcanvas-body">
             <ul class="navbar-nav justify-content-end flex-grow-1 pe-3">
-              <li class="nav-item" data-bs-dismiss="offcanvas">
+              <li class="nav-item">
                 <a class="nav-link active" aria-current="page" href="/Dashboard">Home</a>
               </li>
-              <li class="nav-item" data-bs-dismiss="offcanvas">
-                <a class="nav-link" href="/devicemanager" >Add New Device</a>
+              <li class="nav-item">
+                <a class="nav-link" href="/devicemanager" @onclick="CloseMenu">Add New Device</a>
               </li>
             </ul>
           </div>
@@ -30,5 +36,43 @@
 </aside>
 
 @code {
-    
+    private string displayName = "Loading...";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUserInfo();
+    }
+
+    private async Task LoadUserInfo()
+    {
+        try
+        {
+            var userInfo = await Http.GetFromJsonAsync<UserInfoResponse>("api/auth/user");
+            displayName = userInfo?.DisplayName ?? "User";
+        }
+        catch (Exception)
+        {
+            displayName = "User";
+        }
+        StateHasChanged();
+    }
+
+    private async Task CloseMenu()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("eval", "bootstrap.Offcanvas.getInstance(document.getElementById('offcanvasDarkNavbar'))?.hide()");
+        }
+        catch (Exception)
+        {
+            // Ignore JS errors - menu will still work with default Bootstrap behavior
+        }
+    }
+
+    private class UserInfoResponse
+    {
+        public string DisplayName { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string UserId { get; set; } = "";
+    }
 }
