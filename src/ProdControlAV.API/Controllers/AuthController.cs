@@ -154,6 +154,7 @@ public class AuthController : ControllerBase
         {
             new(ClaimTypes.NameIdentifier, user.UserId.ToString()),
             new(ClaimTypes.Email, user.Email),
+            new(ClaimTypes.Name, user.DisplayName ?? user.Email),
             new("tenant_ids", string.Join(" ", tenantIds.Select(t => t.ToString()))),
             new("tenant_id", activeTenant.ToString()),
             new("tenant_member", isMember ? "member" : "deny")
@@ -187,12 +188,18 @@ public class AuthController : ControllerBase
             return Forbid();
 
         var email = User.FindFirstValue(ClaimTypes.Email) ?? "";
+        
+        // Get user to include DisplayName in claims
+        var user = await _db.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.UserId == userId, ct);
 
         var tenantIds = memberships.Select(m => m.TenantId).ToList();
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, userId.ToString()),
             new(ClaimTypes.Email, email),
+            new(ClaimTypes.Name, user?.DisplayName ?? email),
             new("tenant_ids", string.Join(" ", tenantIds.Select(id => id.ToString()))),
             new("tenant_id", req.TenantId.ToString())
         };
@@ -211,6 +218,22 @@ public class AuthController : ControllerBase
             new AuthenticationProperties { IsPersistent = true });
 
         return NoContent();
+    }
+
+    // ===== Get current user info =====
+    [Authorize]
+    [HttpGet("user")]
+    public IActionResult GetCurrentUser()
+    {
+        var displayName = User.FindFirstValue(ClaimTypes.Name);
+        var email = User.FindFirstValue(ClaimTypes.Email);
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        
+        return Ok(new { 
+            displayName,
+            email,
+            userId
+        });
     }
 
     // ===== Logout =====

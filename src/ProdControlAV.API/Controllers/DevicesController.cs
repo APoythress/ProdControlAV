@@ -41,7 +41,7 @@ public class DevicesController : ControllerBase
     public async Task<ActionResult<Device>> Get(Guid id) // use Guid to match route
         => await _db.Devices.FindAsync(id, _tenant.TenantId) is { } d ? Ok(d) : NotFound();
 
-    public record UpsertDevice(Guid? Id, string Name, string Model, string Brand, string Type, bool AllowTelNet, string Ip, int? Port);
+    public record UpsertDevice(Guid? Id, string Name, string Model, string Brand, string Type, bool AllowTelNet, string Ip, int? Port, string? Location);
 
     [HttpPost]
     [Authorize(Policy = "IsMember")]
@@ -61,6 +61,7 @@ public class DevicesController : ControllerBase
             AllowTelNet = dto.AllowTelNet,
             Ip = dto.Ip.Trim(),
             Port = dto.Port.GetValueOrDefault(80),
+            Location = dto.Location?.Trim(),
             Status = false
         };
         _db.Devices.Add(d);
@@ -71,12 +72,14 @@ public class DevicesController : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<Device>> Update(Guid id, [FromBody] UpsertDevice dto)
     {
-        var d = await _db.Devices.FindAsync(id, _tenant.TenantId);
+        var d = await _db.Devices.FindAsync(id);
         if (d is null) return NotFound();
 
         if (!string.IsNullOrWhiteSpace(dto.Name)) d.Name = dto.Name.Trim();
         if (!string.IsNullOrWhiteSpace(dto.Ip))   d.Ip   = dto.Ip.Trim();
         if (dto.Port.HasValue && dto.Port.Value > 0) d.Port = dto.Port.Value;
+        d.AllowTelNet = dto.AllowTelNet;
+        d.Location = dto.Location?.Trim();
 
         await _db.SaveChangesAsync();
         return Ok(d);
