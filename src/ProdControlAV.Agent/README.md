@@ -500,9 +500,56 @@ The agent includes comprehensive unit tests covering:
 
 Run tests with: `dotnet test`
 
+## Integration with Other Projects
+
+### System Architecture Role
+The ProdControlAV.Agent serves as the **Edge Computing Layer** in the distributed system:
+- **Local Device Access**: Direct network access to A/V equipment on premises
+- **Real-Time Monitoring**: Continuous device health monitoring with sub-second response
+- **Command Execution**: Secure execution of device control commands from the API
+- **Status Reporting**: Reliable status updates to the central API server
+
+### Communication with ProdControlAV.API
+- **HTTPS REST API**: All communication with API server uses encrypted HTTPS
+- **API Key Authentication**: Each agent authenticates using a unique 32+ character API key
+- **Heartbeat Protocol**: Regular heartbeat messages maintain connection and report agent health
+- **Command Distribution**: API queues commands for agent execution via polling mechanism
+
+### Data Flow Integration
+```
+ProdControlAV.WebApp → ProdControlAV.API → ProdControlAV.Agent → A/V Devices
+A/V Devices → ProdControlAV.Agent → ProdControlAV.API → Database → ProdControlAV.WebApp
+```
+
+#### Device Status Reporting
+1. Agent monitors devices using `ProdControlAV.Infrastructure.PingNetworkMonitor`
+2. Status changes are immediately reported to API via `POST /api/agents/{id}/device-status`
+3. API persists status changes using `ProdControlAV.Core.Models.DeviceStatusLog`
+4. WebApp receives real-time updates through dashboard auto-refresh
+
+#### Command Execution Flow
+1. User initiates command through `ProdControlAV.WebApp` interface
+2. WebApp sends command to `ProdControlAV.API` via REST endpoint
+3. API creates `AgentCommand` record and queues for appropriate agent
+4. Agent polls `GET /api/commands/pending/{agentId}` and retrieves commands
+5. Agent executes command using `ProdControlAV.Infrastructure.TelnetDeviceController`
+6. Agent reports execution result back to API for audit logging
+
+### Shared Components
+- **ProdControlAV.Core.Models**: Agent uses Device, AgentCommand, and DeviceStatusLog entities
+- **ProdControlAV.Infrastructure.Services**: Agent implements network monitoring and device control services
+- **Configuration**: Agent configuration aligns with API tenant and authentication requirements
+
 ## Support
 
 For issues, feature requests, or contributions, please refer to the main ProdControlAV repository documentation.
+
+### Related Documentation
+- [System Overview](../../README.md) - Complete system architecture and project relationships
+- [ProdControlAV.API](../ProdControlAV.API/README.md) - Backend API endpoints and authentication
+- [ProdControlAV.Core](../ProdControlAV.Core/README.md) - Shared domain models and interfaces
+- [ProdControlAV.Infrastructure](../ProdControlAV.Infrastructure/README.md) - Service implementations used by Agent
+- [Deployment Scripts](../../scripts/README.md) - Automated deployment tools for Raspberry Pi
 
 ## License
 
