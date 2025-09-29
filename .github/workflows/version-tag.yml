@@ -25,7 +25,8 @@ jobs:
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             VERSION="${{ github.event.inputs.version }}"
           else
-            VERSION=$(grep -oP 'Version = "\K[^"]+' src/ProdControlAV.Core/Configuration/AppVersion.cs || echo "0.1.00")
+            # Extract only the base version from the Version field (not FullVersion)
+            VERSION=$(grep -oP 'public const string Version = "\K[^"]+' src/ProdControlAV.Core/Configuration/AppVersion.cs || echo "0.1.00")
           fi
           echo "version=v$VERSION" >> $GITHUB_OUTPUT
           echo "Extracted version: v$VERSION"
@@ -52,24 +53,21 @@ jobs:
           
       - name: Create GitHub Release
         if: steps.check_tag.outputs.exists == 'false'
-        uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ steps.extract_version.outputs.version }}
-          release_name: Release ${{ steps.extract_version.outputs.version }}
-          body: |
-            ## Changes in ${{ steps.extract_version.outputs.version }}
+        run: |
+          gh release create "${{ steps.extract_version.outputs.version }}" \
+            --title "Release ${{ steps.extract_version.outputs.version }}" \
+            --notes "## Changes in ${{ steps.extract_version.outputs.version }}
             
             Automated release created from main branch.
             
             ### Features
+            - JWT Authentication implementation for Agent-API communication
             - Interactive device cards with modal editing
             - Device management with CRUD operations
             - Location field support
             - Delete confirmation workflows
             - Responsive modal centering
-            - Menu improvements and version display
-            
-          draft: false
-          prerelease: true
+            - Menu improvements and version display" \
+            --prerelease
