@@ -7,7 +7,7 @@ using ProdControlAV.Core.Models;
 namespace ProdControlAV.API.Controllers;
 
 [ApiController]
-[Authorize(Policy = "TenantMember")]
+[AllowAnonymous]
 [Route("api/agents")]
 public sealed class AgentsController : ControllerBase
 {

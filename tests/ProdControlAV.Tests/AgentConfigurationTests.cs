@@ -625,4 +625,96 @@ public class AgentConfigurationTests
         
         Assert.Contains("must be at least 32 characters long", exception.Message);
     }
+
+    [Fact]
+    public void ApiOptions_WithCorrectAgentEndpoints_ShouldConfigureCorrectly()
+    {
+        // Arrange
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                { "Api:BaseUrl", "https://localhost:5001/api" },
+                { "Api:DevicesEndpoint", "/agents/devices" },
+                { "Api:StatusEndpoint", "/agents/status" },
+                { "Api:HeartbeatEndpoint", "/agents/heartbeat" },
+                { "Api:CommandsEndpoint", "/agents/commands/next" },
+                { "Api:CommandCompleteEndpoint", "/agents/commands/complete" },
+                { "Api:ApiKey", "12345678901234567890123456789012" }, // 32 characters
+                { "Api:TenantId", "12345678-1234-1234-1234-123456789abc" } // Valid GUID
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(configuration);
+        services.Configure<ApiOptions>(configuration.GetSection("Api"));
+        
+        // Simulate the PostConfigure from Program.cs
+        services.PostConfigure<ApiOptions>(options =>
+        {
+            var envApiUrl = Environment.GetEnvironmentVariable("PRODCONTROL_API_URL");
+            if (!string.IsNullOrWhiteSpace(envApiUrl))
+            {
+                options.BaseUrl = envApiUrl;
+            }
+            
+            if (string.IsNullOrWhiteSpace(options.ApiKey))
+            {
+                options.ApiKey = Environment.GetEnvironmentVariable("PRODCONTROL_AGENT_APIKEY");
+            }
+            
+            if (string.IsNullOrWhiteSpace(options.BaseUrl))
+            {
+                throw new InvalidOperationException(
+                    "Agent API Base URL must be provided either in configuration (Api:BaseUrl) " +
+                    "or via environment variable (PRODCONTROL_API_URL)");
+            }
+            
+            if (!Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var baseUri))
+            {
+                throw new InvalidOperationException(
+                    $"Agent API Base URL '{options.BaseUrl}' is not a valid URI");
+            }
+            
+            if (baseUri.Scheme != "https" && baseUri.Scheme != "http")
+            {
+                throw new InvalidOperationException(
+                    $"Agent API Base URL '{options.BaseUrl}' must use http or https scheme");
+            }
+            
+            if (string.IsNullOrWhiteSpace(options.ApiKey))
+            {
+                throw new InvalidOperationException(
+                    "Agent API Key must be provided either in configuration (Api:ApiKey) " +
+                    "or via environment variable (PRODCONTROL_AGENT_APIKEY)");
+            }
+            
+            if (options.ApiKey.Length < 32)
+            {
+                throw new InvalidOperationException(
+                    "Agent API Key must be at least 32 characters long for security");
+            }
+            
+            if (options.TenantId == null || options.TenantId == Guid.Empty)
+            {
+                throw new InvalidOperationException(
+                    "Agent Tenant ID must be provided either in configuration (Api:TenantId) " +
+                    "or via environment variable (PRODCONTROL_AGENT_TENANTID)");
+            }
+        });
+
+        var serviceProvider = services.BuildServiceProvider();
+
+        // Act
+        var options = serviceProvider.GetRequiredService<IOptions<ApiOptions>>().Value;
+
+        // Assert
+        Assert.Equal("https://localhost:5001/api", options.BaseUrl);
+        Assert.Equal("/agents/devices", options.DevicesEndpoint);
+        Assert.Equal("/agents/status", options.StatusEndpoint);
+        Assert.Equal("/agents/heartbeat", options.HeartbeatEndpoint);
+        Assert.Equal("/agents/commands/next", options.CommandsEndpoint);
+        Assert.Equal("/agents/commands/complete", options.CommandCompleteEndpoint);
+        Assert.Equal("12345678901234567890123456789012", options.ApiKey);
+        Assert.Equal(Guid.Parse("12345678-1234-1234-1234-123456789abc"), options.TenantId);
+    }
 }

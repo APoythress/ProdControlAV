@@ -29,6 +29,16 @@ builder.Services.PostConfigure<ApiOptions>(options =>
         options.ApiKey = Environment.GetEnvironmentVariable("PRODCONTROL_AGENT_APIKEY");
     }
     
+    // If TenantId is not set in config, try environment variable
+    if (options.TenantId == null || options.TenantId == Guid.Empty)
+    {
+        var tenantIdStr = Environment.GetEnvironmentVariable("PRODCONTROL_AGENT_TENANTID");
+        if (!string.IsNullOrWhiteSpace(tenantIdStr) && Guid.TryParse(tenantIdStr, out var tenantId))
+        {
+            options.TenantId = tenantId;
+        }
+    }
+    
     // Validate that ApiKey is provided
     if (string.IsNullOrWhiteSpace(options.ApiKey))
     {
@@ -42,6 +52,14 @@ builder.Services.PostConfigure<ApiOptions>(options =>
     {
         throw new InvalidOperationException(
             "Agent API Key must be at least 32 characters long for security");
+    }
+    
+    // Validate that TenantId is provided
+    if (options.TenantId == null || options.TenantId == Guid.Empty)
+    {
+        throw new InvalidOperationException(
+            "Agent Tenant ID must be provided either in configuration (Api:TenantId) " +
+            "or via environment variable (PRODCONTROL_AGENT_TENANTID)");
     }
 });
 

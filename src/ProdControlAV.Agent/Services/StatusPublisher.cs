@@ -56,7 +56,7 @@ public sealed class StatusPublisher : IStatusPublisher
             var request = new StatusUploadRequest
             {
                 AgentKey = _api.ApiKey ?? "",
-                TenantId = null, // Let the API determine the tenant from the agent key
+                TenantId = _api.TenantId, // Use configured TenantId
                 Readings = new List<StatusReading>
                 {
                     new StatusReading
