@@ -1,11 +1,15 @@
 using System;
 using System.IO;
 using System.Net.Http;
+using System.Text;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.IdentityModel.Tokens;
+using ProdControlAV.API.Models;
 using ProdControlAV.API.Services;
 using ProdControlAV.Infrastructure.Services;
 using ProdControlAV.Core.Interfaces;
@@ -45,7 +49,11 @@ builder.Services.AddCors(options =>
         .AllowCredentials());
 });
 
-// Cookie auth
+// JWT Configuration
+builder.Services.Configure<JwtConfig>(builder.Configuration.GetSection("Jwt"));
+builder.Services.AddScoped<IJwtService, JwtService>();
+
+// Authentication - Cookie auth (for web users) and JWT Bearer (for agents)
 builder.Services
     .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, o =>
@@ -53,6 +61,36 @@ builder.Services
         o.LoginPath = "/signin"; // optional
         o.Cookie.Name = "prodcontrolav.auth";
         o.SlidingExpiration = true;
+    })
+    .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
+    {
+        var jwtConfig = builder.Configuration.GetSection("Jwt").Get<JwtConfig>();
+        if (jwtConfig != null && !string.IsNullOrEmpty(jwtConfig.Key))
+        {
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                ValidIssuer = jwtConfig.Issuer,
+                ValidAudience = jwtConfig.Audience,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtConfig.Key)),
+                ClockSkew = TimeSpan.FromMinutes(1) // Allow 1 minute clock skew
+            };
+        }
+        
+        options.Events = new JwtBearerEvents
+        {
+            OnAuthenticationFailed = context =>
+            {
+                if (context.Exception.GetType() == typeof(SecurityTokenExpiredException))
+                {
+                    context.Response.Headers.Append("Token-Expired", "true");
+                }
+                return Task.CompletedTask;
+            }
+        };
     });
 
 // Authorization policy
@@ -70,6 +108,14 @@ builder.Services.AddAuthorization(options =>
     
     options.AddPolicy("TenantMember", policy =>
         policy.Requirements.Add(new TenantMemberRequirement()));
+    
+    // JWT Agent policy - requires tenantId claim from JWT
+    options.AddPolicy("JwtAgent", policy =>
+    {
+        policy.AuthenticationSchemes.Add(JwtBearerDefaults.AuthenticationScheme);
+        policy.RequireAuthenticatedUser();
+        policy.RequireClaim("tenantId");
+    });
 });
 
 // IMPORTANT: register the handler as Scoped (or Transient), not Singleton
@@ -107,14 +153,23 @@ builder.Services.AddSwaggerGen(options =>
     var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
     if (File.Exists(xmlPath))
         options.IncludeXmlComments(xmlPath);
-    // Add security definition for cookie auth
+    // Add security definitions for cookie auth and JWT Bearer
     options.AddSecurityDefinition("cookieAuth", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
     {
         Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
         Name = "prodcontrolav.auth",
         In = Microsoft.OpenApi.Models.ParameterLocation.Cookie,
-        Description = "Cookie-based authentication."
+        Description = "Cookie-based authentication for web users."
     });
+    
+    options.AddSecurityDefinition("bearerAuth", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        Description = "JWT Bearer authentication for agents."
+    });
+    
     options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
     {
         {
@@ -124,6 +179,17 @@ builder.Services.AddSwaggerGen(options =>
                 {
                     Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
                     Id = "cookieAuth"
+                }
+            },
+            new List<string>()
+        },
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id = "bearerAuth"
                 }
             },
             new List<string>()
