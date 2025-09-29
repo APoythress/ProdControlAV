@@ -63,7 +63,10 @@ builder.Services.PostConfigure<ApiOptions>(options =>
     }
 });
 
-// HttpClient(s)
+// JWT auth service for token management
+builder.Services.AddSingleton<IJwtAuthService, JwtAuthService>();
+
+// HttpClient(s) - using the singleton JWT service
 builder.Services.AddHttpClient<IStatusPublisher, StatusPublisher>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(5);
@@ -73,6 +76,11 @@ builder.Services.AddHttpClient<IDeviceSource, DeviceSource>(c =>
     c.Timeout = TimeSpan.FromSeconds(5);
 });
 builder.Services.AddHttpClient<ICommandService, CommandService>(c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(10);
+});
+// Additional HTTP client for JWT auth service
+builder.Services.AddHttpClient<JwtAuthService>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(10);
 });
