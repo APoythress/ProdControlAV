@@ -20,6 +20,7 @@ public sealed class ApiOptions
     public string? CommandsEndpoint { get; init; }
     public string? CommandCompleteEndpoint { get; init; }
     public string? ApiKey { get; set; } // Changed to set for runtime configuration
+    public Guid? TenantId { get; set; } // Added for environment variable configuration
     public int RefreshDevicesSeconds { get; init; } = 30;
     public int CommandPollIntervalSeconds { get; init; } = 10;
 }

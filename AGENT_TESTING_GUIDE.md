@@ -54,9 +54,10 @@ VALUES (
 
 ## 2. Agent Configuration
 
-Set the API key environment variable:
+Set the required environment variables:
 ```bash
 export PRODCONTROL_AGENT_APIKEY="12345678901234567890123456789012"
+export PRODCONTROL_AGENT_TENANTID="12345678-1234-1234-1234-123456789abc"
 ```
 
 The Agent `appsettings.json` should already be configured with correct endpoints:
@@ -88,7 +89,9 @@ Expected output:
 ### Start the Agent
 ```bash 
 cd src/ProdControlAV.Agent
-PRODCONTROL_AGENT_APIKEY="12345678901234567890123456789012" dotnet run
+PRODCONTROL_AGENT_APIKEY="12345678901234567890123456789012" \
+PRODCONTROL_AGENT_TENANTID="12345678-1234-1234-1234-123456789abc" \
+dotnet run
 ```
 
 ### Expected Agent Logs
@@ -150,3 +153,5 @@ info: System.Net.Http.HttpClient.ICommandService.LogicalHandler[100]
 - **Plain text key:** `12345678901234567890123456789012` (32 characters)
 - **SHA256 hash:** `E1B85B27D6BCB05846C18E6A48F118E89F0C0587140DE9FB3359F8370D0DBA08`
 - **Environment variable:** `PRODCONTROL_AGENT_APIKEY`
+- **Tenant ID:** `12345678-1234-1234-1234-123456789abc`
+- **Tenant environment variable:** `PRODCONTROL_AGENT_TENANTID`

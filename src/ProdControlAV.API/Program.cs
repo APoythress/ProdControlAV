@@ -82,6 +82,7 @@ builder.Services.AddSingleton<IDeviceController>(new TelnetDeviceController());
 builder.Services.AddSingleton<IDeviceStatusRepository, InMemoryDeviceStatusRepository>();
 builder.Services.AddSingleton<INetworkMonitor, PingNetworkMonitor>();
 builder.Services.AddScoped<ITenantProvider, CompositeTenantProvider>();
+builder.Services.AddScoped<IAgentAuth, AgentAuth>();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));

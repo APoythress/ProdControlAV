@@ -639,7 +639,8 @@ public class AgentConfigurationTests
                 { "Api:HeartbeatEndpoint", "/agents/heartbeat" },
                 { "Api:CommandsEndpoint", "/agents/commands/next" },
                 { "Api:CommandCompleteEndpoint", "/agents/commands/complete" },
-                { "Api:ApiKey", "12345678901234567890123456789012" } // 32 characters
+                { "Api:ApiKey", "12345678901234567890123456789012" }, // 32 characters
+                { "Api:TenantId", "12345678-1234-1234-1234-123456789abc" } // Valid GUID
             })
             .Build();
 
@@ -692,6 +693,13 @@ public class AgentConfigurationTests
                 throw new InvalidOperationException(
                     "Agent API Key must be at least 32 characters long for security");
             }
+            
+            if (options.TenantId == null || options.TenantId == Guid.Empty)
+            {
+                throw new InvalidOperationException(
+                    "Agent Tenant ID must be provided either in configuration (Api:TenantId) " +
+                    "or via environment variable (PRODCONTROL_AGENT_TENANTID)");
+            }
         });
 
         var serviceProvider = services.BuildServiceProvider();
@@ -707,5 +715,6 @@ public class AgentConfigurationTests
         Assert.Equal("/agents/commands/next", options.CommandsEndpoint);
         Assert.Equal("/agents/commands/complete", options.CommandCompleteEndpoint);
         Assert.Equal("12345678901234567890123456789012", options.ApiKey);
+        Assert.Equal(Guid.Parse("12345678-1234-1234-1234-123456789abc"), options.TenantId);
     }
 }
