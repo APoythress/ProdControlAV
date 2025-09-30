@@ -22,11 +22,22 @@ Deploy the ProdControlAV Agent to your Raspberry Pi in one command:
   --api-key "your-secure-32-character-api-key-here"
 ```
 
+### Option 3: Quick Agent Update
+For updating an existing agent installation (preserves existing configuration):
+
+```bash
+./scripts/update-agent.sh --pi-host 192.168.1.100
+```
+
 ## Scripts Overview
 
 ### `deploy-agent.sh`
 
 **Main deployment orchestration script** - Handles the complete end-to-end deployment process from your development environment to the Raspberry Pi.
+
+### `update-agent.sh`
+
+**Agent update script** - Streamlined script for updating an existing agent installation. Perfect for quick updates after code changes.
 
 ### `quick-deploy.sh`
 
@@ -103,6 +114,64 @@ Deploy the ProdControlAV Agent to your Raspberry Pi in one command:
   --api-key "your-secure-api-key-here" \
   --skip-build \
   --skip-tests
+```
+
+## Update Agent Script
+
+The `update-agent.sh` script is optimized for updating existing agent installations. It's perfect for quick updates after code changes.
+
+### Key Features
+- **Automatic versioned backups** - Creates backups with format: `agent_vx.x.xxx_mm-dd-yyyy-hh:mm:ss`
+- **Configuration preservation** - Keeps existing .env configuration by default
+- **Clean updates** - Properly handles existing files in the production folder
+- **Optional config update** - Can update API URL and key if needed
+
+### Update Script Usage
+
+#### Basic Update (Preserve Existing Configuration)
+```bash
+./scripts/update-agent.sh --pi-host 192.168.1.100
+```
+
+This will:
+1. Build the agent project
+2. Transfer to temp folder on Raspberry Pi
+3. Backup current installation with versioned folder name
+4. Move new files from temp to production folder
+5. Restart the service
+
+#### Update with Configuration Changes
+```bash
+./scripts/update-agent.sh \
+  --pi-host 192.168.1.100 \
+  --update-config \
+  --api-url https://new-server.com/api \
+  --api-key "new-api-key-min-32-characters-long"
+```
+
+#### Update with Custom Options
+```bash
+./scripts/update-agent.sh \
+  --pi-host raspberrypi.local \
+  --pi-user admin \
+  --pi-ssh-port 2222 \
+  --build-config Debug \
+  --verbose
+```
+
+### Backup Management
+
+The update script creates timestamped backups of your agent installation:
+
+```bash
+# View backups on Pi
+ssh pi@192.168.1.100 'ls -la /opt/prodcontrolav/agent_v*'
+
+# Restore from a backup if needed
+ssh pi@192.168.1.100 'sudo systemctl stop prodcontrolav-agent && \
+  sudo mv /opt/prodcontrolav/agent /opt/prodcontrolav/agent_broken && \
+  sudo mv /opt/prodcontrolav/agent_v1.0.0_09-30-2024-14:30:00 /opt/prodcontrolav/agent && \
+  sudo systemctl start prodcontrolav-agent'
 ```
 
 ## Prerequisites

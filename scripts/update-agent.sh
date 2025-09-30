@@ -1,0 +1,544 @@
+#!/bin/bash
+set -e
+
+# ProdControlAV Agent Update Script
+# Streamlined script for updating an existing agent deployment on Raspberry Pi
+# Usage: ./scripts/update-agent.sh --pi-host <host> [options]
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Default values
+PI_HOST=""
+PI_USER="pi"
+PI_SSH_PORT="22"
+API_URL=""
+API_KEY=""
+UPDATE_CONFIG=false
+BUILD_CONFIG="Release"
+TEMP_DIR="/tmp/prodcontrol-update-$$"
+DOCKER_BUILD=true
+VERBOSE=false
+
+# Function to print status messages
+print_status() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+print_step() {
+    echo -e "${BLUE}[STEP]${NC} $1"
+}
+
+print_verbose() {
+    if [[ "$VERBOSE" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} $1"
+    fi
+}
+
+# Function to show usage
+show_usage() {
+    cat << EOF
+ProdControlAV Agent Update Script
+
+USAGE:
+    $0 --pi-host <host> [options]
+
+REQUIRED PARAMETERS:
+    --pi-host <host>        Raspberry Pi hostname or IP address
+
+OPTIONAL PARAMETERS:
+    --pi-user <user>        SSH username for Raspberry Pi (default: pi)
+    --pi-ssh-port <port>    SSH port for Raspberry Pi (default: 22)
+    --update-config         Prompt to update API URL and API key
+    --api-url <url>         API server base URL (required if --update-config)
+    --api-key <key>         Agent API key (required if --update-config)
+    --build-config <cfg>    Build configuration Release|Debug (default: Release)
+    --no-docker            Use dotnet publish instead of Docker build
+    --verbose              Enable verbose logging
+    --help                 Show this help message
+
+EXAMPLES:
+    # Basic update (reuses existing configuration)
+    $0 --pi-host 192.168.1.100
+
+    # Update with new configuration
+    $0 --pi-host 192.168.1.100 --update-config --api-url https://myserver.com/api --api-key "your-api-key"
+    
+    # Update with verbose logging
+    $0 --pi-host raspberrypi.local --pi-user admin --verbose
+
+DESCRIPTION:
+    This script updates an existing agent installation by:
+    1. Building the agent project
+    2. Transferring files to a temporary directory on Pi
+    3. Backing up the current installation with versioned folder name
+    4. Moving new files from temp to production folder
+    5. Restarting the agent service
+
+EOF
+}
+
+# Function to validate parameters
+validate_parameters() {
+    local errors=0
+    
+    if [[ -z "$PI_HOST" ]]; then
+        print_error "Raspberry Pi host is required (--pi-host)"
+        errors=$((errors + 1))
+    fi
+    
+    if [[ "$UPDATE_CONFIG" == "true" ]]; then
+        if [[ -z "$API_URL" ]]; then
+            print_error "API URL is required when --update-config is specified (--api-url)"
+            errors=$((errors + 1))
+        fi
+        
+        if [[ -z "$API_KEY" ]]; then
+            print_error "API key is required when --update-config is specified (--api-key)"
+            errors=$((errors + 1))
+        fi
+        
+        if [[ -n "$API_KEY" ]] && [[ ${#API_KEY} -lt 32 ]]; then
+            print_error "API key must be at least 32 characters long"
+            errors=$((errors + 1))
+        fi
+    fi
+    
+    if [[ $errors -gt 0 ]]; then
+        echo
+        show_usage
+        exit 1
+    fi
+}
+
+# Function to check prerequisites
+check_prerequisites() {
+    print_step "Checking prerequisites..."
+    
+    local missing_tools=()
+    
+    # Check for required tools
+    command -v dotnet >/dev/null 2>&1 || missing_tools+=("dotnet")
+    command -v ssh >/dev/null 2>&1 || missing_tools+=("ssh")
+    command -v scp >/dev/null 2>&1 || missing_tools+=("scp")
+    
+    if [[ "$DOCKER_BUILD" == "true" ]]; then
+        command -v docker >/dev/null 2>&1 || missing_tools+=("docker")
+    fi
+    
+    if [[ ${#missing_tools[@]} -gt 0 ]]; then
+        print_error "Missing required tools: ${missing_tools[*]}"
+        exit 1
+    fi
+    
+    print_status "All prerequisites met"
+}
+
+# Function to test SSH connection
+test_ssh_connection() {
+    print_step "Testing SSH connection to $PI_USER@$PI_HOST:$PI_SSH_PORT..."
+    
+    if ssh -p "$PI_SSH_PORT" -o ConnectTimeout=5 -o BatchMode=yes "$PI_USER@$PI_HOST" "echo 'SSH connection successful'" >/dev/null 2>&1; then
+        print_status "SSH connection successful"
+    else
+        print_error "Failed to connect to $PI_USER@$PI_HOST:$PI_SSH_PORT"
+        print_error "Please ensure:"
+        print_error "  1. The Raspberry Pi is powered on and connected to the network"
+        print_error "  2. SSH is enabled on the Raspberry Pi"
+        print_error "  3. SSH key authentication is configured"
+        print_error "  4. The hostname/IP and port are correct"
+        exit 1
+    fi
+}
+
+# Function to build the agent
+build_agent() {
+    print_step "Building ProdControlAV Agent..."
+    
+    # Create temporary directory for build output
+    mkdir -p "$TEMP_DIR"
+    
+    if [[ "$DOCKER_BUILD" == "true" ]]; then
+        print_status "Building with Docker for ARM64..."
+        print_verbose "Docker build command: docker build -f src/ProdControlAV.Agent/Dockerfile --build-arg BUILD_CONFIGURATION=$BUILD_CONFIG -t prodcontrolav-agent:latest ."
+        
+        if docker build -f src/ProdControlAV.Agent/Dockerfile \
+            --build-arg BUILD_CONFIGURATION="$BUILD_CONFIG" \
+            -t prodcontrolav-agent:latest .; then
+            print_status "Docker build completed successfully"
+        else
+            print_error "Docker build failed"
+            cleanup
+            exit 1
+        fi
+        
+        # Extract built files from Docker image
+        print_status "Extracting built files from Docker image..."
+        container_id=$(docker create prodcontrolav-agent:latest)
+        docker cp "$container_id:/app/" "$TEMP_DIR/publish"
+        docker rm "$container_id"
+        
+    else
+        print_status "Building with dotnet publish for ARM64..."
+        print_verbose "Publish command: dotnet publish src/ProdControlAV.Agent/ProdControlAV.Agent.csproj -c $BUILD_CONFIG -r linux-arm64 --self-contained true -o $TEMP_DIR/publish"
+        
+        if dotnet publish src/ProdControlAV.Agent/ProdControlAV.Agent.csproj \
+            -c "$BUILD_CONFIG" \
+            -r linux-arm64 \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:PublishTrimmed=true \
+            -o "$TEMP_DIR/publish"; then
+            print_status "dotnet publish completed successfully"
+        else
+            print_error "dotnet publish failed"
+            cleanup
+            exit 1
+        fi
+    fi
+    
+    # Verify the main binary exists
+    if [[ ! -f "$TEMP_DIR/publish/ProdControlAV.Agent" ]]; then
+        print_error "Build completed but ProdControlAV.Agent binary not found"
+        cleanup
+        exit 1
+    fi
+    
+    print_status "Agent build completed successfully"
+}
+
+# Function to transfer files to Raspberry Pi
+transfer_files() {
+    print_step "Transferring files to Raspberry Pi..."
+    
+    # Create temporary directory on Pi
+    print_status "Creating temporary directory on Raspberry Pi..."
+    ssh -p "$PI_SSH_PORT" "$PI_USER@$PI_HOST" "mkdir -p /tmp/prodcontrol-agent-update"
+    
+    # Copy published files
+    print_status "Copying published files to Raspberry Pi..."
+    print_verbose "SCP command: scp -P $PI_SSH_PORT -r $TEMP_DIR/publish/* $PI_USER@$PI_HOST:/tmp/prodcontrol-agent-update/"
+    
+    if scp -P "$PI_SSH_PORT" -r "$TEMP_DIR/publish"/* "$PI_USER@$PI_HOST:/tmp/prodcontrol-agent-update/"; then
+        print_status "File transfer completed successfully"
+    else
+        print_error "File transfer failed"
+        cleanup
+        exit 1
+    fi
+}
+
+# Function to update agent on Raspberry Pi
+update_on_pi() {
+    print_step "Updating agent on Raspberry Pi..."
+    
+    # Create the remote update script
+    local remote_script="/tmp/prodcontrol-remote-update.sh"
+    
+    cat > "$TEMP_DIR/remote-update.sh" << 'EOF'
+#!/bin/bash
+set -e
+
+# Remote update script for Raspberry Pi
+UPDATE_CONFIG="$1"
+API_URL="$2"
+API_KEY="$3"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+print_status() {
+    echo -e "${GREEN}[PI-INFO]${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}[PI-WARNING]${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}[PI-ERROR]${NC} $1"
+}
+
+print_status "Starting agent update on Raspberry Pi..."
+
+# Check if published files exist
+if [[ ! -f "/tmp/prodcontrol-agent-update/ProdControlAV.Agent" ]]; then
+    print_error "ProdControlAV.Agent binary not found in /tmp/prodcontrol-agent-update/"
+    exit 1
+fi
+
+# Stop existing service if running
+if systemctl is-active --quiet prodcontrolav-agent 2>/dev/null; then
+    print_status "Stopping existing agent service..."
+    sudo systemctl stop prodcontrolav-agent
+else
+    print_warning "Agent service is not running"
+fi
+
+# Get version from existing binary if available
+VERSION=""
+if [[ -f "/opt/prodcontrolav/agent/ProdControlAV.Agent" ]]; then
+    # Try to extract version information from the binary
+    # If version info is not available, use a generic identifier
+    VERSION=$(strings /opt/prodcontrolav/agent/ProdControlAV.Agent 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "1.0.0")
+fi
+
+# If we still don't have a version, use default
+if [[ -z "$VERSION" ]]; then
+    VERSION="1.0.0"
+fi
+
+# Create backup with version and timestamp
+if [[ -d "/opt/prodcontrolav/agent" ]] && [[ -f "/opt/prodcontrolav/agent/ProdControlAV.Agent" ]]; then
+    TIMESTAMP=$(date +%m-%d-%Y-%H:%M:%S)
+    BACKUP_NAME="agent_v${VERSION}_${TIMESTAMP}"
+    print_status "Backing up existing installation to: $BACKUP_NAME"
+    sudo mv /opt/prodcontrolav/agent "/opt/prodcontrolav/$BACKUP_NAME"
+else
+    print_warning "No existing installation found to backup"
+fi
+
+# Create application directory
+print_status "Creating application directory..."
+sudo mkdir -p /opt/prodcontrolav/agent
+
+# Move new files from temp to production
+print_status "Installing new agent files..."
+sudo mv /tmp/prodcontrol-agent-update/* /opt/prodcontrolav/agent/
+
+# Set ownership
+print_status "Setting file ownership..."
+sudo chown -R prodctl:prodctl /opt/prodcontrolav/agent
+
+# Install capabilities tools if needed
+if ! command -v setcap &> /dev/null; then
+    print_status "Installing libcap2-bin..."
+    sudo apt-get update -qq
+    sudo apt-get install -y libcap2-bin
+fi
+
+# Set ICMP capability
+print_status "Setting ICMP capability on agent binary..."
+sudo setcap cap_net_raw+ep /opt/prodcontrolav/agent/ProdControlAV.Agent
+
+# Verify capability was set
+if getcap /opt/prodcontrolav/agent/ProdControlAV.Agent | grep -q "cap_net_raw+ep"; then
+    print_status "ICMP capability set successfully"
+else
+    print_error "Failed to set ICMP capability"
+    exit 1
+fi
+
+# Update environment configuration if requested
+if [[ "$UPDATE_CONFIG" == "true" ]]; then
+    print_status "Updating environment configuration..."
+    sudo tee /opt/prodcontrolav/agent/.env > /dev/null << ENVEOF
+# ProdControlAV Agent Configuration
+# This file contains sensitive information - keep it secure
+PRODCONTROL_API_URL=${API_URL}
+PRODCONTROL_AGENT_APIKEY=${API_KEY}
+ENVEOF
+
+    # Secure the environment file
+    sudo chown prodctl:prodctl /opt/prodcontrolav/agent/.env
+    sudo chmod 600 /opt/prodcontrolav/agent/.env
+    print_status "Configuration updated successfully"
+else
+    print_status "Keeping existing configuration (no changes requested)"
+fi
+
+# Ensure systemd service is installed and enabled
+if [[ -f "/opt/prodcontrolav/agent/scripts/prodcontrolav-agent.service" ]]; then
+    if [[ ! -f "/etc/systemd/system/prodcontrolav-agent.service" ]]; then
+        print_status "Installing systemd service..."
+        sudo cp /opt/prodcontrolav/agent/scripts/prodcontrolav-agent.service /etc/systemd/system/
+        sudo systemctl daemon-reload
+        sudo systemctl enable prodcontrolav-agent
+    fi
+else
+    print_warning "Systemd service file not found in scripts directory"
+fi
+
+print_status "Update completed successfully"
+EOF
+
+    # Copy the remote script to Pi and execute it
+    print_status "Copying update script to Raspberry Pi..."
+    scp -P "$PI_SSH_PORT" "$TEMP_DIR/remote-update.sh" "$PI_USER@$PI_HOST:$remote_script"
+    
+    print_status "Executing update on Raspberry Pi..."
+    if [[ "$UPDATE_CONFIG" == "true" ]]; then
+        ssh -p "$PI_SSH_PORT" "$PI_USER@$PI_HOST" "chmod +x $remote_script && $remote_script 'true' '$API_URL' '$API_KEY'"
+    else
+        ssh -p "$PI_SSH_PORT" "$PI_USER@$PI_HOST" "chmod +x $remote_script && $remote_script 'false' '' ''"
+    fi
+    
+    print_status "Cleaning up temporary files on Raspberry Pi..."
+    ssh -p "$PI_SSH_PORT" "$PI_USER@$PI_HOST" "rm -rf /tmp/prodcontrol-agent-update $remote_script"
+}
+
+# Function to start the agent service
+start_agent_service() {
+    print_step "Starting ProdControlAV Agent service..."
+    
+    if ssh -p "$PI_SSH_PORT" "$PI_USER@$PI_HOST" "sudo systemctl start prodcontrolav-agent"; then
+        print_status "Agent service started successfully"
+    else
+        print_error "Failed to start agent service"
+        print_error "Check the service status with: sudo systemctl status prodcontrolav-agent"
+        exit 1
+    fi
+    
+    # Wait a moment for the service to initialize
+    sleep 3
+    
+    # Check service status
+    print_status "Checking agent service status..."
+    if ssh -p "$PI_SSH_PORT" "$PI_USER@$PI_HOST" "sudo systemctl is-active --quiet prodcontrolav-agent"; then
+        print_status "Agent service is running successfully"
+    else
+        print_warning "Agent service may have failed to start properly"
+        print_warning "Check the service status and logs on the Raspberry Pi:"
+        print_warning "  sudo systemctl status prodcontrolav-agent"
+        print_warning "  sudo journalctl -u prodcontrolav-agent -f"
+    fi
+}
+
+# Function to show update summary
+show_summary() {
+    print_step "Update Summary"
+    echo
+    echo -e "${GREEN}✓ Agent successfully updated on: $PI_USER@$PI_HOST${NC}"
+    echo -e "${GREEN}✓ Service restarted${NC}"
+    if [[ "$UPDATE_CONFIG" == "true" ]]; then
+        echo -e "${GREEN}✓ Configuration updated${NC}"
+    else
+        echo -e "${GREEN}✓ Configuration preserved${NC}"
+    fi
+    echo
+    echo "Service Management Commands (run on Raspberry Pi):"
+    echo "  Check status:   sudo systemctl status prodcontrolav-agent"
+    echo "  View logs:      sudo journalctl -u prodcontrolav-agent -f"
+    echo "  Stop service:   sudo systemctl stop prodcontrolav-agent"
+    echo "  Start service:  sudo systemctl start prodcontrolav-agent"
+    echo "  Restart:        sudo systemctl restart prodcontrolav-agent"
+    echo
+    echo "Backup Information:"
+    echo "  Old agent backups are stored in: /opt/prodcontrolav/agent_v*"
+    echo "  To view backups: ssh $PI_USER@$PI_HOST 'ls -la /opt/prodcontrolav/agent_v*'"
+    echo
+}
+
+# Cleanup function
+cleanup() {
+    if [[ -d "$TEMP_DIR" ]]; then
+        print_status "Cleaning up temporary files..."
+        rm -rf "$TEMP_DIR"
+    fi
+}
+
+# Trap to ensure cleanup on exit
+trap cleanup EXIT
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --pi-host)
+            PI_HOST="$2"
+            shift 2
+            ;;
+        --pi-user)
+            PI_USER="$2"
+            shift 2
+            ;;
+        --pi-ssh-port)
+            PI_SSH_PORT="$2"
+            shift 2
+            ;;
+        --update-config)
+            UPDATE_CONFIG=true
+            shift
+            ;;
+        --api-url)
+            API_URL="$2"
+            shift 2
+            ;;
+        --api-key)
+            API_KEY="$2"
+            shift 2
+            ;;
+        --build-config)
+            BUILD_CONFIG="$2"
+            shift 2
+            ;;
+        --no-docker)
+            DOCKER_BUILD=false
+            shift
+            ;;
+        --verbose)
+            VERBOSE=true
+            shift
+            ;;
+        --help)
+            show_usage
+            exit 0
+            ;;
+        *)
+            print_error "Unknown option: $1"
+            echo
+            show_usage
+            exit 1
+            ;;
+    esac
+done
+
+# Main execution
+main() {
+    echo -e "${GREEN}ProdControlAV Agent Update${NC}"
+    echo "=========================="
+    echo
+    
+    # Validate parameters
+    validate_parameters
+    
+    # Check prerequisites
+    check_prerequisites
+    
+    # Test SSH connection
+    test_ssh_connection
+    
+    # Build the agent
+    build_agent
+    
+    # Transfer files
+    transfer_files
+    
+    # Update on Pi
+    update_on_pi
+    
+    # Start the service
+    start_agent_service
+    
+    # Show summary
+    show_summary
+    
+    print_status "Update completed successfully!"
+}
+
+# Execute main function
+main
