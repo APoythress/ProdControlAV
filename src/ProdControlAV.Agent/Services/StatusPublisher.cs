@@ -21,7 +21,6 @@ public sealed record DeviceStatus(string Id, string Name, string Ip, string Stat
 
 public sealed class StatusUploadRequest
 {
-    public string AgentKey { get; set; } = string.Empty;
     public Guid? TenantId { get; set; }
     public List<StatusReading> Readings { get; set; } = new();
 }
@@ -39,13 +38,15 @@ public sealed class StatusPublisher : IStatusPublisher
     private readonly HttpClient _http;
     private readonly ILogger<StatusPublisher> _logger;
     private readonly ApiOptions _api;
+    private readonly IJwtAuthService _jwtAuth;
     private readonly JsonSerializerOptions _json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
-    public StatusPublisher(HttpClient http, ILogger<StatusPublisher> logger, Microsoft.Extensions.Options.IOptions<ApiOptions> api)
+    public StatusPublisher(HttpClient http, ILogger<StatusPublisher> logger, Microsoft.Extensions.Options.IOptions<ApiOptions> api, IJwtAuthService jwtAuth)
     {
         _http = http;
         _logger = logger;
         _api = api.Value;
+        _jwtAuth = jwtAuth;
         _http.BaseAddress = new Uri(_api.BaseUrl);
     }
 
@@ -53,9 +54,16 @@ public sealed class StatusPublisher : IStatusPublisher
     {
         try
         {
+            // Get valid JWT token
+            var token = await _jwtAuth.GetValidTokenAsync(ct);
+            if (string.IsNullOrEmpty(token))
+            {
+                _logger.LogWarning("Failed to obtain valid JWT token for status publishing");
+                return;
+            }
+
             var request = new StatusUploadRequest
             {
-                AgentKey = _api.ApiKey ?? "",
                 TenantId = _api.TenantId, // Use configured TenantId
                 Readings = new List<StatusReading>
                 {
@@ -73,6 +81,7 @@ public sealed class StatusPublisher : IStatusPublisher
             {
                 Content = JsonContent.Create(request, options: _json)
             };
+            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
             var res = await _http.SendAsync(req, ct);
             res.EnsureSuccessStatusCode();

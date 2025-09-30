@@ -14,7 +14,6 @@ namespace ProdControlAV.Agent.Services;
 
 public class CommandPullRequest 
 { 
-    public string AgentKey { get; set; } = string.Empty; 
     public int Max { get; set; } = 10; 
 }
 
@@ -25,7 +24,6 @@ public class CommandPullResponse
 
 public class CommandCompleteRequest 
 { 
-    public string AgentKey { get; set; } = string.Empty; 
     public Guid CommandId { get; set; } 
     public bool Success { get; set; } 
     public string? Message { get; set; } 
@@ -44,6 +42,7 @@ public class CommandService : ICommandService
     private readonly HttpClient _http;
     private readonly ILogger<CommandService> _logger;
     private readonly ApiOptions _api;
+    private readonly IJwtAuthService _jwtAuth;
 
     // Explicit JsonSerializerOptions with a TypeInfoResolver to opt-out of the reflection-disabled behavior
     private static readonly JsonSerializerOptions s_jsonOptions = new()
@@ -51,11 +50,12 @@ public class CommandService : ICommandService
         TypeInfoResolver = new DefaultJsonTypeInfoResolver()
     };
 
-    public CommandService(HttpClient http, ILogger<CommandService> logger, IOptions<ApiOptions> api)
+    public CommandService(HttpClient http, ILogger<CommandService> logger, IOptions<ApiOptions> api, IJwtAuthService jwtAuth)
     {
         _http = http;
         _logger = logger;
         _api = api.Value;
+        _jwtAuth = jwtAuth;
         _http.BaseAddress = new Uri(_api.BaseUrl);
     }
 
@@ -66,9 +66,16 @@ public class CommandService : ICommandService
             if (string.IsNullOrWhiteSpace(_api.CommandsEndpoint))
                 return new List<CommandEnvelope>();
 
+            // Get valid JWT token
+            var token = await _jwtAuth.GetValidTokenAsync(ct);
+            if (string.IsNullOrEmpty(token))
+            {
+                _logger.LogWarning("Failed to obtain valid JWT token for command polling");
+                return new List<CommandEnvelope>();
+            }
+
             var request = new CommandPullRequest
             {
-                AgentKey = _api.ApiKey ?? "",
                 Max = 10
             };
 
@@ -76,6 +83,7 @@ public class CommandService : ICommandService
             {
                 Content = JsonContent.Create(request, options: s_jsonOptions)
             };
+            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
             using var res = await _http.SendAsync(req, ct);
             if (!res.IsSuccessStatusCode)
@@ -144,9 +152,16 @@ public class CommandService : ICommandService
             if (string.IsNullOrWhiteSpace(_api.CommandCompleteEndpoint))
                 return;
 
+            // Get valid JWT token
+            var token = await _jwtAuth.GetValidTokenAsync(ct);
+            if (string.IsNullOrEmpty(token))
+            {
+                _logger.LogWarning("Failed to obtain valid JWT token for command completion");
+                return;
+            }
+
             var request = new CommandCompleteRequest
             {
-                AgentKey = _api.ApiKey ?? "",
                 CommandId = commandId,
                 Success = success,
                 Message = message,
@@ -157,6 +172,7 @@ public class CommandService : ICommandService
             {
                 Content = JsonContent.Create(request, options: s_jsonOptions)
             };
+            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
             using var res = await _http.SendAsync(req, ct);
             res.EnsureSuccessStatusCode();

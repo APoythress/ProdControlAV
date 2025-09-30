@@ -26,6 +26,7 @@ public sealed class DeviceSource : BackgroundService, IDeviceSource
     private readonly HttpClient _http;
     private readonly ILogger<DeviceSource> _logger;
     private readonly ApiOptions _api;
+    private readonly IJwtAuthService _jwtAuth;
     private readonly List<AgentDevice> _devices = new();
     private readonly object _gate = new();
     private readonly PeriodicTimer _timer;
@@ -35,11 +36,12 @@ public sealed class DeviceSource : BackgroundService, IDeviceSource
         get { lock(_gate) return _devices.ToArray(); }
     }
 
-    public DeviceSource(HttpClient http, ILogger<DeviceSource> logger, IOptions<ApiOptions> api)
+    public DeviceSource(HttpClient http, ILogger<DeviceSource> logger, IOptions<ApiOptions> api, IJwtAuthService jwtAuth)
     {
         _http = http;
         _logger = logger;
         _api = api.Value;
+        _jwtAuth = jwtAuth;
         _http.BaseAddress = new Uri(_api.BaseUrl);
         _timer = new PeriodicTimer(TimeSpan.FromSeconds(Math.Max(5, _api.RefreshDevicesSeconds)));
     }
@@ -48,8 +50,16 @@ public sealed class DeviceSource : BackgroundService, IDeviceSource
     {
         try
         {
-            var url = $"{_api.DevicesEndpoint}?agentKey={Uri.EscapeDataString(_api.ApiKey ?? "")}";
-            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            // Get valid JWT token
+            var token = await _jwtAuth.GetValidTokenAsync(ct);
+            if (string.IsNullOrEmpty(token))
+            {
+                _logger.LogWarning("Failed to obtain valid JWT token for device refresh");
+                return;
+            }
+
+            using var req = new HttpRequestMessage(HttpMethod.Get, _api.DevicesEndpoint);
+            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
             using var res = await _http.SendAsync(req, ct);
             res.EnsureSuccessStatusCode();

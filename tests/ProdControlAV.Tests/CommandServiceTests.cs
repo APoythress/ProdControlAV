@@ -20,6 +20,7 @@ public class CommandServiceTests
         // Arrange
         var mockLogger = new Mock<ILogger<CommandService>>();
         var mockHttpClient = new Mock<HttpClient>();
+        var mockJwtAuth = new Mock<IJwtAuthService>();
         var apiOptions = new ApiOptions
         {
             BaseUrl = "https://test.com/api",
@@ -31,7 +32,7 @@ public class CommandServiceTests
             ApiKey = "test-key"
         };
 
-        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions));
+        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object);
 
         var command = new CommandEnvelope
         {
@@ -61,6 +62,7 @@ public class CommandServiceTests
         // Arrange
         var mockLogger = new Mock<ILogger<CommandService>>();
         var mockHttpClient = new Mock<HttpClient>();
+        var mockJwtAuth = new Mock<IJwtAuthService>();
         var apiOptions = new ApiOptions
         {
             BaseUrl = "https://test.com/api",
@@ -72,7 +74,7 @@ public class CommandServiceTests
             ApiKey = "test-key"
         };
 
-        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions));
+        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object);
 
         var command = new CommandEnvelope
         {

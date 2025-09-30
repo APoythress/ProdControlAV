@@ -49,7 +49,9 @@ public class DeviceSourceTests
             .ReturnsAsync(httpResponse);
 
         var httpClient = new HttpClient(mockMessageHandler.Object);
-        var deviceSource = new DeviceSource(httpClient, mockLogger.Object, Options.Create(apiOptions));
+        var mockJwtAuth = new Mock<IJwtAuthService>();
+        mockJwtAuth.Setup(x => x.GetValidTokenAsync(It.IsAny<CancellationToken>())).ReturnsAsync("valid-jwt-token");
+        var deviceSource = new DeviceSource(httpClient, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object);
 
         // Act
         await deviceSource.RefreshAsync(CancellationToken.None);
@@ -85,7 +87,9 @@ public class DeviceSourceTests
             .ThrowsAsync(new HttpRequestException("Network error"));
 
         var httpClient = new HttpClient(mockMessageHandler.Object);
-        var deviceSource = new DeviceSource(httpClient, mockLogger.Object, Options.Create(apiOptions));
+        var mockJwtAuth = new Mock<IJwtAuthService>();
+        mockJwtAuth.Setup(x => x.GetValidTokenAsync(It.IsAny<CancellationToken>())).ReturnsAsync("valid-jwt-token");
+        var deviceSource = new DeviceSource(httpClient, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object);
 
         // Act & Assert - Should not throw
         await deviceSource.RefreshAsync(CancellationToken.None);
@@ -107,6 +111,7 @@ public class DeviceSourceTests
         // Arrange
         var mockLogger = new Mock<ILogger<DeviceSource>>();
         var mockHttpClient = new Mock<HttpClient>();
+        var mockJwtAuth = new Mock<IJwtAuthService>();
         
         var apiOptions = new ApiOptions
         {
@@ -116,7 +121,7 @@ public class DeviceSourceTests
             ApiKey = "test-key-12345678901234567890123456789012"
         };
 
-        var deviceSource = new DeviceSource(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions));
+        var deviceSource = new DeviceSource(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object);
 
         // Act & Assert
         Assert.Empty(deviceSource.Current);
