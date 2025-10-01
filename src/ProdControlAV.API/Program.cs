@@ -16,6 +16,7 @@ using ProdControlAV.Core.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using ProdControlAV.API.Auth;
+using Microsoft.Extensions.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -79,14 +80,14 @@ builder.Services
                 ClockSkew = TimeSpan.FromMinutes(1) // Allow 1 minute clock skew
             };
         }
-        
         options.Events = new JwtBearerEvents
         {
             OnAuthenticationFailed = context =>
             {
-                if (context.Exception.GetType() == typeof(SecurityTokenExpiredException))
+                var logger = context.HttpContext.RequestServices.GetService<ILogger<ProdControlAV.API.Controllers.AgentsController>>();
+                if (logger != null)
                 {
-                    context.Response.Headers.Append("Token-Expired", "true");
+                    logger.LogWarning("[JWT AUTH FAILED] {Exception} | Token: {Token}", context.Exception.ToString(), context.Request.Headers["Authorization"]);
                 }
                 return Task.CompletedTask;
             }
