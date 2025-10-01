@@ -115,7 +115,7 @@ public sealed class AgentsController : ControllerBase
     {
         // Extract agent information from JWT claims
         var agentIdClaim = User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
-        var tenantIdClaim = User.FindFirst("tenantId")?.Value;
+        var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenantId" || c.Type.EndsWith("/tenantId"))?.Value;
 
         if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
         {
@@ -153,7 +153,7 @@ public sealed class AgentsController : ControllerBase
     {
         // Extract agent information from JWT claims
         var agentIdClaim = User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
-        var tenantIdClaim = User.FindFirst("tenantId")?.Value;
+        var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenantId" || c.Type.EndsWith("/tenantId"))?.Value;
 
         if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
         {
@@ -190,7 +190,7 @@ public sealed class AgentsController : ControllerBase
     {
         // Extract agent information from JWT claims
         var agentIdClaim = User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
-        var tenantIdClaim = User.FindFirst("tenantId")?.Value;
+        var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenantId" || c.Type.EndsWith("/tenantId"))?.Value;
 
         if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
         {
