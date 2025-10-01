@@ -1,5 +1,7 @@
 using System;
+using System.IdentityModel.Tokens.Jwt;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -19,6 +21,10 @@ using ProdControlAV.API.Auth;
 using Microsoft.Extensions.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Disable JWT claim type mapping to preserve original claim names from tokens
+// This allows "sub" to remain "sub" instead of being mapped to ClaimTypes.NameIdentifier
+JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
 // Controllers + JSON enum strings (optional)
 builder.Services.AddControllers();
@@ -88,6 +94,16 @@ builder.Services
                 if (logger != null)
                 {
                     logger.LogWarning("[JWT AUTH FAILED] {Exception} | Token: {Token}", context.Exception.ToString(), context.Request.Headers["Authorization"]);
+                }
+                return Task.CompletedTask;
+            },
+            OnTokenValidated = context =>
+            {
+                var logger = context.HttpContext.RequestServices.GetService<ILogger<ProdControlAV.API.Controllers.AgentsController>>();
+                if (logger != null)
+                {
+                    var claims = context.Principal?.Claims.Select(c => $"{c.Type}={c.Value}").ToList();
+                    logger.LogInformation("[JWT TOKEN VALIDATED] Claims: {Claims}", string.Join(", ", claims ?? new List<string>()));
                 }
                 return Task.CompletedTask;
             }
