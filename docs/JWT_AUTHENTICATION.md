@@ -158,6 +158,7 @@ To test the complete flow:
 - Verify token hasn't expired
 - Check JWT configuration matches between API instances
 - Confirm clock synchronization between agent and API hosts
+- Ensure global middleware checks for both `tenant_id` (cookie auth) and `tenantId` (JWT auth) claims
 
 ### Logging
 
