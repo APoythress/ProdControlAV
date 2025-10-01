@@ -35,8 +35,9 @@ namespace ProdControlAV.API.Auth
                     return fromHeader;
                 }
 
-                // 2) Claims for web users
-                var claim = ctx.User?.FindFirstValue("tenant_id");
+                // 2) Claims for web users (cookie auth uses "tenant_id", JWT auth uses "tenantId")
+                var claim = ctx.User?.FindFirstValue("tenant_id") 
+                            ?? ctx.User?.FindFirstValue("tenantId");
                 return Guid.TryParse(claim, out var fromClaim) ? fromClaim : Guid.Empty;
             }
         }
