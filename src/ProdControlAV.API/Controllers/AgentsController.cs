@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using ProdControlAV.API.Models;
 using ProdControlAV.API.Services;
 using ProdControlAV.Core.Models;
@@ -17,12 +18,14 @@ public sealed class AgentsController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IAgentAuth _auth;
     private readonly IJwtService _jwtService;
+    private readonly ILogger<AgentsController> _logger;
     
-    public AgentsController(AppDbContext db, IAgentAuth auth, IJwtService jwtService) 
+    public AgentsController(AppDbContext db, IAgentAuth auth, IJwtService jwtService, ILogger<AgentsController> logger) 
     { 
         _db = db; 
         _auth = auth;
         _jwtService = jwtService;
+        _logger = logger;
     }
 
     public sealed class HeartbeatRequest
@@ -45,16 +48,17 @@ public sealed class AgentsController : ControllerBase
     [ProducesResponseType<object>(400)]
     public async Task<IActionResult> Authenticate([FromBody] AgentAuthRequest request, CancellationToken ct)
     {
+        _logger.LogInformation("[AUTH] Received agent auth request: AgentKey={AgentKey}, Host={Host}", request.AgentKey, HttpContext.Connection.RemoteIpAddress);
         // Validate the agent key
         var (agent, err) = await _auth.ValidateAsync(request.AgentKey, ct);
         if (agent is null)
         {
+            _logger.LogWarning("[AUTH] Agent key validation failed: {Error}", err);
             return Unauthorized(new { error = err });
         }
-
         // Generate JWT token
         var (token, expiresAt) = _jwtService.GenerateToken(agent);
-
+        _logger.LogInformation("[AUTH] JWT issued for AgentId={AgentId}, TenantId={TenantId}, ExpiresAt={ExpiresAt}", agent.Id, agent.TenantId, expiresAt);
         return Ok(new AgentAuthResponse
         {
             Token = token,
@@ -66,15 +70,18 @@ public sealed class AgentsController : ControllerBase
     [HttpPost("heartbeat")]
     public async Task<IActionResult> Heartbeat([FromBody] HeartbeatRequest req, CancellationToken ct)
     {
+        _logger.LogInformation("[HEARTBEAT] Received heartbeat: AgentKey={AgentKey}, Hostname={Hostname}, IpAddress={IpAddress}, Version={Version}", req.AgentKey, req.Hostname, req.IpAddress, req.Version);
         var (agent, err) = await _auth.ValidateAsync(req.AgentKey, ct);
-        if (agent is null) return Unauthorized(new { error = err });
-
+        if (agent is null) {
+            _logger.LogWarning("[HEARTBEAT] Agent key validation failed: {Error}", err);
+            return Unauthorized(new { error = err });
+        }
         agent.LastHostname = req.Hostname;
         agent.LastIp = req.IpAddress;
         agent.Version = req.Version;
         agent.LastSeenUtc = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
-
+        _logger.LogInformation("[HEARTBEAT] Updated agent status: AgentId={AgentId}, LastIp={LastIp}, Version={Version}", agent.Id, agent.LastIp, agent.Version);
         return Ok(new { ok = true });
     }
 
@@ -82,15 +89,15 @@ public sealed class AgentsController : ControllerBase
     [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public async Task<ActionResult<List<DeviceTargetDto>>> GetDevices(CancellationToken ct)
     {
+        _logger.LogInformation("[DEVICES] Headers: {Headers}", HttpContext.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString()));
         var agentIdClaim = User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
         var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenantId" || c.Type.EndsWith("/tenantId"))?.Value;
-
+        _logger.LogInformation("[DEVICES] Extracted claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
         if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
         {
+            _logger.LogWarning("[DEVICES] Invalid token claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
             return Unauthorized(new { error = "invalid_token_claims" });
         }
-
-        // For now, all tenant devices. Later: add per-agent assignment table.
         var devices = await _db.Devices
             .Where(d => d.TenantId == tenantId)
             .Select(d => new DeviceTargetDto
@@ -98,10 +105,10 @@ public sealed class AgentsController : ControllerBase
                 Id = d.Id,
                 IpAddress = d.Ip,
                 Type = d.Type,
-                TcpPort = null // map default ports by Type if desired
+                TcpPort = null
             })
             .ToListAsync(ct);
-
+        _logger.LogInformation("[DEVICES] Returning {Count} devices for TenantId={TenantId}", devices.Count, tenantId);
         return Ok(devices);
     }
 
@@ -115,21 +122,21 @@ public sealed class AgentsController : ControllerBase
     [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public async Task<IActionResult> Status([FromBody] StatusUploadRequest req, CancellationToken ct)
     {
-        // Extract agent information from JWT claims
+        _logger.LogInformation("[STATUS] Headers: {Headers}", HttpContext.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString()));
+        _logger.LogInformation("[STATUS] Body: {Body}", req);
         var agentIdClaim = User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
         var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenantId" || c.Type.EndsWith("/tenantId"))?.Value;
-
+        _logger.LogInformation("[STATUS] Extracted claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
         if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
         {
+            _logger.LogWarning("[STATUS] Invalid token claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
             return Unauthorized(new { error = "invalid_token_claims" });
         }
-
-        // Validate that the request tenant matches the JWT tenant
         if (req.TenantId.HasValue && req.TenantId != tenantId)
         {
+            _logger.LogWarning("[STATUS] Request tenantId does not match JWT tenantId: Request={RequestTenantId}, JWT={JwtTenantId}", req.TenantId, tenantId);
             return Forbid();
         }
-
         var now = DateTime.UtcNow;
         foreach (var r in req.Readings)
         {
@@ -137,12 +144,10 @@ public sealed class AgentsController : ControllerBase
             {
                 Id = Guid.NewGuid(),
                 IsOnline = r.IsOnline ? true : false,
-                // LatencyMs = r.LatencyMs,
-                // RecordedAtUtc = now,
-                // Message = r.Message
             });
         }
         await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("[STATUS] Saved {Count} status readings for TenantId={TenantId}", req.Readings.Count, tenantId);
         return Ok(new { ok = true });
     }
 
@@ -153,25 +158,25 @@ public sealed class AgentsController : ControllerBase
     [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public async Task<ActionResult<CommandPullResponse>> Next([FromBody] CommandPullRequest req, CancellationToken ct)
     {
-        // Extract agent information from JWT claims
+        _logger.LogInformation("[COMMANDS/NEXT] Headers: {Headers}", HttpContext.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString()));
+        _logger.LogInformation("[COMMANDS/NEXT] Body: {Body}", req);
         var agentIdClaim = User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
         var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenantId" || c.Type.EndsWith("/tenantId"))?.Value;
-
+        _logger.LogInformation("[COMMANDS/NEXT] Extracted claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
         if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
         {
+            _logger.LogWarning("[COMMANDS/NEXT] Invalid token claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
             return Unauthorized(new { error = "invalid_token_claims" });
         }
-
         var cmds = await _db.AgentCommands
             .Where(c => c.AgentId == agentId && c.TenantId == tenantId && c.TakenUtc == null)
             .OrderBy(c => c.CreatedUtc)
             .Take(Math.Clamp(req.Max, 1, 50))
             .ToListAsync(ct);
-
         var now = DateTime.UtcNow;
         cmds.ForEach(c => c.TakenUtc = now);
         await _db.SaveChangesAsync(ct);
-
+        _logger.LogInformation("[COMMANDS/NEXT] Returning {Count} commands for AgentId={AgentId}, TenantId={TenantId}", cmds.Count, agentId, tenantId);
         return Ok(new CommandPullResponse
         {
             Commands = cmds.Select(c => new CommandEnvelope
@@ -190,22 +195,26 @@ public sealed class AgentsController : ControllerBase
     [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public async Task<IActionResult> Complete([FromBody] CommandCompleteRequest req, CancellationToken ct)
     {
-        // Extract agent information from JWT claims
+        _logger.LogInformation("[COMMANDS/COMPLETE] Headers: {Headers}", HttpContext.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString()));
+        _logger.LogInformation("[COMMANDS/COMPLETE] Body: {Body}", req);
         var agentIdClaim = User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
         var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenantId" || c.Type.EndsWith("/tenantId"))?.Value;
-
+        _logger.LogInformation("[COMMANDS/COMPLETE] Extracted claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
         if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
         {
+            _logger.LogWarning("[COMMANDS/COMPLETE] Invalid token claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
             return Unauthorized(new { error = "invalid_token_claims" });
         }
-
         var cmd = await _db.AgentCommands.FirstOrDefaultAsync(c => c.Id == req.CommandId && c.AgentId == agentId, ct);
-        if (cmd is null) return NotFound(new { error = "command_not_found" });
-
+        if (cmd is null) {
+            _logger.LogWarning("[COMMANDS/COMPLETE] Command not found: CommandId={CommandId}, AgentId={AgentId}", req.CommandId, agentId);
+            return NotFound(new { error = "command_not_found" });
+        }
         cmd.CompletedUtc = DateTime.UtcNow;
         cmd.Success = req.Success;
         cmd.Message = req.Message;
         await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("[COMMANDS/COMPLETE] Command completed: CommandId={CommandId}, Success={Success}, AgentId={AgentId}", req.CommandId, req.Success, agentId);
         return Ok(new { ok = true });
     }
 }
