@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProdControlAV.API.Models;
 using ProdControlAV.API.Services;
 using ProdControlAV.Core.Models;
+using static Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults;
 
 namespace ProdControlAV.API.Controllers;
 
@@ -77,7 +79,7 @@ public sealed class AgentsController : ControllerBase
     }
 
     [HttpGet("devices")]
-    [Authorize]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public async Task<ActionResult<List<DeviceTargetDto>>> GetDevices(CancellationToken ct)
     {
         var agentIdClaim = User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
@@ -110,7 +112,7 @@ public sealed class AgentsController : ControllerBase
     }
 
     [HttpPost("status")]
-    [Authorize]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public async Task<IActionResult> Status([FromBody] StatusUploadRequest req, CancellationToken ct)
     {
         // Extract agent information from JWT claims
@@ -148,7 +150,7 @@ public sealed class AgentsController : ControllerBase
     public sealed class CommandPullResponse { public List<CommandEnvelope> Commands { get; set; } = new(); }
 
     [HttpPost("commands/next")]
-    [Authorize]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public async Task<ActionResult<CommandPullResponse>> Next([FromBody] CommandPullRequest req, CancellationToken ct)
     {
         // Extract agent information from JWT claims
@@ -185,7 +187,7 @@ public sealed class AgentsController : ControllerBase
     public sealed class CommandCompleteRequest { public Guid CommandId { get; set; } public bool Success { get; set; } public string? Message { get; set; } public int? DurationMs { get; set; } }
 
     [HttpPost("commands/complete")]
-    [Authorize]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public async Task<IActionResult> Complete([FromBody] CommandCompleteRequest req, CancellationToken ct)
     {
         // Extract agent information from JWT claims
