@@ -1,19 +1,17 @@
-using System;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using ProdControlAV.Agent.Models;
+using DotNetEnv;
 using ProdControlAV.Agent.Services;
 
 var builder = Host.CreateApplicationBuilder(args);
+
+// Load environment variables from .env file at startup
+Env.Load(); // Loads .env from current working directory
 
 // Add environment variable configuration with specific prefix for security
 builder.Configuration.AddEnvironmentVariables("PRODCONTROL_");
 
 builder.Services.AddLogging(logging =>
 {
-    logging.AddConsole();
+    logging.AddConsole();  
 });
 
 // Bind options
@@ -80,9 +78,8 @@ builder.Services.AddHttpClient<ICommandService, CommandService>(c =>
     c.Timeout = TimeSpan.FromSeconds(10);
 });
 // Additional HTTP client for JWT auth service
-builder.Services.AddHttpClient<JwtAuthService>(c =>
-{
-    c.Timeout = TimeSpan.FromSeconds(10);
+builder.Services.AddHttpClient("JwtAuth", c => {
+    c.Timeout = TimeSpan.FromMinutes(5);
 });
 
 // Hosted worker
