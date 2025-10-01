@@ -235,7 +235,9 @@ app.MapFallbackToFile("index.html");
 app.Use(async (ctx, next) =>
 {
     // reject if tenant is missing
-    var tid = ctx.User.FindFirst("tenant_id")?.Value;
+    // Check for both "tenant_id" (cookie auth) and "tenantId" (JWT auth)
+    var tid = ctx.User.FindFirst("tenant_id")?.Value 
+              ?? ctx.User.FindFirst("tenantId")?.Value;
     if (ctx.User.Identity?.IsAuthenticated == true && string.IsNullOrWhiteSpace(tid))
     {
         ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
