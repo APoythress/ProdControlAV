@@ -77,12 +77,11 @@ public sealed class AgentsController : ControllerBase
     }
 
     [HttpGet("devices")]
-    [Authorize(Policy = "JwtAgent")]
+    [Authorize]
     public async Task<ActionResult<List<DeviceTargetDto>>> GetDevices(CancellationToken ct)
     {
-        // Extract agent information from JWT claims
         var agentIdClaim = User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
-        var tenantIdClaim = User.FindFirst("tenantId")?.Value;
+        var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenantId" || c.Type.EndsWith("/tenantId"))?.Value;
 
         if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
         {
@@ -111,7 +110,7 @@ public sealed class AgentsController : ControllerBase
     }
 
     [HttpPost("status")]
-    [Authorize(Policy = "JwtAgent")]
+    [Authorize]
     public async Task<IActionResult> Status([FromBody] StatusUploadRequest req, CancellationToken ct)
     {
         // Extract agent information from JWT claims
@@ -149,7 +148,7 @@ public sealed class AgentsController : ControllerBase
     public sealed class CommandPullResponse { public List<CommandEnvelope> Commands { get; set; } = new(); }
 
     [HttpPost("commands/next")]
-    [Authorize(Policy = "JwtAgent")]
+    [Authorize]
     public async Task<ActionResult<CommandPullResponse>> Next([FromBody] CommandPullRequest req, CancellationToken ct)
     {
         // Extract agent information from JWT claims
@@ -186,7 +185,7 @@ public sealed class AgentsController : ControllerBase
     public sealed class CommandCompleteRequest { public Guid CommandId { get; set; } public bool Success { get; set; } public string? Message { get; set; } public int? DurationMs { get; set; } }
 
     [HttpPost("commands/complete")]
-    [Authorize(Policy = "JwtAgent")]
+    [Authorize]
     public async Task<IActionResult> Complete([FromBody] CommandCompleteRequest req, CancellationToken ct)
     {
         // Extract agent information from JWT claims

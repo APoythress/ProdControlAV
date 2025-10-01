@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -11,6 +12,7 @@ namespace ProdControlAV.Agent.Services;
 public sealed class AgentAuthRequest
 {
     public string AgentKey { get; set; } = string.Empty;
+    public Guid? TenantId { get; set; } = Guid.Empty;
 }
 
 /// <summary>
@@ -18,8 +20,13 @@ public sealed class AgentAuthRequest
 /// </summary>
 public sealed class AgentAuthResponse
 {
+    [JsonPropertyName("token")]
     public string Token { get; set; } = string.Empty;
+
+    [JsonPropertyName("expiresAt")]
     public DateTime ExpiresAt { get; set; }
+
+    [JsonPropertyName("tokenType")]
     public string TokenType { get; set; } = "Bearer";
 }
 
@@ -115,33 +122,51 @@ public sealed class JwtAuthService : IJwtAuthService
                 _logger.LogError("Agent API key is not configured");
                 return false;
             }
-
-            var request = new AgentAuthRequest
+            if (!_api.TenantId.HasValue || _api.TenantId == Guid.Empty)
             {
+                _logger.LogError("Agent tenantId is not configured or is empty");
+                return false;
+            }
+            var requestPayload = new {
                 AgentKey = _api.ApiKey
             };
 
-            using var http = _httpClientFactory.CreateClient();
+            var payloadJson = JsonSerializer.Serialize(requestPayload, s_jsonOptions);
+            _logger.LogInformation("Sending JWT auth request payload: {PayloadJson}", payloadJson);
+
+            using var http = _httpClientFactory.CreateClient("JwtAuth");
             http.BaseAddress = new Uri(_api.BaseUrl);
 
-            using var req = new HttpRequestMessage(HttpMethod.Post, "/agents/auth")
+            using var req = new HttpRequestMessage(HttpMethod.Post, "/api/agents/auth")
             {
-                Content = JsonContent.Create(request, options: s_jsonOptions)
+                Content = JsonContent.Create(requestPayload, options: s_jsonOptions)
             };
 
             using var res = await http.SendAsync(req, ct);
-            
+
+            var responseBody = await res.Content.ReadAsStringAsync(ct);
+            _logger.LogInformation("JWT auth response: StatusCode={StatusCode}, Body={Body}", res.StatusCode, responseBody);
+
             if (!res.IsSuccessStatusCode)
             {
-                _logger.LogWarning("JWT authentication failed: {StatusCode} - {ReasonPhrase}", 
-                    res.StatusCode, res.ReasonPhrase);
+                _logger.LogWarning("JWT authentication failed: {StatusCode} - {ReasonPhrase}. Response: {ErrorBody}", 
+                    res.StatusCode, res.ReasonPhrase, responseBody);
                 return false;
             }
 
-            var response = await res.Content.ReadFromJsonAsync<AgentAuthResponse>(s_jsonOptions, ct);
+            AgentAuthResponse? response = null;
+            try
+            {
+                response = JsonSerializer.Deserialize<AgentAuthResponse>(responseBody, s_jsonOptions);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Exception during JWT auth response deserialization. Raw response: {RawResponse}", responseBody);
+            }
+
             if (response == null || string.IsNullOrEmpty(response.Token))
             {
-                _logger.LogWarning("JWT authentication response was null or empty");
+                _logger.LogWarning("JWT authentication response was null or missing token. Raw response: {RawResponse}", responseBody);
                 return false;
             }
 
@@ -151,19 +176,14 @@ public sealed class JwtAuthService : IJwtAuthService
                 _tokenExpiry = response.ExpiresAt;
             }
 
-            _logger.LogInformation("JWT token refreshed successfully, expires at {ExpiresAt:yyyy-MM-dd HH:mm:ss} UTC", 
-                response.ExpiresAt);
-            
+            _logger.LogInformation("JWT token refreshed successfully, expires at {ExpiresAt:yyyy-MM-dd HH:mm:ss} UTC. Token: {Token}", 
+                response.ExpiresAt, response.Token);
+
             return true;
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.LogDebug("JWT token refresh was cancelled");
-            return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to refresh JWT token");
+            _logger.LogError(ex, "Top-level exception in RefreshTokenAsync");
             return false;
         }
     }
