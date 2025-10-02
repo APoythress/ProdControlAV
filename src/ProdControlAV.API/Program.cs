@@ -243,14 +243,20 @@ app.UseMiddleware<ApiKeyMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapControllers();
-app.MapFallbackToFile("index.html");
-
-
-// Global
+// Global tenant validation - must run BEFORE MapControllers()
+// This middleware checks that authenticated users have a tenant claim
 app.Use(async (ctx, next) =>
 {
-    // reject if tenant is missing
+    // Skip tenant check for specific paths
+    var path = ctx.Request.Path.Value?.ToLowerInvariant();
+    if (path == "/signin" || path == "/signin/" || path?.StartsWith("/_framework") == true || 
+        path?.StartsWith("/static") == true || path == "/" || path?.StartsWith("/api/auth/") == true ||
+        path?.StartsWith("/api/agents/auth") == true || path?.StartsWith("/api/agents/heartbeat") == true)
+    {
+        await next();
+        return;
+    }
+
     // Check for both "tenant_id" (cookie auth) and "tenantId" (JWT auth)
     var tid = ctx.User.FindFirst("tenant_id")?.Value 
               ?? ctx.User.FindFirst("tenantId")?.Value;
@@ -263,18 +269,8 @@ app.Use(async (ctx, next) =>
     await next();
 });
 
-// Allow anonymous access to /signin and static files
-app.Use(async (context, next) =>
-{
-    var path = context.Request.Path.Value?.ToLowerInvariant();
-    if (path == "/signin" || path == "/signin/" || path.StartsWith("/_framework") || path.StartsWith("/static") || path == "/")
-    {
-        // Allow anonymous access
-        await next();
-        return;
-    }
-    await next();
-});
+app.MapControllers();
+app.MapFallbackToFile("index.html");
 
 
 app.Run();
