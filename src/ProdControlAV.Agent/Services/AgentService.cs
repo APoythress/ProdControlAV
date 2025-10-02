@@ -67,7 +67,10 @@ public sealed class AgentService : BackgroundService
         _heartbeat = new PeriodicTimer(TimeSpan.FromSeconds(_opt.HeartbeatSeconds));
         _commandPoll = new PeriodicTimer(TimeSpan.FromSeconds(_apiOpt.CommandPollIntervalSeconds));
 
+        _logger.LogInformation("AgentService starting - will ping devices every {IntervalMs}ms", _opt.IntervalMs);
+
         // Wait once for device source to populate initially
+        _logger.LogDebug("Waiting 1 second for DeviceSource to populate...");
         await Task.Delay(1000, stoppingToken);
 
         _ = RunPollLoop(stoppingToken);

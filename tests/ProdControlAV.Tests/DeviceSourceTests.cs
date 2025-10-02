@@ -94,12 +94,12 @@ public class DeviceSourceTests
         // Act & Assert - Should not throw
         await deviceSource.RefreshAsync(CancellationToken.None);
         
-        // Verify warning was logged
+        // Verify error was logged (HttpRequestException is now logged at Error level)
         mockLogger.Verify(
             x => x.Log(
-                LogLevel.Warning,
+                LogLevel.Error,
                 It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Failed to refresh device list")),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("HTTP error while refreshing device list")),
                 It.IsAny<Exception>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);

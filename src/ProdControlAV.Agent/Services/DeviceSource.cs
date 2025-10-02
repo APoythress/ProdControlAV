@@ -60,11 +60,20 @@ public sealed class DeviceSource : BackgroundService, IDeviceSource
                 return;
             }
 
+            _logger.LogDebug("Sending GET request to {BaseUrl}{Endpoint} with JWT token", _api.BaseUrl, _api.DevicesEndpoint);
+
             using var req = new HttpRequestMessage(HttpMethod.Get, _api.DevicesEndpoint);
             req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
             using var res = await _http.SendAsync(req, ct);
-            res.EnsureSuccessStatusCode();
+            
+            if (!res.IsSuccessStatusCode)
+            {
+                var errorBody = await res.Content.ReadAsStringAsync(ct);
+                _logger.LogWarning("Failed to fetch devices from API: {StatusCode} - {ReasonPhrase}. Response: {ErrorBody}", 
+                    res.StatusCode, res.ReasonPhrase, errorBody);
+                return;
+            }
 
             var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
             var deviceTargets = await res.Content.ReadFromJsonAsync<List<DeviceTargetDto>>(options, ct) ?? new List<DeviceTargetDto>();
@@ -90,15 +99,25 @@ public sealed class DeviceSource : BackgroundService, IDeviceSource
                 _logger.LogDebug("Devices: {Devices}", string.Join(", ", devices.Select(d => $"{d.Name} ({d.Ip})")));
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            _logger.LogDebug("Device refresh cancelled");
+            throw;
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "HTTP error while refreshing device list from API: {Error}", ex.Message);
+        }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to refresh device list from API: {Error}", ex.Message);
+            _logger.LogError(ex, "Unexpected error while refreshing device list from API: {Error}", ex.Message);
         }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        _logger.LogInformation("DeviceSource background service starting - will refresh every {RefreshSeconds} seconds", _api.RefreshDevicesSeconds);
+        
         // initial fetch
         await RefreshAsync(stoppingToken);
 
