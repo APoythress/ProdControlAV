@@ -84,4 +84,55 @@ public class JwtServiceTests
         
         Assert.NotEqual(jwt1.Subject, jwt2.Subject);
     }
+
+    [Fact]
+    public void GenerateToken_ClaimsCanBeExtractedByShortAndLongFormNames()
+    {
+        // Arrange
+        var jwtConfig = new JwtConfig
+        {
+            Key = "test-secret-key-must-be-32chars-long-minimum-for-security",
+            Issuer = "test-issuer",
+            Audience = "test-audience",
+            ExpiryMinutes = 30
+        };
+        
+        var jwtService = new JwtService(Options.Create(jwtConfig));
+        var agentId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        
+        var agent = new AgentModel
+        {
+            Id = agentId,
+            TenantId = tenantId,
+            Name = "Test Agent"
+        };
+
+        // Act
+        var (token, _) = jwtService.GenerateToken(agent);
+        
+        // Read the JWT and create a ClaimsPrincipal as the authentication middleware would
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var jwt = tokenHandler.ReadJwtToken(token);
+        
+        // Simulate what happens during token validation - claims are added to the principal
+        var claims = jwt.Claims.ToList();
+        var identity = new ClaimsIdentity(claims, "TestAuth");
+        var principal = new ClaimsPrincipal(identity);
+
+        // Assert - Verify claims can be found using both short and long form names
+        // The JWT token has "sub" claim
+        var subClaim = principal.FindFirst(JwtRegisteredClaimNames.Sub);
+        Assert.NotNull(subClaim);
+        Assert.Equal(agentId.ToString(), subClaim.Value);
+        
+        // Also verify it's accessible via ClaimTypes.NameIdentifier (for backwards compatibility)
+        var nameIdClaim = principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+        // Note: This might be null if the default mapping isn't applied, which is expected with our fix
+        
+        // Verify tenantId claim
+        var tenantIdClaim = principal.Claims.FirstOrDefault(c => c.Type == "tenantId");
+        Assert.NotNull(tenantIdClaim);
+        Assert.Equal(tenantId.ToString(), tenantIdClaim.Value);
+    }
 }

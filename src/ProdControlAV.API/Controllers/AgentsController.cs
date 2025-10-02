@@ -28,6 +28,22 @@ public sealed class AgentsController : ControllerBase
         _logger = logger;
     }
 
+    private string? GetAgentIdFromClaims()
+    {
+        // Try short-form JWT claim name first (after NameClaimType mapping)
+        var agentId = User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
+        if (!string.IsNullOrEmpty(agentId))
+            return agentId;
+        
+        // Fallback to long-form claim name (in case mapping still occurs)
+        agentId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (!string.IsNullOrEmpty(agentId))
+            return agentId;
+        
+        // Final fallback - search by claim type containing "nameidentifier"
+        return User.Claims.FirstOrDefault(c => c.Type.Contains("nameidentifier", StringComparison.OrdinalIgnoreCase))?.Value;
+    }
+
     public sealed class HeartbeatRequest
     {
         public string AgentKey { get; set; } = string.Empty;
@@ -90,7 +106,7 @@ public sealed class AgentsController : ControllerBase
     public async Task<ActionResult<List<DeviceTargetDto>>> GetDevices(CancellationToken ct)
     {
         _logger.LogInformation("[DEVICES] Headers: {Headers}", HttpContext.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString()));
-        var agentIdClaim = User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
+        var agentIdClaim = GetAgentIdFromClaims();
         var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenantId" || c.Type.EndsWith("/tenantId"))?.Value;
         _logger.LogInformation("[DEVICES] Extracted claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
         if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
@@ -124,7 +140,7 @@ public sealed class AgentsController : ControllerBase
     {
         _logger.LogInformation("[STATUS] Headers: {Headers}", HttpContext.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString()));
         _logger.LogInformation("[STATUS] Body: {Body}", req);
-        var agentIdClaim = User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
+        var agentIdClaim = GetAgentIdFromClaims();
         var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenantId" || c.Type.EndsWith("/tenantId"))?.Value;
         _logger.LogInformation("[STATUS] Extracted claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
         if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
@@ -160,7 +176,7 @@ public sealed class AgentsController : ControllerBase
     {
         _logger.LogInformation("[COMMANDS/NEXT] Headers: {Headers}", HttpContext.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString()));
         _logger.LogInformation("[COMMANDS/NEXT] Body: {Body}", req);
-        var agentIdClaim = User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
+        var agentIdClaim = GetAgentIdFromClaims();
         var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenantId" || c.Type.EndsWith("/tenantId"))?.Value;
         _logger.LogInformation("[COMMANDS/NEXT] Extracted claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
         if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
@@ -197,7 +213,7 @@ public sealed class AgentsController : ControllerBase
     {
         _logger.LogInformation("[COMMANDS/COMPLETE] Headers: {Headers}", HttpContext.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString()));
         _logger.LogInformation("[COMMANDS/COMPLETE] Body: {Body}", req);
-        var agentIdClaim = User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
+        var agentIdClaim = GetAgentIdFromClaims();
         var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenantId" || c.Type.EndsWith("/tenantId"))?.Value;
         _logger.LogInformation("[COMMANDS/COMPLETE] Extracted claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
         if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))

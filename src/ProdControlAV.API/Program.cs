@@ -83,7 +83,10 @@ builder.Services
                 ValidIssuer = jwtConfig.Issuer,
                 ValidAudience = jwtConfig.Audience,
                 IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtConfig.Key)),
-                ClockSkew = TimeSpan.FromMinutes(1) // Allow 1 minute clock skew
+                ClockSkew = TimeSpan.FromMinutes(1), // Allow 1 minute clock skew
+                // Preserve original JWT claim names (sub, jti, etc.) instead of mapping to ClaimTypes
+                NameClaimType = JwtRegisteredClaimNames.Sub,
+                RoleClaimType = "role"
             };
         }
         options.Events = new JwtBearerEvents
