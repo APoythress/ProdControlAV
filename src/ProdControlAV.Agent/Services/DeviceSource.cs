@@ -50,6 +50,8 @@ public sealed class DeviceSource : BackgroundService, IDeviceSource
     {
         try
         {
+            _logger.LogInformation("Refreshing device list from API at {Endpoint}", _api.DevicesEndpoint);
+            
             // Get valid JWT token
             var token = await _jwtAuth.GetValidTokenAsync(ct);
             if (string.IsNullOrEmpty(token))
@@ -81,11 +83,17 @@ public sealed class DeviceSource : BackgroundService, IDeviceSource
                 _devices.Clear();
                 _devices.AddRange(devices);
             }
+            
+            _logger.LogInformation("Device list refreshed successfully: {Count} devices loaded", devices.Count);
+            if (devices.Count > 0)
+            {
+                _logger.LogDebug("Devices: {Devices}", string.Join(", ", devices.Select(d => $"{d.Name} ({d.Ip})")));
+            }
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to refresh device list from API");
+            _logger.LogWarning(ex, "Failed to refresh device list from API: {Error}", ex.Message);
         }
     }
 
