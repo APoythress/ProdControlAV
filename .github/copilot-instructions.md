@@ -14,7 +14,7 @@ Always reference these instructions first and fallback to search or bash command
 ### Bootstrap, Build, and Test the Repository
 - **Restore packages**: `dotnet restore` -- takes ~1 minute. NEVER CANCEL. Set timeout to 3+ minutes.
 - **Build solution**: `dotnet build` -- takes ~30 seconds. NEVER CANCEL. Set timeout to 2+ minutes.
-- **Run tests**: `dotnet test` -- takes ~15 seconds, runs 4 tests. NEVER CANCEL. Set timeout to 2+ minutes.
+- **Run tests**: `dotnet test` -- takes ~15-20 seconds. NEVER CANCEL. Set timeout to 2+ minutes.
 
 All commands must be run from the repository root directory.
 
@@ -75,7 +75,7 @@ dotnet publish src/ProdControlAV.Agent/ProdControlAV.Agent.csproj -c Release -r 
 
 ### Test Validation
 - Always run `dotnet test` before committing changes
-- All 4 tests must pass (CommandServiceTests covers core agent functionality)
+- The test suite includes comprehensive unit tests covering core agent functionality, device monitoring, configuration, and API services
 - Tests use xUnit and Moq frameworks
 
 ## Project Structure
