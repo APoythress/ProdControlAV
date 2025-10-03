@@ -161,9 +161,23 @@ public sealed class AgentService : BackgroundService
         int? pingMs = null;
         if (!string.IsNullOrEmpty(d.Ip))
         {
-            // If you have a way to get ping latency, set pingMs here
-            // For now, set to null or a default value
-            pingMs = null;
+            try
+            {
+                using var ping = new Ping();
+                var reply = await ping.SendPingAsync(d.Ip, 1000); // 1 second timeout
+                if (reply.Status == IPStatus.Success)
+                {
+                    pingMs = (int)reply.RoundtripTime;
+                }
+                else
+                {
+                    pingMs = null;
+                }
+            }
+            catch
+            {
+                pingMs = null;
+            }
         }
         if (up)
         {
