@@ -17,7 +17,7 @@ public interface IStatusPublisher
     Task HeartbeatAsync(DeviceStatus[] snapshot, CancellationToken ct);
 }
 
-public sealed record DeviceStatus(string Id, string Name, string Ip, string State, DateTimeOffset ChangedAtUtc);
+public sealed record DeviceStatus(string Id, string Name, string Ip, string State, DateTimeOffset ChangedAtUtc, int? PingMs);
 
 public sealed class StatusUploadRequest
 {
@@ -27,8 +27,8 @@ public sealed class StatusUploadRequest
 
 public sealed class HeartbeatRequest
 {
-    public string AgentKey { get; set; } = string.Empty;
-    public string Hostname { get; set; } = string.Empty;
+    public string AgentKey { get; set; }
+    public string? Hostname { get; set; }
     public string? IpAddress { get; set; }
     public string? Version { get; set; }
 }
@@ -41,7 +41,7 @@ public sealed class StatusPublisher : IStatusPublisher
     private readonly IJwtAuthService _jwtAuth;
     private readonly JsonSerializerOptions _json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
-    public StatusPublisher(HttpClient http, ILogger<StatusPublisher> logger, Microsoft.Extensions.Options.IOptions<ApiOptions> api, IJwtAuthService jwtAuth)
+    public StatusPublisher(HttpClient http, ILogger<StatusPublisher> logger, IOptions<ApiOptions> api, IJwtAuthService jwtAuth)
     {
         _http = http;
         _logger = logger;
@@ -55,48 +55,28 @@ public sealed class StatusPublisher : IStatusPublisher
         try
         {
             _logger.LogInformation("Publishing status update for device {Id} ({Name} - {Ip}): {State}", status.Id, status.Name, status.Ip, status.State);
-            
-            // Get valid JWT token
             var token = await _jwtAuth.GetValidTokenAsync(ct);
             if (string.IsNullOrEmpty(token))
             {
                 _logger.LogWarning("Failed to obtain valid JWT token for status publishing");
                 return;
             }
-
-            var request = new StatusUploadRequest
+            var dto = new
             {
-                TenantId = _api.TenantId, // Use configured TenantId
-                Readings = new List<StatusReading>
-                {
-                    new StatusReading
-                    {
-                        DeviceId = status.Id,
-                        IsOnline = status.State == "ONLINE",
-                        LatencyMs = null,
-                        Message = $"{status.Name} ({status.Ip}) is {status.State}"
-                    }
-                }
+                TenantId = _api.TenantId,
+                DeviceId = status.Id,
+                Status = status.State,
+                LatencyMs = status.PingMs,
+                ObservedAt = DateTimeOffset.UtcNow
             };
-
-            _logger.LogDebug("Sending status to {Endpoint} with TenantId={TenantId}, DeviceId={DeviceId}, IsOnline={IsOnline}", 
-                _api.StatusEndpoint, request.TenantId, status.Id, request.Readings[0].IsOnline);
-
-            using var req = new HttpRequestMessage(HttpMethod.Post, _api.StatusEndpoint)
-            {
-                Content = JsonContent.Create(request, options: _json)
-            };
+            using var req = new HttpRequestMessage(HttpMethod.Post, _api.StatusEndpoint);
+            req.Content = JsonContent.Create(dto, options: _json);
             req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-
             var res = await _http.SendAsync(req, ct);
             res.EnsureSuccessStatusCode();
             _logger.LogInformation("State change posted successfully: {Name} {Ip} -> {State}", status.Name, status.Ip, status.State);
         }
-        catch (OperationCanceledException) 
-        { 
-            // Don't log cancellation as an error
-            throw; 
-        }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to publish status for device {DeviceId}: {Error}", status.Id, ex.Message);
@@ -106,31 +86,22 @@ public sealed class StatusPublisher : IStatusPublisher
     public async Task HeartbeatAsync(DeviceStatus[] snapshot, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(_api.HeartbeatEndpoint)) return;
-
         try
         {
             var request = new HeartbeatRequest
             {
                 AgentKey = _api.ApiKey ?? "",
                 Hostname = Environment.MachineName,
-                IpAddress = null, // Could be determined dynamically if needed
+                IpAddress = null,
                 Version = "1.0.001"
             };
-
-            using var req = new HttpRequestMessage(HttpMethod.Post, _api.HeartbeatEndpoint)
-            {
-                Content = JsonContent.Create(request, options: _json)
-            };
-
+            using var req = new HttpRequestMessage(HttpMethod.Post, _api.HeartbeatEndpoint);
+            req.Content = JsonContent.Create(request, options: _json);
             var res = await _http.SendAsync(req, ct);
             res.EnsureSuccessStatusCode();
             _logger.LogDebug("Heartbeat sent successfully");
         }
-        catch (OperationCanceledException) 
-        { 
-            // Don't log cancellation as an error
-            throw; 
-        }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to send heartbeat: {Error}", ex.Message);

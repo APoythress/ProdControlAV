@@ -1,8 +1,9 @@
+using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
-using ProdControlAV.Core.Models;
+using ProdControlAV.WebApp.Models;
 
 namespace ProdControlAV.WebApp.Services;
 
@@ -15,9 +16,10 @@ public class DeviceStatusService
         _http = http;
     }
 
-    public async Task<List<DeviceStatus>> GetStatusesAsync()
+    public async Task<List<DeviceStatusDto>> GetStatusesAsync(Guid tenantId)
     {
-        return await _http.GetFromJsonAsync<List<DeviceStatus>>("https://your-api-host.com/api/status")
-               ?? new List<DeviceStatus>();
+        var url = $"https://your-api-host.com/api/status?tenantId={tenantId}";
+        var result = await _http.GetFromJsonAsync<StatusListDto>(url);
+        return result != null && result.Items != null ? new List<DeviceStatusDto>(result.Items) : new List<DeviceStatusDto>();
     }
 }

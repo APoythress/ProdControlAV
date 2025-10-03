@@ -19,6 +19,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using ProdControlAV.API.Auth;
 using Microsoft.Extensions.Logging;
+using Azure.Data.Tables;
+using Azure.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -152,6 +154,23 @@ builder.Services.AddScoped<IAgentAuth, AgentAuth>();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// Register Azure Table Storage clients for device status
+builder.Services.AddSingleton<TableServiceClient>(sp => {
+    var config = sp.GetRequiredService<IConfiguration>();
+    var endpoint = config["Storage:TablesEndpoint"];
+    if (!string.IsNullOrEmpty(endpoint))
+        return new TableServiceClient(new Uri(endpoint), new DefaultAzureCredential());
+    var connStr = config["Storage:ConnectionString"];
+    if (!string.IsNullOrEmpty(connStr))
+        return new TableServiceClient(connStr);
+    throw new InvalidOperationException("No Table Storage endpoint or connection string configured.");
+});
+builder.Services.AddSingleton<TableClient>(sp => {
+    var svc = sp.GetRequiredService<TableServiceClient>();
+    return svc.GetTableClient("DeviceStatus");
+});
+builder.Services.AddScoped<IDeviceStatusStore, TableDeviceStatusStore>();
 
 // Add Swagger/OpenAPI support
 builder.Services.AddEndpointsApiExplorer();
