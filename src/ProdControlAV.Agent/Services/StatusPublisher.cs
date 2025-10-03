@@ -28,7 +28,7 @@ public sealed class StatusUploadRequest
 public sealed class HeartbeatRequest
 {
     public string AgentKey { get; set; }
-    public string Hostname { get; set; }
+    public string? Hostname { get; set; }
     public string? IpAddress { get; set; }
     public string? Version { get; set; }
 }
