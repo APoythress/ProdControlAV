@@ -67,7 +67,10 @@ public sealed class AgentService : BackgroundService
         _heartbeat = new PeriodicTimer(TimeSpan.FromSeconds(_opt.HeartbeatSeconds));
         _commandPoll = new PeriodicTimer(TimeSpan.FromSeconds(_apiOpt.CommandPollIntervalSeconds));
 
+        _logger.LogInformation("AgentService starting - will ping devices every {IntervalMs}ms", _opt.IntervalMs);
+
         // Wait once for device source to populate initially
+        _logger.LogDebug("Waiting 1 second for DeviceSource to populate...");
         await Task.Delay(1000, stoppingToken);
 
         _ = RunPollLoop(stoppingToken);
@@ -86,6 +89,8 @@ public sealed class AgentService : BackgroundService
             var deviceList = devices.ToList(); // materialize so we can use Count
             EnsureState(deviceList);
 
+            _logger.LogInformation("Starting device ping cycle for {Count} devices", deviceList.Count);
+
             var tasks = new List<Task>(deviceList.Count);
             foreach (var d in deviceList)
             {
@@ -100,11 +105,12 @@ public sealed class AgentService : BackgroundService
                             ? await TcpProbeAsync(d.Ip, p, _opt.PingTimeoutMs, ct)
                             : await IcmpProbeAsync(d.Ip, _opt.PingTimeoutMs, ct);
 
+                        _logger.LogDebug("Ping result for {Name} ({Ip}): {Status}", d.Name, d.Ip, up ? "UP" : "DOWN");
                         await UpdateStateAndPublishIfChanged(d, up, ct);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
-                        _logger.LogDebug(ex, "Probe error for {Ip}", d.Ip);
+                        _logger.LogWarning(ex, "Probe error for {Name} ({Ip}): {Error}", d.Name, d.Ip, ex.Message);
                         await UpdateStateAndPublishIfChanged(d, up: false, ct);
                     }
                     finally
@@ -115,6 +121,7 @@ public sealed class AgentService : BackgroundService
             }
 
             await Task.WhenAll(tasks);
+            _logger.LogDebug("Completed device ping cycle for {Count} devices", deviceList.Count);
         }
     }
 
@@ -161,6 +168,7 @@ public sealed class AgentService : BackgroundService
             {
                 s.IsUp = true;
                 s.ChangedAt = DateTimeOffset.UtcNow;
+                _logger.LogInformation("Device state changed to ONLINE: {Name} ({Ip}) - publishing status update", d.Name, d.Ip);
                 await _publisher.PublishAsync(new DeviceStatus(d.Id, d.Name, d.Ip, "ONLINE", s.ChangedAt), ct);
             }
         }
@@ -172,6 +180,7 @@ public sealed class AgentService : BackgroundService
             {
                 s.IsUp = false;
                 s.ChangedAt = DateTimeOffset.UtcNow;
+                _logger.LogInformation("Device state changed to OFFLINE: {Name} ({Ip}) - publishing status update", d.Name, d.Ip);
                 await _publisher.PublishAsync(new DeviceStatus(d.Id, d.Name, d.Ip, "OFFLINE", s.ChangedAt), ct);
             }
         }

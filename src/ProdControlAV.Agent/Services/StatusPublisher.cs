@@ -54,6 +54,8 @@ public sealed class StatusPublisher : IStatusPublisher
     {
         try
         {
+            _logger.LogInformation("Publishing status update for device {Id} ({Name} - {Ip}): {State}", status.Id, status.Name, status.Ip, status.State);
+            
             // Get valid JWT token
             var token = await _jwtAuth.GetValidTokenAsync(ct);
             if (string.IsNullOrEmpty(token))
@@ -77,6 +79,9 @@ public sealed class StatusPublisher : IStatusPublisher
                 }
             };
 
+            _logger.LogDebug("Sending status to {Endpoint} with TenantId={TenantId}, DeviceId={DeviceId}, IsOnline={IsOnline}", 
+                _api.StatusEndpoint, request.TenantId, status.Id, request.Readings[0].IsOnline);
+
             using var req = new HttpRequestMessage(HttpMethod.Post, _api.StatusEndpoint)
             {
                 Content = JsonContent.Create(request, options: _json)
@@ -85,7 +90,7 @@ public sealed class StatusPublisher : IStatusPublisher
 
             var res = await _http.SendAsync(req, ct);
             res.EnsureSuccessStatusCode();
-            _logger.LogInformation("State change posted: {Name} {Ip} -> {State}", status.Name, status.Ip, status.State);
+            _logger.LogInformation("State change posted successfully: {Name} {Ip} -> {State}", status.Name, status.Ip, status.State);
         }
         catch (OperationCanceledException) 
         { 
@@ -109,7 +114,7 @@ public sealed class StatusPublisher : IStatusPublisher
                 AgentKey = _api.ApiKey ?? "",
                 Hostname = Environment.MachineName,
                 IpAddress = null, // Could be determined dynamically if needed
-                Version = "1.0.0"
+                Version = "1.0.001"
             };
 
             using var req = new HttpRequestMessage(HttpMethod.Post, _api.HeartbeatEndpoint)

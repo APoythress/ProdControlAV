@@ -56,6 +56,18 @@ sudo journalctl -u prodcontrolav-agent -p err
 
 # Search for specific events
 sudo journalctl -u prodcontrolav-agent | grep -i "heartbeat\|error\|warning"
+
+# Monitor device ping activity
+sudo journalctl -u prodcontrolav-agent | grep -i "ping cycle\|ping result"
+
+# Monitor status publishing
+sudo journalctl -u prodcontrolav-agent | grep -i "publishing status\|state change posted"
+
+# Monitor device list refresh
+sudo journalctl -u prodcontrolav-agent | grep -i "device list refreshed"
+
+# Track device state changes
+sudo journalctl -u prodcontrolav-agent | grep -i "device state changed"
 ```
 
 #### Key Health Indicators
@@ -65,8 +77,15 @@ Monitor these log patterns:
 |---------|---------|---------|
 | `Heartbeat sent successfully` | Agent communicating with API | Normal operation |
 | `Device monitoring cycle completed` | Monitoring working | Normal operation |
+| `Starting device ping cycle for X devices` | Ping cycle initiated | Normal operation |
+| `Ping result for {Name} ({Ip}): UP/DOWN` | Device ping status | Monitor for patterns |
+| `Device state changed to ONLINE/OFFLINE` | Device status changed | Review device health |
+| `Publishing status update for device` | Status being sent to API | Normal operation |
+| `State change posted successfully` | API received status update | Normal operation |
+| `Device list refreshed successfully` | Devices loaded from API | Normal operation |
 | `API communication failed` | Network/API issues | Check connectivity |
 | `Device ping timeout` | Device unreachable | Check device status |
+| `Failed to publish status` | Status update failed | Check API connectivity |
 | `Memory pressure detected` | High memory usage | Monitor resources |
 
 #### Performance Metrics
@@ -247,6 +266,7 @@ sudo systemctl restart prodcontrolav-agent
 - Devices showing offline when they're online
 - Ping timeouts in logs
 - No device status updates
+- Status updates not appearing in API logs
 
 #### Diagnostic Steps
 ```bash
@@ -261,6 +281,18 @@ sudo -u prodctl ping -c 1 192.168.1.100
 
 # Check routing
 ip route show
+
+# Monitor agent logs for ping activity
+sudo journalctl -u prodcontrolav-agent -f | grep -i "ping cycle\|ping result"
+
+# Check if device list is being loaded
+sudo journalctl -u prodcontrolav-agent | grep -i "device list refreshed"
+
+# Verify status publishing
+sudo journalctl -u prodcontrolav-agent | grep -i "publishing status\|state change posted"
+
+# Check API token status
+sudo journalctl -u prodcontrolav-agent | grep -i "jwt token\|authentication"
 ```
 
 #### Solutions

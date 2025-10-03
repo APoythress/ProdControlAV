@@ -1,4 +1,5 @@
 using DotNetEnv;
+using Microsoft.Extensions.Options;
 using ProdControlAV.Agent.Services;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -69,7 +70,7 @@ builder.Services.AddHttpClient<IStatusPublisher, StatusPublisher>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(5);
 });
-builder.Services.AddHttpClient<IDeviceSource, DeviceSource>(c =>
+builder.Services.AddHttpClient<DeviceSource>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(5);
 });
@@ -82,7 +83,19 @@ builder.Services.AddHttpClient("JwtAuth", c => {
     c.Timeout = TimeSpan.FromMinutes(5);
 });
 
-// Hosted worker
+// Register DeviceSource as both a singleton (for IDeviceSource) and a hosted service
+builder.Services.AddSingleton<IDeviceSource>(sp => 
+{
+    var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+    var logger = sp.GetRequiredService<ILogger<DeviceSource>>();
+    var apiOptions = sp.GetRequiredService<IOptions<ApiOptions>>();
+    var jwtAuth = sp.GetRequiredService<IJwtAuthService>();
+    var httpClient = httpClientFactory.CreateClient(nameof(DeviceSource));
+    return new DeviceSource(httpClient, logger, apiOptions, jwtAuth);
+});
+
+// Hosted workers - DeviceSource must be registered as hosted service to start background processing
+builder.Services.AddHostedService(sp => (DeviceSource)sp.GetRequiredService<IDeviceSource>());
 builder.Services.AddHostedService<AgentService>();
 
 await builder.Build().RunAsync();
