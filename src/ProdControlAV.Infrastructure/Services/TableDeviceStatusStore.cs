@@ -1,0 +1,41 @@
+﻿using Azure;
+using Azure.Data.Tables;
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace ProdControlAV.Infrastructure.Services
+{
+    public sealed class TableDeviceStatusStore : IDeviceStatusStore
+    {
+        private readonly TableClient _table;
+        public TableDeviceStatusStore(TableClient table) => _table = table;
+
+        public async Task UpsertAsync(Guid tenantId, Guid deviceId, string status, int? latencyMs, DateTimeOffset ts, CancellationToken ct)
+        {
+            var entity = new TableEntity(tenantId.ToString().ToLowerInvariant(), deviceId.ToString())
+            {
+                ["Status"] = status,
+                ["LatencyMs"] = latencyMs,
+                ["LastSeenUtc"] = ts
+            };
+            await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
+        }
+
+        public async IAsyncEnumerable<DeviceStatusDto> GetAllForTenantAsync(Guid tenantId, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            var query = _table.QueryAsync<TableEntity>(x => x.PartitionKey == tenantId.ToString().ToLowerInvariant(), cancellationToken: ct);
+            await foreach (var e in query)
+            {
+                yield return new DeviceStatusDto(
+                    Guid.Parse(e.RowKey),
+                    (string)e["Status"],
+                    e.ContainsKey("LatencyMs") ? (int?)Convert.ToInt32(e["LatencyMs"]) : null,
+                    (DateTimeOffset)e["LastSeenUtc"]
+                );
+            }
+        }
+    }
+}
+

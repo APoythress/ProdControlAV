@@ -148,9 +148,8 @@ public sealed class AgentService : BackgroundService
         while (await _heartbeat.WaitForNextTickAsync(ct))
         {
             var snapshot = _state.Values
-                .Select(s => new DeviceStatus(s.Id, s.Name, s.Ip, s.IsUp ? "ONLINE" : "OFFLINE", s.ChangedAt))
+                .Select(s => new DeviceStatus(s.Id, s.Name, s.Ip, s.IsUp ? "ONLINE" : "OFFLINE", s.ChangedAt, null))
                 .ToArray();
-
             try { await _publisher.HeartbeatAsync(snapshot, ct); }
             catch { /* ignore */ }
         }
@@ -159,7 +158,13 @@ public sealed class AgentService : BackgroundService
     private async Task UpdateStateAndPublishIfChanged(Device d, bool up, CancellationToken ct)
     {
         var s = _state.GetOrAdd(d.Id, _ => new State { Id = d.Id, Name = d.Name, Ip = d.Ip });
-
+        int? pingMs = null;
+        if (!string.IsNullOrEmpty(d.Ip))
+        {
+            // If you have a way to get ping latency, set pingMs here
+            // For now, set to null or a default value
+            pingMs = null;
+        }
         if (up)
         {
             s.OkStreak++;
@@ -169,7 +174,7 @@ public sealed class AgentService : BackgroundService
                 s.IsUp = true;
                 s.ChangedAt = DateTimeOffset.UtcNow;
                 _logger.LogInformation("Device state changed to ONLINE: {Name} ({Ip}) - publishing status update", d.Name, d.Ip);
-                await _publisher.PublishAsync(new DeviceStatus(d.Id, d.Name, d.Ip, "ONLINE", s.ChangedAt), ct);
+                await _publisher.PublishAsync(new DeviceStatus(d.Id, d.Name, d.Ip, "ONLINE", s.ChangedAt, pingMs), ct);
             }
         }
         else
@@ -181,7 +186,7 @@ public sealed class AgentService : BackgroundService
                 s.IsUp = false;
                 s.ChangedAt = DateTimeOffset.UtcNow;
                 _logger.LogInformation("Device state changed to OFFLINE: {Name} ({Ip}) - publishing status update", d.Name, d.Ip);
-                await _publisher.PublishAsync(new DeviceStatus(d.Id, d.Name, d.Ip, "OFFLINE", s.ChangedAt), ct);
+                await _publisher.PublishAsync(new DeviceStatus(d.Id, d.Name, d.Ip, "OFFLINE", s.ChangedAt, pingMs), ct);
             }
         }
     }

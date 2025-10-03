@@ -183,3 +183,41 @@ This project is proprietary software. See the license agreement for usage terms 
 ## Support
 
 For technical support, feature requests, or security issues, please contact the development team through the appropriate channels outlined in your organization's support documentation.
+
+# Azure Table Storage Migration (Device Status)
+
+## Test Coverage
+- Unit tests for TableDeviceStatusStore and StatusController (partitioning, upsert, claim validation, multi-tenant isolation)
+- Integration tests for TableDeviceStatusStore using Azurite
+
+## Integration Requirements
+- WebApp and Agent must use new API contract:
+  - POST /api/status: StatusPostDto
+  - GET /api/status?tenantId=...: StatusListDto
+- API configuration must specify Table Storage endpoint (Azure or Azurite)
+
+## Local Development (Azurite)
+- Start Azurite Table Storage:
+  ```cmd
+  docker run -p 10002:10002 mcr.microsoft.com/azure-storage/azurite azurite-table --tableHost 0.0.0.0
+  ```
+- Set `Storage:ConnectionString` in `appsettings.Development.json`:
+  ```json
+  "Storage": {
+    "ConnectionString": "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFe...==;TableEndpoint=http://127.0.0.1:10002/devstoreaccount1;"
+  }
+  ```
+
+## Troubleshooting
+- If Table Storage errors occur, check endpoint/connection string in appsettings.json
+- For local dev, ensure Azurite is running and port 10002 is open
+- Monitor API logs for Table transaction counts and latency
+
+## Rollout Guidance
+- Validate in dev/staging with Azurite before production cutover
+- Monitor dashboard read latency and Table transaction counts
+- Optional: implement StatusHistory table in phase 2
+
+## Operational Notes
+- All device status logic is now routed through Azure Table Storage with partitioned queries for multi-tenant isolation
+- Table transaction logging is enabled for observability and cost tracking

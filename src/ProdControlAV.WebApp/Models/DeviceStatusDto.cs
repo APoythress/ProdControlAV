@@ -1,10 +1,8 @@
+using System;
+using System.Collections.Generic;
+
 namespace ProdControlAV.WebApp.Models
 {
-    public class DeviceStatusDto
-    {
-        public string? Name { get; set; }
-        public string? IP { get; set; }
-        public bool IsOnline { get; set; }
-        public long LastPingMs { get; set; }
-    }
+    public record DeviceStatusDto(Guid DeviceId, string Status, int? LatencyMs, DateTimeOffset LastSeenUtc);
+    public record StatusListDto(Guid TenantId, IReadOnlyList<DeviceStatusDto> Items, DateTimeOffset AsOfUtc);
 }
