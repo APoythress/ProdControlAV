@@ -121,7 +121,8 @@ public sealed class AgentsController : ControllerBase
                 Id = d.Id,
                 IpAddress = d.Ip,
                 Type = d.Type,
-                TcpPort = null
+                TcpPort = null,
+                PingFrequencySeconds = d.PingFrequencySeconds
             })
             .ToListAsync(ct);
         _logger.LogInformation("[DEVICES] Returning {Count} devices for TenantId={TenantId}", devices.Count, tenantId);

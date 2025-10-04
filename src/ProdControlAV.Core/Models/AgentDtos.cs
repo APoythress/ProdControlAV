@@ -8,6 +8,7 @@ public sealed class DeviceTargetDto
     public string IpAddress { get; set; } = default!;
     public string? Type { get; set; }
     public int? TcpPort { get; set; }
+    public int PingFrequencySeconds { get; set; } = 300; // Default to 300 seconds (5 minutes)
 }
 
 public sealed class StatusReading

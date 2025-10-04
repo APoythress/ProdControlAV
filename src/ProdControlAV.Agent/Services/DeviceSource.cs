@@ -84,7 +84,8 @@ public sealed class DeviceSource : BackgroundService, IDeviceSource
                 Id = dt.Id.ToString(),
                 Name = dt.IpAddress, // Use IP as name for now since Name is not in DTO
                 Ip = dt.IpAddress,
-                PreferTcp = dt.TcpPort.HasValue
+                PreferTcp = dt.TcpPort.HasValue,
+                PingFrequencySeconds = dt.PingFrequencySeconds
             }).ToList();
 
             lock (_gate)

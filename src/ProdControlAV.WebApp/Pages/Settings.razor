@@ -1,0 +1,284 @@
+@page "/settings"
+@using System.Net.Http
+@using System.Net.Http.Json
+@using ProdControlAV.Core.Models
+@inject HttpClient Http
+@inject DeviceApiClient deviceApiClient
+@inject IJSRuntime JSRuntime
+
+<div class="container-fluid min-vh-100 d-flex align-items-center justify-content-center py-5">
+    <div class="row w-100 justify-content-center">
+        <div class="col-12 col-lg-10 col-xl-8">
+            <!-- Title Header -->
+            <div class="text-center mb-5">
+                <h1 class="display-5 fw-bold text-white mb-3">
+                    <i class="bi bi-gear-fill me-3"></i>Device Ping Frequency Settings
+                </h1>
+                <p class="lead text-white-50">
+                    Configure monitoring intervals to optimize database costs
+                </p>
+            </div>
+
+            <!-- Info Card -->
+            <div class="card bg-dark border-light mb-4 shadow-lg">
+                <div class="card-body">
+                    <div class="d-flex align-items-start">
+                        <i class="bi bi-info-circle-fill text-info fs-4 me-3"></i>
+                        <div>
+                            <p class="text-white mb-0">
+                                Configure how often each device should be pinged by the monitoring agent. 
+                                Lower frequencies reduce database load and costs.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @if (isLoading)
+            {
+                <div class="text-center py-5">
+                    <div class="spinner-border text-light" style="width: 3rem; height: 3rem;" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="text-white-50 mt-3">Loading devices...</p>
+                </div>
+            }
+            else if (devices == null || devices.Count == 0)
+            {
+                <div class="card bg-dark border-warning text-center py-5 shadow">
+                    <div class="card-body">
+                        <i class="bi bi-exclamation-triangle text-warning" style="font-size: 3rem;"></i>
+                        <h4 class="text-white mt-3">No Devices Found</h4>
+                        <p class="text-white-50">Please add devices first to configure ping frequencies.</p>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <!-- Devices Grid -->
+                <div class="card bg-dark border-light shadow-lg">
+                    <div class="card-header bg-secondary border-light">
+                        <h5 class="text-white mb-0">
+                            <i class="bi bi-hdd-network me-2"></i>Monitored Devices (@devices.Count)
+                        </h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-dark table-hover mb-0">
+                                <thead class="table-secondary">
+                                    <tr>
+                                        <th class="border-0 py-3">
+                                            <i class="bi bi-tag me-2"></i>Device Name
+                                        </th>
+                                        <th class="border-0 py-3">
+                                            <i class="bi bi-hdd-network me-2"></i>IP Address
+                                        </th>
+                                        <th class="border-0 py-3">
+                                            <i class="bi bi-cpu me-2"></i>Type
+                                        </th>
+                                        <th class="border-0 py-3">
+                                            <i class="bi bi-clock me-2"></i>Frequency (seconds)
+                                        </th>
+                                        <th class="border-0 py-3 text-center">
+                                            <i class="bi bi-lightning me-2"></i>Action
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var device in devices)
+                                    {
+                                        <tr>
+                                            <td class="align-middle fw-semibold">@device.Name</td>
+                                            <td class="align-middle">
+                                                <span class="badge bg-secondary">@device.Ip</span>
+                                            </td>
+                                            <td class="align-middle">
+                                                <span class="badge bg-info">@device.Type</span>
+                                            </td>
+                                            <td class="align-middle">
+                                                <div class="input-group input-group-sm" style="max-width: 200px;">
+                                                    <input type="number" 
+                                                           class="form-control" 
+                                                           min="5" 
+                                                           max="3600" 
+                                                           @bind="device.PingFrequencySeconds" 
+                                                           @bind:event="oninput" />
+                                                    <span class="input-group-text">s</span>
+                                                </div>
+                                                <small class="text-muted d-block mt-1">Min: 5s, Max: 1hr</small>
+                                            </td>
+                                            <td class="align-middle text-center">
+                                                <button class="btn btn-sm btn-primary px-4" 
+                                                        @onclick="() => ShowWarningModal(device)"
+                                                        disabled="@(savingDeviceId == device.Id)">
+                                                    @if (savingDeviceId == device.Id)
+                                                    {
+                                                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                                        <span>Saving...</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <i class="bi bi-save me-2"></i>
+                                                        <span>Save</span>
+                                                    }
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                @if (!string.IsNullOrEmpty(statusMessage))
+                {
+                    <div class="alert @(isError ? "alert-danger" : "alert-success") alert-dismissible fade show mt-4 shadow" role="alert">
+                        <i class="bi @(isError ? "bi-x-circle" : "bi-check-circle") me-2"></i>
+                        @statusMessage
+                        <button type="button" class="btn-close" @onclick="() => statusMessage = null"></button>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+<!-- Cost Warning Modal -->
+<div class="modal fade" id="costWarningModal" tabindex="-1" aria-labelledby="costWarningModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark text-white border-warning">
+            <div class="modal-header border-warning">
+                <h5 class="modal-title" id="costWarningModalLabel">
+                    <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>Cost Warning
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning mb-3" role="alert">
+                    <strong>Important:</strong> Lower ping frequency values mean more frequent pings.
+                </div>
+                <p class="mb-3">
+                    <strong>More frequent pings result in higher database operation costs.</strong>
+                </p>
+                <p class="mb-3">
+                    You are about to set the ping frequency for <strong>@pendingDevice?.Name</strong> to 
+                    <span class="badge bg-primary fs-6">@pendingDevice?.PingFrequencySeconds seconds</span>.
+                </p>
+                @if (pendingDevice != null && pendingDevice.PingFrequencySeconds < 60)
+                {
+                    <div class="alert alert-danger" role="alert">
+                        <i class="bi bi-exclamation-octagon me-2"></i>
+                        <strong>High Cost Alert:</strong> Frequencies below 60 seconds should only be used for critical devices that require frequent monitoring.
+                    </div>
+                }
+                else if (pendingDevice != null && pendingDevice.PingFrequencySeconds < 300)
+                {
+                    <div class="alert alert-info" role="alert">
+                        <i class="bi bi-info-circle me-2"></i>
+                        This frequency is reasonable for important devices that need regular monitoring.
+                    </div>
+                }
+                else
+                {
+                    <div class="alert alert-success" role="alert">
+                        <i class="bi bi-check-circle me-2"></i>
+                        This is a cost-effective frequency suitable for most devices.
+                    </div>
+                }
+                <p class="text-white-50 small mb-0">
+                    <strong>Recommended frequencies:</strong><br/>
+                    • Critical devices: 10-30 seconds<br/>
+                    • Important devices: 60-120 seconds<br/>
+                    • Standard devices: 300-600 seconds<br/>
+                    • Low priority: 600-3600 seconds
+                </p>
+            </div>
+            <div class="modal-footer border-warning">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="bi bi-x-circle me-2"></i>Cancel
+                </button>
+                <button type="button" class="btn btn-primary" @onclick="ConfirmSaveDevice">
+                    <i class="bi bi-check-circle me-2"></i>Confirm & Save
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<Device>? devices;
+    private bool isLoading = true;
+    private Guid? savingDeviceId = null;
+    private string? statusMessage;
+    private bool isError = false;
+    private Device? pendingDevice = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDevices();
+    }
+
+    private async Task LoadDevices()
+    {
+        try
+        {
+            isLoading = true;
+            devices = await deviceApiClient.GetDevices();
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Error loading devices: {ex.Message}";
+            isError = true;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task ShowWarningModal(Device device)
+    {
+        // Validate ping frequency
+        if (device.PingFrequencySeconds < 5)
+        {
+            device.PingFrequencySeconds = 5;
+        }
+        else if (device.PingFrequencySeconds > 3600)
+        {
+            device.PingFrequencySeconds = 3600;
+        }
+
+        pendingDevice = device;
+        await JSRuntime.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('costWarningModal')).show()");
+    }
+
+    private async Task ConfirmSaveDevice()
+    {
+        if (pendingDevice == null) return;
+
+        try
+        {
+            savingDeviceId = pendingDevice.Id;
+            statusMessage = null;
+            
+            // Hide modal
+            await JSRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('costWarningModal')).hide()");
+            
+            await deviceApiClient.UpdateDevice(pendingDevice);
+            
+            statusMessage = $"Successfully updated ping frequency for {pendingDevice.Name} to {pendingDevice.PingFrequencySeconds} seconds";
+            isError = false;
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Error saving device: {ex.Message}";
+            isError = true;
+        }
+        finally
+        {
+            savingDeviceId = null;
+            pendingDevice = null;
+        }
+    }
+}
