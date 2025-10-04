@@ -19,6 +19,7 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
             .AddJsonFile("appsettings.Development.json", optional: true)
             .AddJsonFile("appsettings.Production.json", optional: true)
             .AddJsonFile("appsettings.ScriptGeneration.json", optional: true)
+            .AddJsonFile("appsettings.Migration.json", optional: true)
             .AddEnvironmentVariables()
             .Build();
 
@@ -35,7 +36,7 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
 
     private static void ConfigureDatabase(DbContextOptionsBuilder<AppDbContext> optionsBuilder, IConfiguration configuration, string[] args)
     {
-        var connectionString = configuration.GetConnectionString("Default");
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
         
         // Require connection string for SQL Server
         if (string.IsNullOrEmpty(connectionString))

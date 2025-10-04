@@ -152,6 +152,9 @@ builder.Services.AddSingleton<INetworkMonitor, PingNetworkMonitor>();
 builder.Services.AddScoped<ITenantProvider, CompositeTenantProvider>();
 builder.Services.AddScoped<IAgentAuth, AgentAuth>();
 
+// Azure Queue Storage for agent commands
+builder.Services.AddScoped<IAgentCommandQueueService, AzureQueueAgentCommandService>();
+
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
