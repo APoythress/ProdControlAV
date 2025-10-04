@@ -18,6 +18,7 @@ public class AppDbContext : DbContext
     public DbSet<AppUser> Users => Set<AppUser>();
     public DbSet<Agent> Agents => Set<Agent>();
     public DbSet<AgentCommand> AgentCommands => Set<AgentCommand>();
+    public DbSet<OutboxEntry> OutboxEntries => Set<OutboxEntry>();
 // Ensure you already have: Devices, DeviceStatusHistory
 
 
@@ -39,6 +40,14 @@ public class AppDbContext : DbContext
             e.HasKey(x => x.ActionId);
             e.Property(x => x.ActionName).HasMaxLength(200).IsRequired();
             e.HasIndex(x => new { x.TenantId, x.ActionName });
+        });
+        
+        b.Entity<OutboxEntry>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.EntityType).HasMaxLength(100).IsRequired();
+            e.Property(x => x.Operation).HasMaxLength(50).IsRequired();
+            e.HasIndex(x => new { x.ProcessedUtc, x.CreatedUtc });
         });
 
 

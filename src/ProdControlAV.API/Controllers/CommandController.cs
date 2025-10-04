@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using ProdControlAV.API.Services;
 using ProdControlAV.Core.Interfaces;
 using ProdControlAV.Core.Models;
+using System.Text.Json;
 
 namespace ProdControlAV.API.Controllers;
 
@@ -74,6 +75,21 @@ public class CommandController : ControllerBase
             HttpMethod = string.IsNullOrWhiteSpace(dto.HttpMethod) ? "POST" : dto.HttpMethod.Trim()
         };
         _db.DeviceActions.Add(d);
+        
+        // Create outbox entry for projection to Table Storage
+        var outboxEntry = new OutboxEntry
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _tenant.TenantId,
+            EntityType = "DeviceAction",
+            EntityId = d.ActionId,
+            Operation = "Upsert",
+            Payload = JsonSerializer.Serialize(d),
+            CreatedUtc = DateTimeOffset.UtcNow,
+            RetryCount = 0
+        };
+        _db.OutboxEntries.Add(outboxEntry);
+        
         await _db.SaveChangesAsync(ct);
 
         return CreatedAtAction(nameof(GetCommands), new { deviceId = d.DeviceId }, d);
