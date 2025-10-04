@@ -15,7 +15,7 @@ public class DatabaseConfigurationTests
     {
         // Arrange
         var factory = new DesignTimeDbContextFactory();
-        Environment.SetEnvironmentVariable("ConnectionStrings__Default", 
+        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", 
             "Server=localhost;Database=TestDB;Trusted_Connection=true;");
 
         try
@@ -42,7 +42,7 @@ public class DatabaseConfigurationTests
     {
         // Arrange
         var factory = new DesignTimeDbContextFactory();
-        Environment.SetEnvironmentVariable("ConnectionStrings__Default", 
+        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", 
             "Server=tcp:myserver.database.windows.net,1433;Database=TestDB;User ID=user;Password=pass;");
 
         try
@@ -56,7 +56,7 @@ public class DatabaseConfigurationTests
         }
         finally
         {
-            Environment.SetEnvironmentVariable("ConnectionStrings__Default", null);
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", null);
         }
     }
 

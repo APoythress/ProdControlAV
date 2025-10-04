@@ -4,4 +4,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>ProdControlAV.Core</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Azure.Storage.Queues" Version="12.20.1" />
+  </ItemGroup>
 </Project>

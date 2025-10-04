@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using ProdControlAV.API.Models;
 using ProdControlAV.API.Services;
 using ProdControlAV.Core.Models;
+using ProdControlAV.Core.Interfaces;
 using static Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults;
 
 namespace ProdControlAV.API.Controllers;
@@ -19,13 +20,20 @@ public sealed class AgentsController : ControllerBase
     private readonly IAgentAuth _auth;
     private readonly IJwtService _jwtService;
     private readonly ILogger<AgentsController> _logger;
+    private readonly IAgentCommandQueueService _queueService;
     
-    public AgentsController(AppDbContext db, IAgentAuth auth, IJwtService jwtService, ILogger<AgentsController> logger) 
+    public AgentsController(
+        AppDbContext db, 
+        IAgentAuth auth, 
+        IJwtService jwtService, 
+        ILogger<AgentsController> logger,
+        IAgentCommandQueueService queueService) 
     { 
         _db = db; 
         _auth = auth;
         _jwtService = jwtService;
         _logger = logger;
+        _queueService = queueService;
     }
 
     private string? GetAgentIdFromClaims()
@@ -233,5 +241,195 @@ public sealed class AgentsController : ControllerBase
         await _db.SaveChangesAsync(ct);
         _logger.LogInformation("[COMMANDS/COMPLETE] Command completed: CommandId={CommandId}, Success={Success}, AgentId={AgentId}", req.CommandId, req.Success, agentId);
         return Ok(new { ok = true });
+    }
+    
+    public sealed class CreateCommandRequest 
+    { 
+        public Guid AgentId { get; set; } 
+        public Guid DeviceId { get; set; } 
+        public string Verb { get; set; } = string.Empty; 
+        public string? Payload { get; set; }
+        public DateTime? DueUtc { get; set; }
+    }
+
+    /// <summary>
+    /// Create a new command for an agent - stores in SQL and enqueues to Azure Queue Storage
+    /// </summary>
+    [HttpPost("commands/create")]
+    [Authorize(Policy = "TenantMember")]
+    public async Task<IActionResult> CreateCommand([FromBody] CreateCommandRequest req, CancellationToken ct)
+    {
+        _logger.LogInformation("[COMMANDS/CREATE] Creating command for AgentId={AgentId}, DeviceId={DeviceId}, Verb={Verb}", 
+            req.AgentId, req.DeviceId, req.Verb);
+        
+        // Get tenant from authenticated user
+        var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenant_id")?.Value;
+        if (!Guid.TryParse(tenantIdClaim, out var tenantId))
+        {
+            _logger.LogWarning("[COMMANDS/CREATE] Invalid tenant claim");
+            return Unauthorized(new { error = "invalid_tenant" });
+        }
+        
+        // Validate agent belongs to tenant
+        var agent = await _db.Agents.FirstOrDefaultAsync(a => a.Id == req.AgentId && a.TenantId == tenantId, ct);
+        if (agent is null)
+        {
+            _logger.LogWarning("[COMMANDS/CREATE] Agent not found or not in tenant: AgentId={AgentId}, TenantId={TenantId}", 
+                req.AgentId, tenantId);
+            return NotFound(new { error = "agent_not_found" });
+        }
+        
+        // Validate device belongs to tenant
+        var device = await _db.Devices.FirstOrDefaultAsync(d => d.Id == req.DeviceId && d.TenantId == tenantId, ct);
+        if (device is null)
+        {
+            _logger.LogWarning("[COMMANDS/CREATE] Device not found or not in tenant: DeviceId={DeviceId}, TenantId={TenantId}", 
+                req.DeviceId, tenantId);
+            return NotFound(new { error = "device_not_found" });
+        }
+        
+        // Create command in SQL (authoritative record)
+        var command = new AgentCommand
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            AgentId = req.AgentId,
+            DeviceId = req.DeviceId,
+            Verb = req.Verb,
+            Payload = req.Payload,
+            CreatedUtc = DateTime.UtcNow,
+            DueUtc = req.DueUtc
+        };
+        
+        _db.AgentCommands.Add(command);
+        await _db.SaveChangesAsync(ct);
+        
+        // Enqueue to Azure Queue Storage for delivery
+        try
+        {
+            await _queueService.EnqueueCommandAsync(command, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[COMMANDS/CREATE] Failed to enqueue command {CommandId}, but SQL record created", command.Id);
+            // Command is still in SQL, so we don't fail the request
+        }
+        
+        _logger.LogInformation("[COMMANDS/CREATE] Command created: CommandId={CommandId}, AgentId={AgentId}, DeviceId={DeviceId}", 
+            command.Id, req.AgentId, req.DeviceId);
+        
+        return Ok(new { commandId = command.Id, ok = true });
+    }
+    
+    /// <summary>
+    /// Receive next command from Azure Queue Storage (agent polling endpoint)
+    /// </summary>
+    [HttpPost("commands/receive")]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    public async Task<IActionResult> ReceiveCommand(CancellationToken ct)
+    {
+        var agentIdClaim = GetAgentIdFromClaims();
+        var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenantId" || c.Type.EndsWith("/tenantId"))?.Value;
+        
+        if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
+        {
+            _logger.LogWarning("[COMMANDS/RECEIVE] Invalid token claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
+            return Unauthorized(new { error = "invalid_token_claims" });
+        }
+        
+        try
+        {
+            var commandMessage = await _queueService.ReceiveCommandAsync(agentId, tenantId, TimeSpan.FromSeconds(60), ct);
+            
+            if (commandMessage == null)
+            {
+                // No messages available
+                return Ok(new { command = (object?)null });
+            }
+            
+            // Check dequeue count for poison message handling
+            if (commandMessage.DequeueCount > 5)
+            {
+                _logger.LogWarning("[COMMANDS/RECEIVE] Command {CommandId} exceeded max dequeue count, moving to poison queue", 
+                    commandMessage.CommandId);
+                
+                // Mark as failed in SQL
+                var cmd = await _db.AgentCommands.FirstOrDefaultAsync(c => c.Id == commandMessage.CommandId, ct);
+                if (cmd != null)
+                {
+                    cmd.CompletedUtc = DateTime.UtcNow;
+                    cmd.Success = false;
+                    cmd.Message = $"Exceeded maximum retry count ({commandMessage.DequeueCount})";
+                    await _db.SaveChangesAsync(ct);
+                    
+                    // Move to poison queue
+                    await _queueService.MoveToPoisonQueueAsync(agentId, tenantId, cmd, ct);
+                }
+                
+                // Delete from main queue
+                await _queueService.DeleteCommandAsync(agentId, tenantId, commandMessage.MessageId, commandMessage.PopReceipt, ct);
+                
+                // Return no command to agent
+                return Ok(new { command = (object?)null });
+            }
+            
+            _logger.LogInformation("[COMMANDS/RECEIVE] Returning command {CommandId} to agent {AgentId}", 
+                commandMessage.CommandId, agentId);
+            
+            return Ok(new 
+            { 
+                command = new 
+                {
+                    commandId = commandMessage.CommandId,
+                    deviceId = commandMessage.DeviceId,
+                    verb = commandMessage.Verb,
+                    payload = commandMessage.Payload,
+                    messageId = commandMessage.MessageId,
+                    popReceipt = commandMessage.PopReceipt
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[COMMANDS/RECEIVE] Error receiving command for agent {AgentId}", agentId);
+            return StatusCode(500, new { error = "failed_to_receive_command" });
+        }
+    }
+    
+    public sealed class AcknowledgeCommandRequest 
+    { 
+        public string MessageId { get; set; } = string.Empty;
+        public string PopReceipt { get; set; } = string.Empty;
+    }
+    
+    /// <summary>
+    /// Acknowledge successful command receipt and delete from queue
+    /// </summary>
+    [HttpPost("commands/acknowledge")]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    public async Task<IActionResult> AcknowledgeCommand([FromBody] AcknowledgeCommandRequest req, CancellationToken ct)
+    {
+        var agentIdClaim = GetAgentIdFromClaims();
+        var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenantId" || c.Type.EndsWith("/tenantId"))?.Value;
+        
+        if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
+        {
+            _logger.LogWarning("[COMMANDS/ACK] Invalid token claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
+            return Unauthorized(new { error = "invalid_token_claims" });
+        }
+        
+        try
+        {
+            await _queueService.DeleteCommandAsync(agentId, tenantId, req.MessageId, req.PopReceipt, ct);
+            _logger.LogInformation("[COMMANDS/ACK] Command message {MessageId} acknowledged and deleted for agent {AgentId}", 
+                req.MessageId, agentId);
+            return Ok(new { ok = true });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[COMMANDS/ACK] Failed to acknowledge command message {MessageId} for agent {AgentId}", 
+                req.MessageId, agentId);
+            return StatusCode(500, new { error = "failed_to_acknowledge_command" });
+        }
     }
 }
