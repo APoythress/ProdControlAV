@@ -41,7 +41,7 @@ public class DevicesController : ControllerBase
     public async Task<ActionResult<Device>> Get(Guid id) // use Guid to match route
         => await _db.Devices.FindAsync(id, _tenant.TenantId) is { } d ? Ok(d) : NotFound();
 
-    public record UpsertDevice(Guid? Id, string Name, string Model, string Brand, string Type, bool AllowTelNet, string Ip, int? Port, string? Location);
+    public record UpsertDevice(Guid? Id, string Name, string Model, string Brand, string Type, bool AllowTelNet, string Ip, int? Port, string? Location, int? PingFrequencySeconds);
 
     [HttpPost]
     [Authorize(Policy = "IsMember")]
@@ -62,7 +62,8 @@ public class DevicesController : ControllerBase
             Ip = dto.Ip.Trim(),
             Port = dto.Port.GetValueOrDefault(80),
             Location = dto.Location?.Trim(),
-            Status = false
+            Status = false,
+            PingFrequencySeconds = dto.PingFrequencySeconds.GetValueOrDefault(10)
         };
         _db.Devices.Add(d);
         await _db.SaveChangesAsync();
@@ -78,6 +79,8 @@ public class DevicesController : ControllerBase
         if (!string.IsNullOrWhiteSpace(dto.Name)) d.Name = dto.Name.Trim();
         if (!string.IsNullOrWhiteSpace(dto.Ip))   d.Ip   = dto.Ip.Trim();
         if (dto.Port.HasValue && dto.Port.Value > 0) d.Port = dto.Port.Value;
+        if (dto.PingFrequencySeconds.HasValue && dto.PingFrequencySeconds.Value >= 5) 
+            d.PingFrequencySeconds = dto.PingFrequencySeconds.Value;
         d.AllowTelNet = dto.AllowTelNet;
         d.Location = dto.Location?.Trim();
 

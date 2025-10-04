@@ -35,6 +35,7 @@ public sealed class AgentService : BackgroundService
         public int FailStreak;
         public int OkStreak;
         public DateTimeOffset ChangedAt = DateTimeOffset.UtcNow;
+        public DateTimeOffset LastPingAt = DateTimeOffset.MinValue; // Track last ping time
         public string Id = "";
         public string Name = "";
         public string Ip = "";
@@ -89,10 +90,29 @@ public sealed class AgentService : BackgroundService
             var deviceList = devices.ToList(); // materialize so we can use Count
             EnsureState(deviceList);
 
-            _logger.LogInformation("Starting device ping cycle for {Count} devices", deviceList.Count);
+            var now = DateTimeOffset.UtcNow;
+            
+            // Filter devices that need to be pinged based on their individual frequency
+            var devicesToPing = deviceList.Where(d =>
+            {
+                if (_state.TryGetValue(d.Id, out var state))
+                {
+                    var elapsed = (now - state.LastPingAt).TotalSeconds;
+                    return elapsed >= d.PingFrequencySeconds;
+                }
+                return true; // Ping if no state exists yet
+            }).ToList();
 
-            var tasks = new List<Task>(deviceList.Count);
-            foreach (var d in deviceList)
+            if (devicesToPing.Count == 0)
+            {
+                _logger.LogDebug("No devices need pinging at this time");
+                continue;
+            }
+
+            _logger.LogInformation("Starting device ping cycle for {Count} of {Total} devices", devicesToPing.Count, deviceList.Count);
+
+            var tasks = new List<Task>(devicesToPing.Count);
+            foreach (var d in devicesToPing)
             {
                 await _gate.WaitAsync(ct);
                 var delay = rnd.Next(0, 200);
@@ -101,6 +121,13 @@ public sealed class AgentService : BackgroundService
                     try
                     {
                         await Task.Delay(delay, ct);
+                        
+                        // Update last ping time before pinging
+                        if (_state.TryGetValue(d.Id, out var state))
+                        {
+                            state.LastPingAt = DateTimeOffset.UtcNow;
+                        }
+                        
                         var up = d.PreferTcp && _opt.TcpFallbackPort is int p
                             ? await TcpProbeAsync(d.Ip, p, _opt.PingTimeoutMs, ct)
                             : await IcmpProbeAsync(d.Ip, _opt.PingTimeoutMs, ct);
@@ -121,7 +148,7 @@ public sealed class AgentService : BackgroundService
             }
 
             await Task.WhenAll(tasks);
-            _logger.LogDebug("Completed device ping cycle for {Count} devices", deviceList.Count);
+            _logger.LogDebug("Completed device ping cycle for {Count} devices", devicesToPing.Count);
         }
     }
 
