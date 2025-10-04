@@ -17,5 +17,5 @@ public class Device
     public bool Status { get; set; }
     public DateTimeOffset? LastChecked { get; set; }
     public string? LastResponse { get; set; }
-    public int PingFrequencySeconds { get; set; } = 10; // Default to 10 seconds
+    public int PingFrequencySeconds { get; set; } = 300; // Default to 300 seconds (5 minutes)
 }

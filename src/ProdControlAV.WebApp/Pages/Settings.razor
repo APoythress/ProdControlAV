@@ -12,6 +12,10 @@
         <i class="bi bi-info-circle"></i> Configure how often each device should be pinged by the monitoring agent. Lower frequencies reduce database load and costs.
     </div>
     
+    <div class="alert alert-warning" role="alert">
+        <i class="bi bi-exclamation-triangle-fill"></i> <strong>Cost Warning:</strong> Lower ping frequency values (more frequent pings) result in higher database operation costs. Use frequencies below 60 seconds only for critical devices that require frequent monitoring.
+    </div>
+    
     @if (isLoading)
     {
         <div class="text-center">

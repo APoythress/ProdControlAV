@@ -6,5 +6,5 @@ public sealed class Device
     public required string Name { get; init; }
     public required string Ip { get; init; }
     public bool PreferTcp { get; init; } = false;     // use TCP probe instead of ICMP when true
-    public int PingFrequencySeconds { get; init; } = 10; // How often to ping this device (in seconds)
+    public int PingFrequencySeconds { get; init; } = 300; // How often to ping this device (in seconds)
 }

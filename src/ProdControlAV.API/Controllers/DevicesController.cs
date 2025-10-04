@@ -63,7 +63,7 @@ public class DevicesController : ControllerBase
             Port = dto.Port.GetValueOrDefault(80),
             Location = dto.Location?.Trim(),
             Status = false,
-            PingFrequencySeconds = dto.PingFrequencySeconds.GetValueOrDefault(10)
+            PingFrequencySeconds = dto.PingFrequencySeconds.GetValueOrDefault(300)
         };
         _db.Devices.Add(d);
         await _db.SaveChangesAsync();
