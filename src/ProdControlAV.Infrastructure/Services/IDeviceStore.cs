@@ -25,4 +25,17 @@ namespace ProdControlAV.Infrastructure.Services
         Task DeleteAsync(Guid tenantId, Guid deviceId, CancellationToken ct);
         IAsyncEnumerable<DeviceDto> GetAllForTenantAsync(Guid tenantId, CancellationToken ct);
     }
+
+    public record DeviceActionDto(
+        Guid ActionId,
+        Guid DeviceId,
+        string ActionName,
+        Guid TenantId);
+
+    public interface IDeviceActionStore
+    {
+        Task UpsertAsync(Guid tenantId, Guid actionId, Guid deviceId, string actionName, CancellationToken ct);
+        Task DeleteAsync(Guid tenantId, Guid actionId, CancellationToken ct);
+        IAsyncEnumerable<DeviceActionDto> GetAllForTenantAsync(Guid tenantId, CancellationToken ct);
+    }
 }

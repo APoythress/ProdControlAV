@@ -13,13 +13,16 @@ public class DevicesController : ControllerBase
     private readonly AppDbContext _db;
     private readonly ITenantProvider _tenant;
     private readonly IDeviceStore _deviceStore;
+    private readonly IDeviceActionStore _deviceActionStore;
     private readonly ILogger<DevicesController> _logger;
     
-    public DevicesController(AppDbContext db, ITenantProvider tenant, IDeviceStore deviceStore, ILogger<DevicesController> logger) 
+    public DevicesController(AppDbContext db, ITenantProvider tenant, IDeviceStore deviceStore, 
+        IDeviceActionStore deviceActionStore, ILogger<DevicesController> logger) 
     { 
         _db = db; 
         _tenant = tenant; 
         _deviceStore = deviceStore;
+        _deviceActionStore = deviceActionStore;
         _logger = logger;
     }
     
@@ -68,16 +71,32 @@ public class DevicesController : ControllerBase
     }
 
     // GET api/devices/actions
+    // Now reads from Azure Table Storage instead of SQL
     [HttpGet("actions")]
-    public async Task<ActionResult<IEnumerable<DeviceAction>>> Actions()
+    public async Task<ActionResult<List<DashboardDeviceActionDto>>> Actions(CancellationToken ct)
     {
-        var tenantId = _tenant.TenantId;
-        var items = await _db.DeviceActions
-            .AsNoTracking()
-            .Where(a => a.TenantId == tenantId)
-            .OrderBy(a => a.ActionName)
-            .ToListAsync();
-        return Ok(items);
+        var actions = new List<DashboardDeviceActionDto>();
+        await foreach (var action in _deviceActionStore.GetAllForTenantAsync(_tenant.TenantId, ct))
+        {
+            actions.Add(new DashboardDeviceActionDto
+            {
+                ActionId = action.ActionId,
+                DeviceId = action.DeviceId,
+                ActionName = action.ActionName,
+                TenantId = action.TenantId
+            });
+        }
+        _logger.LogInformation("Retrieved {Count} device actions from Table Storage for tenant {TenantId}", actions.Count, _tenant.TenantId);
+        return Ok(actions);
+    }
+    
+    // DTO for dashboard device actions
+    public record DashboardDeviceActionDto
+    {
+        public Guid ActionId { get; init; }
+        public Guid DeviceId { get; init; }
+        public string ActionName { get; init; } = "";
+        public Guid TenantId { get; init; }
     }
 
     [HttpGet("{id:guid}")]

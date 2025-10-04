@@ -187,6 +187,12 @@ builder.Services.AddScoped<IDeviceStore>(sp => {
     return new TableDeviceStore(tableClient);
 });
 
+// TableClient for DeviceActions
+builder.Services.AddScoped<IDeviceActionStore>(sp => {
+    var tableClient = sp.GetRequiredService<TableServiceClient>().GetTableClient("DeviceActions");
+    return new TableDeviceActionStore(tableClient);
+});
+
 // Background service for device projection
 builder.Services.AddHostedService<DeviceProjectionHostedService>();
 

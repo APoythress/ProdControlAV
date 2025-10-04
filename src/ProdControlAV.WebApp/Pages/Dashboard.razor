@@ -237,7 +237,7 @@
 </div>
 
 @code {
-    private List<DeviceAction> Actions = new();   // initialized to avoid null on first render
+    private List<DashboardDeviceActionDto> Actions = new();   // now using DashboardDeviceActionDto from API
     private List<DashboardDeviceDto> Devices = new();         // now using DashboardDeviceDto from API
     private bool _loading = true;
     private bool loaded;
@@ -249,8 +249,8 @@
     private Task<List<DashboardDeviceDto>> GetDevicesAsync() =>
         Http.GetFromJsonAsync<List<DashboardDeviceDto>>("api/devices/devices"); // <-- reads from Table Storage
 
-    private Task<List<DeviceAction>> GetActionsAcync() =>
-        Http.GetFromJsonAsync<List<DeviceAction>>("api/devices/actions");
+    private Task<List<DashboardDeviceActionDto>> GetActionsAcync() =>
+        Http.GetFromJsonAsync<List<DashboardDeviceActionDto>>("api/devices/actions"); // <-- reads from Table Storage
 
     protected override async Task OnInitializedAsync()
     {
@@ -381,7 +381,7 @@
     // Modal-related fields and methods
     private DashboardDeviceDto? selectedDevice;
     private DeviceForm deviceForm = new();
-    private List<DeviceAction> deviceActions = new();
+    private List<DashboardDeviceActionDto> deviceActions = new();
     private bool isSaving = false;
     private bool isDeleting = false;
     private bool isExecutingCommand = false;
@@ -594,5 +594,13 @@
         public string? Location { get; set; }
         public Guid TenantId { get; set; }
         public bool Status { get; set; }
+    }
+    
+    public class DashboardDeviceActionDto
+    {
+        public Guid ActionId { get; set; }
+        public Guid DeviceId { get; set; }
+        public string ActionName { get; set; } = "";
+        public Guid TenantId { get; set; }
     }
 }

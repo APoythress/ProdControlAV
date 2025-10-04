@@ -52,6 +52,7 @@ namespace ProdControlAV.API.Services
             using var scope = _serviceProvider.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var deviceStore = scope.ServiceProvider.GetRequiredService<IDeviceStore>();
+            var deviceActionStore = scope.ServiceProvider.GetRequiredService<IDeviceActionStore>();
 
             // Get unprocessed entries ordered by creation time
             var entries = await db.OutboxEntries
@@ -69,7 +70,7 @@ namespace ProdControlAV.API.Services
             {
                 try
                 {
-                    await ProcessEntryAsync(entry, deviceStore, ct);
+                    await ProcessEntryAsync(entry, deviceStore, deviceActionStore, ct);
                     entry.ProcessedUtc = DateTimeOffset.UtcNow;
                     entry.LastError = null;
                 }
@@ -84,7 +85,7 @@ namespace ProdControlAV.API.Services
             await db.SaveChangesAsync(ct);
         }
 
-        private async Task ProcessEntryAsync(OutboxEntry entry, IDeviceStore deviceStore, CancellationToken ct)
+        private async Task ProcessEntryAsync(OutboxEntry entry, IDeviceStore deviceStore, IDeviceActionStore deviceActionStore, CancellationToken ct)
         {
             if (entry.EntityType == "Device")
             {
@@ -113,6 +114,28 @@ namespace ProdControlAV.API.Services
                 {
                     await deviceStore.DeleteAsync(entry.TenantId, entry.EntityId, ct);
                     _logger.LogInformation("Deleted device {DeviceId} from tenant {TenantId}", entry.EntityId, entry.TenantId);
+                }
+            }
+            else if (entry.EntityType == "DeviceAction")
+            {
+                if (entry.Operation == "Upsert" && !string.IsNullOrEmpty(entry.Payload))
+                {
+                    var action = JsonSerializer.Deserialize<DeviceAction>(entry.Payload);
+                    if (action != null)
+                    {
+                        await deviceActionStore.UpsertAsync(
+                            entry.TenantId,
+                            action.ActionId,
+                            action.DeviceId,
+                            action.ActionName,
+                            ct);
+                        _logger.LogInformation("Projected device action {ActionId} for tenant {TenantId}", action.ActionId, entry.TenantId);
+                    }
+                }
+                else if (entry.Operation == "Delete")
+                {
+                    await deviceActionStore.DeleteAsync(entry.TenantId, entry.EntityId, ct);
+                    _logger.LogInformation("Deleted device action {ActionId} from tenant {TenantId}", entry.EntityId, entry.TenantId);
                 }
             }
         }
