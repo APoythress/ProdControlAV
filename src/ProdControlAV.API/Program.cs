@@ -169,11 +169,26 @@ builder.Services.AddSingleton<TableServiceClient>(sp => {
         return new TableServiceClient(connStr);
     throw new InvalidOperationException("No Table Storage endpoint or connection string configured.");
 });
+
+// TableClient for DeviceStatus
 builder.Services.AddSingleton<TableClient>(sp => {
     var svc = sp.GetRequiredService<TableServiceClient>();
     return svc.GetTableClient("DeviceStatus");
 });
 builder.Services.AddScoped<IDeviceStatusStore, TableDeviceStatusStore>();
+
+// TableClient for Devices (named registration)
+builder.Services.AddSingleton(sp => {
+    var svc = sp.GetRequiredService<TableServiceClient>();
+    return svc.GetTableClient("Devices");
+});
+builder.Services.AddScoped<IDeviceStore>(sp => {
+    var tableClient = sp.GetRequiredService<TableServiceClient>().GetTableClient("Devices");
+    return new TableDeviceStore(tableClient);
+});
+
+// Background service for device projection
+builder.Services.AddHostedService<DeviceProjectionHostedService>();
 
 // Add Swagger/OpenAPI support
 builder.Services.AddEndpointsApiExplorer();

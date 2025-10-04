@@ -1,0 +1,28 @@
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace ProdControlAV.Infrastructure.Services
+{
+    public record DeviceDto(
+        Guid Id, 
+        string Name, 
+        string IpAddress, 
+        string Type, 
+        Guid TenantId, 
+        DateTimeOffset CreatedUtc,
+        string? Model,
+        string? Brand,
+        string? Location,
+        bool AllowTelNet,
+        int Port);
+
+    public interface IDeviceStore
+    {
+        Task UpsertAsync(Guid tenantId, Guid deviceId, string name, string ipAddress, string type, 
+            DateTimeOffset createdUtc, string? model, string? brand, string? location, bool allowTelNet, int port, CancellationToken ct);
+        Task DeleteAsync(Guid tenantId, Guid deviceId, CancellationToken ct);
+        IAsyncEnumerable<DeviceDto> GetAllForTenantAsync(Guid tenantId, CancellationToken ct);
+    }
+}

@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProdControlAV.Core.Models;
+using ProdControlAV.Infrastructure.Services;
+using System.Text.Json;
 
 [ApiController]
 [Authorize(Policy = "IsMember")]
@@ -10,18 +12,59 @@ public class DevicesController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly ITenantProvider _tenant;
-    public DevicesController(AppDbContext db, ITenantProvider tenant) { _db = db; _tenant = tenant; }
+    private readonly IDeviceStore _deviceStore;
+    private readonly ILogger<DevicesController> _logger;
+    
+    public DevicesController(AppDbContext db, ITenantProvider tenant, IDeviceStore deviceStore, ILogger<DevicesController> logger) 
+    { 
+        _db = db; 
+        _tenant = tenant; 
+        _deviceStore = deviceStore;
+        _logger = logger;
+    }
     
     // GET api/devices/devices
+    // Now reads from Azure Table Storage instead of SQL
+    // Returns a simple DTO compatible with dashboard needs
     [HttpGet("devices")]
-    public Task<List<Device>> Devices(CancellationToken ct)
+    public async Task<ActionResult<List<DashboardDeviceDto>>> Devices(CancellationToken ct)
     {
-        var devices = _db.Devices
-            .AsNoTracking()
-            .Where(dv => dv.TenantId == _tenant.TenantId)
-            .OrderBy(dv => dv.Name)
-            .ToListAsync(ct);
-        return devices;
+        var devices = new List<DashboardDeviceDto>();
+        await foreach (var device in _deviceStore.GetAllForTenantAsync(_tenant.TenantId, ct))
+        {
+            devices.Add(new DashboardDeviceDto
+            {
+                Id = device.Id,
+                Name = device.Name,
+                Model = device.Model ?? "",
+                Brand = device.Brand ?? "",
+                Type = device.Type,
+                AllowTelNet = device.AllowTelNet,
+                Ip = device.IpAddress,
+                Port = device.Port,
+                Location = device.Location,
+                TenantId = device.TenantId,
+                Status = false // Status will be updated by status polling
+            });
+        }
+        _logger.LogInformation("Retrieved {Count} devices from Table Storage for tenant {TenantId}", devices.Count, _tenant.TenantId);
+        return Ok(devices);
+    }
+    
+    // DTO for dashboard - subset of Device model
+    public record DashboardDeviceDto
+    {
+        public Guid Id { get; init; }
+        public string Name { get; init; } = "";
+        public string Model { get; init; } = "";
+        public string Brand { get; init; } = "";
+        public string Type { get; init; } = "";
+        public bool AllowTelNet { get; init; }
+        public string Ip { get; init; } = "";
+        public int Port { get; init; }
+        public string? Location { get; init; }
+        public Guid TenantId { get; init; }
+        public bool Status { get; init; } // For UI compatibility, will be updated by status polling
     }
 
     // GET api/devices/actions
@@ -66,6 +109,21 @@ public class DevicesController : ControllerBase
             PingFrequencySeconds = dto.PingFrequencySeconds.GetValueOrDefault(300)
         };
         _db.Devices.Add(d);
+        
+        // Create outbox entry for projection to Table Storage
+        var outboxEntry = new OutboxEntry
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _tenant.TenantId,
+            EntityType = "Device",
+            EntityId = d.Id,
+            Operation = "Upsert",
+            Payload = JsonSerializer.Serialize(d),
+            CreatedUtc = DateTimeOffset.UtcNow,
+            RetryCount = 0
+        };
+        _db.OutboxEntries.Add(outboxEntry);
+        
         await _db.SaveChangesAsync();
         return CreatedAtAction(nameof(Get), new { id = d.Id }, d);
     }
@@ -84,6 +142,20 @@ public class DevicesController : ControllerBase
         d.AllowTelNet = dto.AllowTelNet;
         d.Location = dto.Location?.Trim();
 
+        // Create outbox entry for projection to Table Storage
+        var outboxEntry = new OutboxEntry
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _tenant.TenantId,
+            EntityType = "Device",
+            EntityId = d.Id,
+            Operation = "Upsert",
+            Payload = JsonSerializer.Serialize(d),
+            CreatedUtc = DateTimeOffset.UtcNow,
+            RetryCount = 0
+        };
+        _db.OutboxEntries.Add(outboxEntry);
+        
         await _db.SaveChangesAsync();
         return Ok(d);
     }
@@ -94,6 +166,21 @@ public class DevicesController : ControllerBase
         var d = await _db.Devices.FindAsync(id, _tenant.TenantId);
         if (d is null) return NotFound();
         _db.Devices.Remove(d);
+        
+        // Create outbox entry for deletion from Table Storage
+        var outboxEntry = new OutboxEntry
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _tenant.TenantId,
+            EntityType = "Device",
+            EntityId = id,
+            Operation = "Delete",
+            Payload = null,
+            CreatedUtc = DateTimeOffset.UtcNow,
+            RetryCount = 0
+        };
+        _db.OutboxEntries.Add(outboxEntry);
+        
         await _db.SaveChangesAsync();
         return NoContent();
     }

@@ -238,7 +238,7 @@
 
 @code {
     private List<DeviceAction> Actions = new();   // initialized to avoid null on first render
-    private List<Device> Devices = new();         // already safe
+    private List<DashboardDeviceDto> Devices = new();         // now using DashboardDeviceDto from API
     private bool _loading = true;
     private bool loaded;
     private string? loadError;
@@ -246,8 +246,8 @@
     private CancellationTokenSource? _refreshCts;
     private Task? _refreshTask;
     
-    private Task<List<Device>> GetDevicesAsync() =>
-        Http.GetFromJsonAsync<List<Device>>("api/devices/devices"); // <-- correct route
+    private Task<List<DashboardDeviceDto>> GetDevicesAsync() =>
+        Http.GetFromJsonAsync<List<DashboardDeviceDto>>("api/devices/devices"); // <-- reads from Table Storage
 
     private Task<List<DeviceAction>> GetActionsAcync() =>
         Http.GetFromJsonAsync<List<DeviceAction>>("api/devices/actions");
@@ -379,7 +379,7 @@
     }
 
     // Modal-related fields and methods
-    private Device? selectedDevice;
+    private DashboardDeviceDto? selectedDevice;
     private DeviceForm deviceForm = new();
     private List<DeviceAction> deviceActions = new();
     private bool isSaving = false;
@@ -397,7 +397,7 @@
         public string Location { get; set; } = "";
     }
 
-    private async Task OpenDeviceModal(Device device)
+    private async Task OpenDeviceModal(DashboardDeviceDto device)
     {
         selectedDevice = device;
         
@@ -577,6 +577,22 @@
         }
     }
 
-    private static string GetStatusClass(Device d) =>
+    private static string GetStatusClass(DashboardDeviceDto d) =>
         Equals(d?.Status, true) ? "bg-success" : "bg-danger";
+    
+    // DTO matching API response
+    public class DashboardDeviceDto
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = "";
+        public string Model { get; set; } = "";
+        public string Brand { get; set; } = "";
+        public string Type { get; set; } = "";
+        public bool AllowTelNet { get; set; }
+        public string Ip { get; set; } = "";
+        public int Port { get; set; }
+        public string? Location { get; set; }
+        public Guid TenantId { get; set; }
+        public bool Status { get; set; }
+    }
 }
