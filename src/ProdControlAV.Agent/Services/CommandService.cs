@@ -63,6 +63,7 @@ public class CommandService : ICommandService
     {
         try
         {
+            // Use the new queue-based endpoint instead of SQL polling
             if (string.IsNullOrWhiteSpace(_api.CommandsEndpoint))
                 return new List<CommandEnvelope>();
 
@@ -74,15 +75,10 @@ public class CommandService : ICommandService
                 return new List<CommandEnvelope>();
             }
 
-            var request = new CommandPullRequest
-            {
-                Max = 10
-            };
-
-            using var req = new HttpRequestMessage(HttpMethod.Post, _api.CommandsEndpoint)
-            {
-                Content = JsonContent.Create(request, options: s_jsonOptions)
-            };
+            // Use the new /commands/receive endpoint for queue-based polling
+            var endpoint = _api.CommandsEndpoint.Replace("/commands/next", "/commands/receive");
+            
+            using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
             req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
             using var res = await _http.SendAsync(req, ct);
@@ -92,8 +88,33 @@ public class CommandService : ICommandService
                 return new List<CommandEnvelope>();
             }
 
-            var response = await res.Content.ReadFromJsonAsync<CommandPullResponse>(s_jsonOptions, ct);
-            return response?.Commands ?? new List<CommandEnvelope>();
+            var responseJson = await res.Content.ReadFromJsonAsync<JsonElement>(s_jsonOptions, ct);
+            
+            // Check if command is null (no messages available)
+            if (!responseJson.TryGetProperty("command", out var commandProp) || 
+                commandProp.ValueKind == JsonValueKind.Null)
+            {
+                return new List<CommandEnvelope>();
+            }
+
+            // Parse the command from the response
+            var command = new CommandEnvelope
+            {
+                CommandId = Guid.Parse(commandProp.GetProperty("commandId").GetString()!),
+                DeviceId = Guid.Parse(commandProp.GetProperty("deviceId").GetString()!),
+                Verb = commandProp.GetProperty("verb").GetString()!,
+                Payload = commandProp.TryGetProperty("payload", out var payload) ? payload.GetString() : null
+            };
+            
+            // Store message metadata for later acknowledgment
+            if (commandProp.TryGetProperty("messageId", out var msgId) && 
+                commandProp.TryGetProperty("popReceipt", out var popReceipt))
+            {
+                command.MessageId = msgId.GetString();
+                command.PopReceipt = popReceipt.GetString();
+            }
+
+            return new List<CommandEnvelope> { command };
         }
         catch (OperationCanceledException)
         {
@@ -142,7 +163,15 @@ public class CommandService : ICommandService
         }
 
         var durationMs = (int)(DateTime.UtcNow - startTime).TotalMilliseconds;
+        
+        // Complete the command in SQL (authoritative record)
         await CompleteCommandAsync(command.CommandId, success, message, durationMs, ct);
+        
+        // If command came from queue (has MessageId), acknowledge it to delete from queue
+        if (success && !string.IsNullOrEmpty(command.MessageId) && !string.IsNullOrEmpty(command.PopReceipt))
+        {
+            await AcknowledgeCommandAsync(command.MessageId, command.PopReceipt, ct);
+        }
     }
 
     public async Task CompleteCommandAsync(Guid commandId, bool success, string? message, int? durationMs, CancellationToken ct)
@@ -182,6 +211,40 @@ public class CommandService : ICommandService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to report command completion for {CommandId}", commandId);
+        }
+    }
+    
+    private async Task AcknowledgeCommandAsync(string messageId, string popReceipt, CancellationToken ct)
+    {
+        try
+        {
+            // Get valid JWT token
+            var token = await _jwtAuth.GetValidTokenAsync(ct);
+            if (string.IsNullOrEmpty(token))
+            {
+                _logger.LogWarning("Failed to obtain valid JWT token for command acknowledgment");
+                return;
+            }
+
+            var endpoint = _api.CommandsEndpoint?.Replace("/commands/next", "/commands/acknowledge") 
+                ?? "/api/agents/commands/acknowledge";
+            
+            var request = new { messageId, popReceipt };
+
+            using var req = new HttpRequestMessage(HttpMethod.Post, endpoint)
+            {
+                Content = JsonContent.Create(request, options: s_jsonOptions)
+            };
+            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+            using var res = await _http.SendAsync(req, ct);
+            res.EnsureSuccessStatusCode();
+            
+            _logger.LogInformation("Command message {MessageId} acknowledged and deleted from queue", messageId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to acknowledge command message {MessageId}", messageId);
         }
     }
 

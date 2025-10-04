@@ -24,4 +24,6 @@ public sealed class CommandEnvelope
     public Guid DeviceId { get; set; } = default!;
     public string Verb { get; set; } = default!;
     public string? Payload { get; set; }
+    public string? MessageId { get; set; }
+    public string? PopReceipt { get; set; }
 }
