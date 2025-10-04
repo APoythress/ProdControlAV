@@ -43,6 +43,35 @@ A comprehensive .NET 8 distributed system designed for monitoring and controllin
 
 - **[ProdControlAV.Agent](src/ProdControlAV.Agent/README.md)** - .NET Worker Service for Raspberry Pi that performs device monitoring via ICMP ping and TCP probes, communicating with the API server.
 
+### Key Features
+
+#### 🎯 Per-Device Ping Frequency Configuration (NEW)
+Configure individual monitoring intervals for each device to optimize database costs and system performance:
+- **Cost Optimization**: Reduce Azure SQL DB operations by up to 65%
+- **Flexible Scheduling**: Set frequencies from 5 seconds to 1 hour per device
+- **Smart Polling**: Agent only pings devices when their interval has elapsed
+- **Easy Configuration**: Web UI for managing frequencies via Settings page
+
+See [Ping Frequency Optimization Guide](docs/PING_FREQUENCY_OPTIMIZATION.md) for details.
+
+#### 🔍 Real-Time Device Monitoring
+- ICMP ping and TCP probe support for comprehensive device health checks
+- Automatic state change detection with configurable thresholds
+- Historical status logging with timestamp tracking
+- Multi-device concurrent monitoring with configurable concurrency limits
+
+#### 🏢 Multi-Tenant Architecture
+- Complete data isolation between organizations
+- Tenant-specific device management and monitoring
+- Secure authentication with per-tenant access control
+- Scalable to support multiple organizations on single deployment
+
+#### 🤖 Raspberry Pi Agent
+- Lightweight monitoring agent for edge deployment
+- Cross-platform ARM64 support for Raspberry Pi 5
+- Automatic device discovery and registration
+- Resilient communication with automatic retry logic
+
 ## How Projects Work Together
 
 ### Data Flow
