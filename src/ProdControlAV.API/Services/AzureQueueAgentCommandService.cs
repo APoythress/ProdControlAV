@@ -25,29 +25,55 @@ public class AzureQueueAgentCommandService : IAgentCommandQueueService
         IConfiguration configuration,
         ILogger<AzureQueueAgentCommandService> logger)
     {
-        _connectionString = configuration["Storage:QueueConnectionString"] 
+        _connectionString = configuration["Storage:QueueConnectionString"]
             ?? throw new InvalidOperationException("Storage:QueueConnectionString not configured");
         _logger = logger;
         _maxDequeueCount = configuration.GetValue<int>("Storage:MaxDequeueCount", 5);
     }
     
+    private static string ShortId(Guid id, int length = 12)
+    {
+        var s = id.ToString("N"); // 32 hex chars, no dashes
+        if (length <= 0) length = 12;
+        if (length > s.Length) length = s.Length;
+        return s.Substring(0, length);
+    }
+
     /// <summary>
     /// Get the queue name for a specific tenant and agent
-    /// Pattern: pcav-{tenantId}-{agentId}
+    /// Pattern: pcav-{tenantPart}-{agentPart} (keeps total length <= 63)
     /// </summary>
     private static string GetQueueName(Guid tenantId, Guid agentId)
     {
-        // Azure Queue Storage names must be lowercase, 3-63 chars, alphanumeric + hyphens
-        return $"pcav-{tenantId:N}-{agentId:N}".ToLowerInvariant();
+        var tenantPart = ShortId(tenantId, 12);
+        var agentPart = ShortId(agentId, 12);
+        var name = $"pcav-{tenantPart}-{agentPart}".ToLowerInvariant();
+
+        if (name.Length < 3 || name.Length > 63)
+        {
+            throw new InvalidOperationException($"Generated queue name '{name}' length {name.Length} is outside Azure Queue limits (3-63).");
+        }
+
+        return name;
     }
-    
+
     /// <summary>
     /// Get the poison queue name for failed messages
     /// </summary>
     private static string GetPoisonQueueName(Guid tenantId, Guid agentId)
     {
-        return $"pcav-poison-{tenantId:N}-{agentId:N}".ToLowerInvariant();
+        var tenantPart = ShortId(tenantId, 12);
+        var agentPart = ShortId(agentId, 12);
+        var name = $"pcav-poison-{tenantPart}-{agentPart}".ToLowerInvariant();
+
+        if (name.Length < 3 || name.Length > 63)
+        {
+            throw new InvalidOperationException($"Generated poison queue name '{name}' length {name.Length} is outside Azure Queue limits (3-63).");
+        }
+
+        return name;
     }
+
     
     private async Task<QueueClient> GetQueueClientAsync(Guid tenantId, Guid agentId, CancellationToken ct)
     {
