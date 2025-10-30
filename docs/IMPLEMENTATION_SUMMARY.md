@@ -188,13 +188,25 @@ Cost optimization:
 
 **Note:** Current implementation uses connection string for development. Production deployments should use Managed Identity as specified in `appsettings.json`:
 
+**Development Configuration (Connection String):**
 ```json
 {
   "Storage": {
-    "TablesEndpoint": "https://{account}.table.core.windows.net"
+    "ConnectionString": "DefaultEndpointsProtocol=https;AccountName=devaccount;AccountKey=...;EndpointSuffix=core.windows.net"
   }
 }
 ```
+
+**Production Configuration (Managed Identity - Recommended):**
+```json
+{
+  "Storage": {
+    "TablesEndpoint": "https://prodaccount.table.core.windows.net"
+  }
+}
+```
+
+When `TablesEndpoint` is specified without `ConnectionString`, the application uses `DefaultAzureCredential` which supports Managed Identity, Azure CLI, Visual Studio, and other authentication methods. This is the recommended approach for production deployments.
 
 ## Cost Optimization
 
@@ -380,11 +392,18 @@ FROM Devices d;
 
 ### Current Limitations
 1. **Connection String in Development**: Production should use Managed Identity
-2. **No Queue for Status Updates**: Currently direct API calls (acceptable for current scale)
+2. **Direct API Status Updates vs Queue**: The requirements document recommends a queue-based architecture (Azure Queue Storage or Service Bus) for status updates. The current implementation uses direct API calls from agents to StatusController for simplicity and to meet immediate needs. This approach is acceptable for current scale (up to ~100 devices with 5-minute polling intervals) but should be migrated to queue-based updates when scaling beyond 500 devices or implementing sub-minute polling. The queue-based approach provides:
+   - Better resilience to API temporary outages
+   - Natural rate limiting and backpressure
+   - Easier horizontal scaling of workers
+   - Built-in retry and dead-letter queue capabilities
 3. **No Status Reconciliation**: Future work to compare SQL vs Table parity
 
 ### Future Enhancements
-1. **Azure Queue Integration**: For status updates at higher scale
+1. **Azure Queue Integration**: Migrate status updates to queue-based architecture for better scalability and resilience (as recommended in requirements document). This involves:
+   - Agents publish status messages to Azure Queue Storage
+   - Worker service consumes queue and calls UpsertStatusAsync
+   - Adds retry logic, DLQ handling, and idempotency checks
 2. **Status Reconciliation Job**: Periodic comparison of SQL vs Table
 3. **SqlToTableBackfill Tool**: One-time migration utility for production cutover
 4. **Advanced Monitoring**: Custom metrics dashboard in Azure Monitor
