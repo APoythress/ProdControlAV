@@ -210,7 +210,11 @@ public sealed class AgentsController : ControllerBase
                     {
                         deviceName = string.IsNullOrWhiteSpace(device.Name) ? device.Id.ToString() : device.Name;
                         ip = device.Ip ?? string.Empty;
+                        
+                        device.Status = r.IsOnline; // update the device table with the latest status
                     }
+
+                    await _db.SaveChangesAsync(ct);
                 }
 
                 var lastPingMs = r.LatencyMs.HasValue ? (long)r.LatencyMs.Value : 0L;
@@ -224,7 +228,7 @@ public sealed class AgentsController : ControllerBase
                     LastPingMs = lastPingMs,
                     Timestamp = now
                 };
-
+                
                 _db.DeviceStatusLogs.Add(statusLog);
                 saved++;
             }
