@@ -10,10 +10,10 @@ Env.Load(); // Loads .env from current working directory
 // Add environment variable configuration with specific prefix for security
 builder.Configuration.AddEnvironmentVariables("PRODCONTROL_");
 
-builder.Services.AddLogging(logging =>
-{
-    logging.AddConsole();  
-});
+// Configure logging from configuration and add console provider
+builder.Logging.ClearProviders();
+builder.Logging.AddConfiguration(builder.Configuration.GetSection("Logging"));
+builder.Logging.AddConsole();
 
 // Bind options
 builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("Polling"));
