@@ -16,25 +16,28 @@ public class StatusControllerTests
     [Fact]
     public async Task Post_ValidTenantClaim_UpsertsStatus()
     {
-        var storeMock = new Mock<IDeviceStatusStore>();
+        var statusStoreMock = new Mock<IDeviceStatusStore>();
+        var deviceStoreMock = new Mock<IDeviceStore>();
         var loggerMock = new Mock<ILogger<StatusController>>();
-        var controller = new StatusController(storeMock.Object, loggerMock.Object);
+        var controller = new StatusController(statusStoreMock.Object, deviceStoreMock.Object, loggerMock.Object);
         var tenantId = Guid.NewGuid();
         var deviceId = Guid.NewGuid();
         var user = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("tenant_id", tenantId.ToString()) }, "mock"));
         controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = user } };
         var dto = new StatusPostDto(tenantId, deviceId, "Online", 10, DateTimeOffset.UtcNow);
         var result = await controller.Post(dto, CancellationToken.None);
-        storeMock.Verify(s => s.UpsertAsync(tenantId, deviceId, "Online", 10, It.IsAny<DateTimeOffset>(), CancellationToken.None), Times.Once);
+        statusStoreMock.Verify(s => s.UpsertAsync(tenantId, deviceId, "Online", 10, It.IsAny<DateTimeOffset>(), CancellationToken.None), Times.Once);
+        deviceStoreMock.Verify(s => s.UpsertStatusAsync(tenantId, deviceId, "Online", It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), CancellationToken.None), Times.Once);
         Assert.IsType<NoContentResult>(result);
     }
 
     [Fact]
     public async Task Post_InvalidTenantClaim_ReturnsForbid()
     {
-        var storeMock = new Mock<IDeviceStatusStore>();
+        var statusStoreMock = new Mock<IDeviceStatusStore>();
+        var deviceStoreMock = new Mock<IDeviceStore>();
         var loggerMock = new Mock<ILogger<StatusController>>();
-        var controller = new StatusController(storeMock.Object, loggerMock.Object);
+        var controller = new StatusController(statusStoreMock.Object, deviceStoreMock.Object, loggerMock.Object);
         var tenantId = Guid.NewGuid();
         var deviceId = Guid.NewGuid();
         var user = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("tenant_id", Guid.NewGuid().ToString()) }, "mock"));
@@ -48,13 +51,14 @@ public class StatusControllerTests
     public async Task Get_ValidTenantClaim_ReturnsStatusList()
     {
         var tenantId = Guid.NewGuid();
-        var storeMock = new Mock<IDeviceStatusStore>();
+        var statusStoreMock = new Mock<IDeviceStatusStore>();
+        var deviceStoreMock = new Mock<IDeviceStore>();
         var loggerMock = new Mock<ILogger<StatusController>>();
-        var controller = new StatusController(storeMock.Object, loggerMock.Object);
+        var controller = new StatusController(statusStoreMock.Object, deviceStoreMock.Object, loggerMock.Object);
         var user = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("tenant_id", tenantId.ToString()) }, "mock"));
         controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = user } };
         var dtos = new List<DeviceStatusDto> { new DeviceStatusDto(Guid.NewGuid(), "Online", 10, DateTimeOffset.UtcNow) };
-        storeMock.Setup(s => s.GetAllForTenantAsync(tenantId, CancellationToken.None)).Returns(GetAsyncEnumerable(dtos));
+        statusStoreMock.Setup(s => s.GetAllForTenantAsync(tenantId, CancellationToken.None)).Returns(GetAsyncEnumerable(dtos));
         var result = await controller.Get(tenantId, CancellationToken.None);
         var okResult = Assert.IsType<OkObjectResult>(result.Result);
         var statusList = Assert.IsType<StatusListDto>(okResult.Value);

@@ -196,6 +196,9 @@ builder.Services.AddScoped<IDeviceActionStore>(sp => {
 // Background service for device projection
 builder.Services.AddHostedService<DeviceProjectionHostedService>();
 
+// Background service for table retention enforcement (deletes entries older than 8 days)
+builder.Services.AddHostedService<TableRetentionEnforcementService>();
+
 // Add Swagger/OpenAPI support
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>

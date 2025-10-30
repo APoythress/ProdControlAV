@@ -30,6 +30,17 @@ namespace ProdControlAV.Infrastructure.Services
             await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
         }
 
+        public async Task UpsertStatusAsync(Guid tenantId, Guid deviceId, string status, DateTimeOffset lastSeenUtc, DateTimeOffset lastPolledUtc, CancellationToken ct)
+        {
+            var entity = new TableEntity(tenantId.ToString().ToLowerInvariant(), deviceId.ToString())
+            {
+                ["Status"] = status,
+                ["LastSeenUtc"] = lastSeenUtc,
+                ["LastPolledUtc"] = lastPolledUtc
+            };
+            await _table.UpsertEntityAsync(entity, TableUpdateMode.Merge, ct);
+        }
+
         public async Task DeleteAsync(Guid tenantId, Guid deviceId, CancellationToken ct)
         {
             try
@@ -58,7 +69,11 @@ namespace ProdControlAV.Infrastructure.Services
                     e.ContainsKey("Brand") ? (string)e["Brand"] : null,
                     e.ContainsKey("Location") ? (string)e["Location"] : null,
                     e.ContainsKey("AllowTelNet") && (bool)e["AllowTelNet"],
-                    e.ContainsKey("Port") ? Convert.ToInt32(e["Port"]) : 80
+                    e.ContainsKey("Port") ? Convert.ToInt32(e["Port"]) : 80,
+                    e.ContainsKey("Status") ? (string)e["Status"] : null,
+                    e.ContainsKey("LastSeenUtc") ? (DateTimeOffset?)e["LastSeenUtc"] : null,
+                    e.ContainsKey("LastPolledUtc") ? (DateTimeOffset?)e["LastPolledUtc"] : null,
+                    e.ContainsKey("HealthMetric") ? Convert.ToDouble(e["HealthMetric"]) : null
                 );
             }
         }
