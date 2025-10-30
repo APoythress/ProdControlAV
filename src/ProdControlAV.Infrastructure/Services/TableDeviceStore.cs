@@ -58,22 +58,104 @@ namespace ProdControlAV.Infrastructure.Services
             var query = _table.QueryAsync<TableEntity>(x => x.PartitionKey == tenantId.ToString().ToLowerInvariant(), cancellationToken: ct);
             await foreach (var e in query)
             {
+                // Safely convert values from the TableEntity to avoid InvalidCastException when the stored
+                // value type differs from the expected type (for example boolean stored where a string
+                // is expected). We prefer tolerant conversions (ToString, Convert.ToInt32, DateTime -> DateTimeOffset)
+
+                object? v;
+
+                // Name (non-nullable string)
+                string name = (e.TryGetValue("Name", out v) && v != null) ? (v is string sv ? sv : Convert.ToString(v) ?? string.Empty) : string.Empty;
+
+                // IpAddress (non-nullable string)
+                string ipAddress = (e.TryGetValue("IpAddress", out v) && v != null) ? (v is string siv ? siv : Convert.ToString(v) ?? string.Empty) : string.Empty;
+
+                // Type (non-nullable string)
+                string type = (e.TryGetValue("Type", out v) && v != null) ? (v is string st ? st : Convert.ToString(v) ?? string.Empty) : string.Empty;
+
+                // CreatedUtc (DateTimeOffset)
+                DateTimeOffset createdUtc;
+                if (e.TryGetValue("CreatedUtc", out v) && v != null)
+                {
+                    if (v is DateTimeOffset dto) createdUtc = dto;
+                    else if (v is DateTime dt) createdUtc = new DateTimeOffset(dt);
+                    else if (v is string s && DateTimeOffset.TryParse(s, out var parsed)) createdUtc = parsed;
+                    else createdUtc = DateTimeOffset.MinValue;
+                }
+                else
+                {
+                    createdUtc = DateTimeOffset.MinValue;
+                }
+
+                // Optional strings
+                string? model = (e.ContainsKey("Model") && e["Model"] != null) ? Convert.ToString(e["Model"]) : null;
+                string? brand = (e.ContainsKey("Brand") && e["Brand"] != null) ? Convert.ToString(e["Brand"]) : null;
+                string? location = (e.ContainsKey("Location") && e["Location"] != null) ? Convert.ToString(e["Location"]) : null;
+
+                // AllowTelNet (bool)
+                bool allowTelNet = false;
+                if (e.TryGetValue("AllowTelNet", out v) && v != null)
+                {
+                    if (v is bool b) allowTelNet = b;
+                    else
+                    {
+                        // tolerate string or numeric representations
+                        var s = Convert.ToString(v);
+                        if (bool.TryParse(s, out var pb)) allowTelNet = pb;
+                        else if (int.TryParse(s, out var pi)) allowTelNet = pi != 0;
+                    }
+                }
+
+                // Port (int)
+                int port = 80;
+                if (e.TryGetValue("Port", out v) && v != null)
+                {
+                    try { port = Convert.ToInt32(v); } catch { port = 80; }
+                }
+
+                // Status (optional string)
+                string? status = (e.ContainsKey("Status") && e["Status"] != null) ? Convert.ToString(e["Status"]) : null;
+
+                // LastSeenUtc / LastPolledUtc (nullable DateTimeOffset)
+                DateTimeOffset? lastSeen = null;
+                if (e.TryGetValue("LastSeenUtc", out v) && v != null)
+                {
+                    if (v is DateTimeOffset dto2) lastSeen = dto2;
+                    else if (v is DateTime dt2) lastSeen = new DateTimeOffset(dt2);
+                    else if (v is string s2 && DateTimeOffset.TryParse(s2, out var p2)) lastSeen = p2;
+                }
+
+                DateTimeOffset? lastPolled = null;
+                if (e.TryGetValue("LastPolledUtc", out v) && v != null)
+                {
+                    if (v is DateTimeOffset dto3) lastPolled = dto3;
+                    else if (v is DateTime dt3) lastPolled = new DateTimeOffset(dt3);
+                    else if (v is string s3 && DateTimeOffset.TryParse(s3, out var p3)) lastPolled = p3;
+                }
+
+                // HealthMetric (nullable double)
+                double? healthMetric = null;
+                if (e.TryGetValue("HealthMetric", out v) && v != null)
+                {
+                    try { healthMetric = Convert.ToDouble(v); } catch { healthMetric = null; }
+                }
+
                 yield return new DeviceDto(
                     Guid.Parse(e.RowKey),
-                    (string)e["Name"],
-                    (string)e["IpAddress"],
-                    (string)e["Type"],
+                    name,
+                    ipAddress,
+                    type,
                     tenantId,
-                    (DateTimeOffset)e["CreatedUtc"],
-                    e.ContainsKey("Model") ? (string)e["Model"] : null,
-                    e.ContainsKey("Brand") ? (string)e["Brand"] : null,
-                    e.ContainsKey("Location") ? (string)e["Location"] : null,
-                    e.ContainsKey("AllowTelNet") && (bool)e["AllowTelNet"],
-                    e.ContainsKey("Port") ? Convert.ToInt32(e["Port"]) : 80,
-                    e.ContainsKey("Status") ? (string)e["Status"] : null,
-                    e.ContainsKey("LastSeenUtc") ? (DateTimeOffset?)e["LastSeenUtc"] : null,
-                    e.ContainsKey("LastPolledUtc") ? (DateTimeOffset?)e["LastPolledUtc"] : null,
-                    e.ContainsKey("HealthMetric") ? Convert.ToDouble(e["HealthMetric"]) : null
+                    createdUtc,
+                    string.IsNullOrWhiteSpace(model) ? null : model,
+                    string.IsNullOrWhiteSpace(brand) ? null : brand,
+                    string.IsNullOrWhiteSpace(location) ? null : location,
+                    allowTelNet,
+                    port,
+                    string.IsNullOrWhiteSpace(status) ? null : status,
+                    lastSeen,
+                    lastPolled,
+                    healthMetric
                 );
             }
         }
