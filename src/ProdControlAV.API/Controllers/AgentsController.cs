@@ -148,32 +148,96 @@ public sealed class AgentsController : ControllerBase
     public async Task<IActionResult> Status([FromBody] StatusUploadRequest req, CancellationToken ct)
     {
         _logger.LogInformation("[STATUS] Headers: {Headers}", HttpContext.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString()));
-        _logger.LogInformation("[STATUS] Body: {Body}", req);
-        var agentIdClaim = GetAgentIdFromClaims();
-        var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenantId" || c.Type.EndsWith("/tenantId"))?.Value;
-        _logger.LogInformation("[STATUS] Extracted claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
-        if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
+
+        if (req is null)
         {
-            _logger.LogWarning("[STATUS] Invalid token claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
-            return Unauthorized(new { error = "invalid_token_claims" });
-        }
-        if (req.TenantId.HasValue && req.TenantId != tenantId)
-        {
-            _logger.LogWarning("[STATUS] Request tenantId does not match JWT tenantId: Request={RequestTenantId}, JWT={JwtTenantId}", req.TenantId, tenantId);
-            return Forbid();
-        }
-        var now = DateTime.UtcNow;
-        foreach (var r in req.Readings)
-        {
-            _db.DeviceStatusLogs.Add(new DeviceStatusLog
+            // Model binding failed; log raw body for debugging and return 400 so callers can correct payload
+            try
             {
-                Id = Guid.NewGuid(),
-                IsOnline = r.IsOnline ? true : false,
-            });
+                Request.EnableBuffering();
+                Request.Body.Position = 0;
+                using var sr = new System.IO.StreamReader(Request.Body, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+                var raw = await sr.ReadToEndAsync(ct);
+                Request.Body.Position = 0;
+                _logger.LogWarning("[STATUS] Model binding returned null. Raw body: {RawBody}", raw);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[STATUS] Failed to read raw request body when model binding returned null");
+            }
+
+            return BadRequest(new { error = "invalid_or_missing_body" });
         }
-        await _db.SaveChangesAsync(ct);
-        _logger.LogInformation("[STATUS] Saved {Count} status readings for TenantId={TenantId}", req.Readings.Count, tenantId);
-        return Ok(new { ok = true });
+
+        _logger.LogInformation("[STATUS] Body: {Body}", req);
+
+        try
+        {
+            var agentIdClaim = GetAgentIdFromClaims();
+            var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenantId" || c.Type.EndsWith("/tenantId"))?.Value;
+            _logger.LogInformation("[STATUS] Extracted claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
+            if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
+            {
+                _logger.LogWarning("[STATUS] Invalid token claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
+                return Unauthorized(new { error = "invalid_token_claims" });
+            }
+
+            if (req.TenantId.HasValue && req.TenantId != tenantId)
+            {
+                _logger.LogWarning("[STATUS] Request tenantId does not match JWT tenantId: Request={RequestTenantId}, JWT={JwtTenantId}", req.TenantId, tenantId);
+                return Forbid();
+            }
+
+            if (req.Readings == null || req.Readings.Count == 0)
+            {
+                _logger.LogWarning("[STATUS] Empty readings in status upload");
+                return BadRequest(new { error = "empty_readings" });
+            }
+
+            var now = DateTime.UtcNow;
+            var saved = 0;
+
+            foreach (var r in req.Readings)
+            {
+                // Determine device name and IP from DB when possible
+                string deviceName = r.DeviceId ?? "";
+                string ip = string.Empty;
+
+                if (Guid.TryParse(r.DeviceId, out var deviceGuid))
+                {
+                    var device = await _db.Devices.FirstOrDefaultAsync(d => d.Id == deviceGuid, ct);
+                    if (device != null)
+                    {
+                        deviceName = string.IsNullOrWhiteSpace(device.Name) ? device.Id.ToString() : device.Name;
+                        ip = device.Ip ?? string.Empty;
+                    }
+                }
+
+                var lastPingMs = r.LatencyMs.HasValue ? (long)r.LatencyMs.Value : 0L;
+
+                var statusLog = new DeviceStatusLog
+                {
+                    Id = Guid.NewGuid(),
+                    DeviceName = deviceName ?? string.Empty,
+                    IP = ip ?? string.Empty,
+                    IsOnline = r.IsOnline,
+                    LastPingMs = lastPingMs,
+                    Timestamp = now
+                };
+
+                _db.DeviceStatusLogs.Add(statusLog);
+                saved++;
+            }
+
+            await _db.SaveChangesAsync(ct);
+            _logger.LogInformation("[STATUS] Saved {Count} status readings for TenantId={TenantId}", saved, tenantId);
+            return Ok(new { ok = true, saved });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[STATUS] Failed saving status readings: {Error}", ex.Message);
+            return StatusCode(500, new { error = "failed_to_save_status" });
+        }
     }
 
     public sealed class CommandPullRequest { public int Max { get; set; } = 10; }
@@ -359,77 +423,47 @@ public sealed class AgentsController : ControllerBase
                 {
                     cmd.CompletedUtc = DateTime.UtcNow;
                     cmd.Success = false;
-                    cmd.Message = $"Exceeded maximum retry count ({commandMessage.DequeueCount})";
+                    cmd.Message = "Moved to poison queue after exceeding dequeue count";
                     await _db.SaveChangesAsync(ct);
-                    
-                    // Move to poison queue
-                    await _queueService.MoveToPoisonQueueAsync(agentId, tenantId, cmd, ct);
                 }
-                
-                // Delete from main queue
-                await _queueService.DeleteCommandAsync(agentId, tenantId, commandMessage.MessageId, commandMessage.PopReceipt, ct);
-                
-                // Return no command to agent
+
+                // Move message to poison queue storage if available
+                try { if (cmd != null) await _queueService.MoveToPoisonQueueAsync(agentId, tenantId, cmd, ct); } catch { /* ignore */ }
+
                 return Ok(new { command = (object?)null });
             }
-            
-            _logger.LogInformation("[COMMANDS/RECEIVE] Returning command {CommandId} to agent {AgentId}", 
-                commandMessage.CommandId, agentId);
-            
-            return Ok(new 
-            { 
-                command = new 
+
+            // Normal delivery path: translate queue message to CommandEnvelope and return
+            var dbCmd = await _db.AgentCommands.FirstOrDefaultAsync(c => c.Id == commandMessage.CommandId, ct);
+            if (dbCmd == null)
+            {
+                // No corresponding DB record; just acknowledge and return null
+                _logger.LogWarning("[COMMANDS/RECEIVE] No DB record for command {CommandId}", commandMessage.CommandId);
+                return Ok(new { command = (object?)null });
+            }
+
+            _logger.LogInformation("[COMMANDS/RECEIVE] Returning command {CommandId} to agent {AgentId}", dbCmd.Id, agentId);
+
+            var response = new CommandPullResponse
+            {
+                Commands = new List<CommandEnvelope>
                 {
-                    commandId = commandMessage.CommandId,
-                    deviceId = commandMessage.DeviceId,
-                    verb = commandMessage.Verb,
-                    payload = commandMessage.Payload,
-                    messageId = commandMessage.MessageId,
-                    popReceipt = commandMessage.PopReceipt
+                    new CommandEnvelope
+                    {
+                        CommandId = dbCmd.Id,
+                        DeviceId = dbCmd.DeviceId,
+                        Verb = dbCmd.Verb,
+                        Payload = dbCmd.Payload
+                    }
                 }
-            });
+            };
+
+            return Ok(response);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "[COMMANDS/RECEIVE] Error receiving command for agent {AgentId}", agentId);
             return StatusCode(500, new { error = "failed_to_receive_command" });
-        }
-    }
-    
-    public sealed class AcknowledgeCommandRequest 
-    { 
-        public string MessageId { get; set; } = string.Empty;
-        public string PopReceipt { get; set; } = string.Empty;
-    }
-    
-    /// <summary>
-    /// Acknowledge successful command receipt and delete from queue
-    /// </summary>
-    [HttpPost("commands/acknowledge")]
-    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
-    public async Task<IActionResult> AcknowledgeCommand([FromBody] AcknowledgeCommandRequest req, CancellationToken ct)
-    {
-        var agentIdClaim = GetAgentIdFromClaims();
-        var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenantId" || c.Type.EndsWith("/tenantId"))?.Value;
-        
-        if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
-        {
-            _logger.LogWarning("[COMMANDS/ACK] Invalid token claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
-            return Unauthorized(new { error = "invalid_token_claims" });
-        }
-        
-        try
-        {
-            await _queueService.DeleteCommandAsync(agentId, tenantId, req.MessageId, req.PopReceipt, ct);
-            _logger.LogInformation("[COMMANDS/ACK] Command message {MessageId} acknowledged and deleted for agent {AgentId}", 
-                req.MessageId, agentId);
-            return Ok(new { ok = true });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "[COMMANDS/ACK] Failed to acknowledge command message {MessageId} for agent {AgentId}", 
-                req.MessageId, agentId);
-            return StatusCode(500, new { error = "failed_to_acknowledge_command" });
         }
     }
 }
