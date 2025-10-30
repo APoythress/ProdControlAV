@@ -47,7 +47,7 @@ public class DevicesController : ControllerBase
                 Port = device.Port,
                 Location = device.Location,
                 TenantId = device.TenantId,
-                Status = device.Status == "Online", // Convert status string to boolean for UI compatibility
+                Status = string.Equals(device.Status, "ONLINE", StringComparison.OrdinalIgnoreCase), // Case-insensitive check for online status
                 LastSeenUtc = device.LastSeenUtc,
                 LastPolledUtc = device.LastPolledUtc
             });
