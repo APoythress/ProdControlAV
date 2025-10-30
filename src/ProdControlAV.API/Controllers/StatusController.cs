@@ -15,11 +15,14 @@ namespace ProdControlAV.API.Controllers;
 [Authorize(Policy = "TenantMember")]
 public sealed class StatusController : ControllerBase
 {
-    private readonly IDeviceStatusStore _store;
+    private readonly IDeviceStatusStore _statusStore;
+    private readonly IDeviceStore _deviceStore;
     private readonly ILogger<StatusController> _logger;
-    public StatusController(IDeviceStatusStore store, ILogger<StatusController> logger)
+    
+    public StatusController(IDeviceStatusStore statusStore, IDeviceStore deviceStore, ILogger<StatusController> logger)
     {
-        _store = store;
+        _statusStore = statusStore;
+        _deviceStore = deviceStore;
         _logger = logger;
     }
 
@@ -33,8 +36,16 @@ public sealed class StatusController : ControllerBase
         if (tenantId != dto.TenantId)
             return Forbid();
 
-        await _store.UpsertAsync(dto.TenantId, dto.DeviceId, dto.Status, dto.LatencyMs, dto.ObservedAt ?? DateTimeOffset.UtcNow, ct);
-        _logger.LogInformation("TableStorage Write: tenant={TenantId} device={DeviceId}", dto.TenantId, dto.DeviceId);
+        var observedAt = dto.ObservedAt ?? DateTimeOffset.UtcNow;
+
+        // Write status to DeviceStatus table (for backward compatibility)
+        await _statusStore.UpsertAsync(dto.TenantId, dto.DeviceId, dto.Status, dto.LatencyMs, observedAt, ct);
+        
+        // Also write status to Devices table using merge mode for cost optimization
+        await _deviceStore.UpsertStatusAsync(dto.TenantId, dto.DeviceId, dto.Status, observedAt, observedAt, ct);
+        
+        _logger.LogInformation("TableStorage Write: tenant={TenantId} device={DeviceId} status={Status}", 
+            dto.TenantId, dto.DeviceId, dto.Status);
         return NoContent();
     }
 
@@ -50,7 +61,7 @@ public sealed class StatusController : ControllerBase
 
         var items = new List<DeviceStatusDto>();
         int readCount = 0;
-        await foreach (var s in _store.GetAllForTenantAsync(tenantId, ct))
+        await foreach (var s in _statusStore.GetAllForTenantAsync(tenantId, ct))
         {
             items.Add(s);
             readCount++;

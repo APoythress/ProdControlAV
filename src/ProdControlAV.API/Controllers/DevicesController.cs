@@ -47,7 +47,9 @@ public class DevicesController : ControllerBase
                 Port = device.Port,
                 Location = device.Location,
                 TenantId = device.TenantId,
-                Status = false // Status will be updated by status polling
+                Status = device.Status == "Online", // Convert status string to boolean for UI compatibility
+                LastSeenUtc = device.LastSeenUtc,
+                LastPolledUtc = device.LastPolledUtc
             });
         }
         _logger.LogInformation("Retrieved {Count} devices from Table Storage for tenant {TenantId}", devices.Count, _tenant.TenantId);
@@ -67,7 +69,9 @@ public class DevicesController : ControllerBase
         public int Port { get; init; }
         public string? Location { get; init; }
         public Guid TenantId { get; init; }
-        public bool Status { get; init; } // For UI compatibility, will be updated by status polling
+        public bool Status { get; init; } // Online/Offline status for UI
+        public DateTimeOffset? LastSeenUtc { get; init; } // When device was last seen
+        public DateTimeOffset? LastPolledUtc { get; init; } // When device was last polled
     }
 
     // GET api/devices/actions
