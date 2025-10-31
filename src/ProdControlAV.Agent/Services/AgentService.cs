@@ -112,43 +112,62 @@ public sealed class AgentService : BackgroundService
             _logger.LogInformation("Starting device ping cycle for {Count} of {Total} devices", devicesToPing.Count, deviceList.Count);
 
             var tasks = new List<Task>(devicesToPing.Count);
+            // capture state snapshot of ChangedAt before pinging so we can detect which devices changed during this cycle
+            var beforeChangedAt = new Dictionary<string, DateTimeOffset>();
             foreach (var d in devicesToPing)
             {
-                await _gate.WaitAsync(ct);
-                var delay = rnd.Next(0, 200);
-                tasks.Add(Task.Run(async () =>
-                {
-                    try
-                    {
-                        await Task.Delay(delay, ct);
-                        
-                        // Update last ping time before pinging
-                        if (_state.TryGetValue(d.Id, out var state))
-                        {
-                            state.LastPingAt = DateTimeOffset.UtcNow;
-                        }
-                        
-                        var up = d.PreferTcp && _opt.TcpFallbackPort is int p
-                            ? await TcpProbeAsync(d.Ip, p, _opt.PingTimeoutMs, ct)
-                            : await IcmpProbeAsync(d.Ip, _opt.PingTimeoutMs, ct);
-
-                        _logger.LogDebug("Ping result for {Name} ({Ip}): {Status}", d.Name, d.Ip, up ? "UP" : "DOWN");
-                        await UpdateStateAndPublishIfChanged(d, up, ct);
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
-                    {
-                        _logger.LogWarning(ex, "Probe error for {Name} ({Ip}): {Error}", d.Name, d.Ip, ex.Message);
-                        await UpdateStateAndPublishIfChanged(d, up: false, ct);
-                    }
-                    finally
-                    {
-                        _gate.Release();
-                    }
-                }, ct));
+                if (_state.TryGetValue(d.Id, out var st)) beforeChangedAt[d.Id] = st.ChangedAt;
+                else beforeChangedAt[d.Id] = DateTimeOffset.MinValue;
             }
+             foreach (var d in devicesToPing)
+             {
+                 await _gate.WaitAsync(ct);
+                 var delay = rnd.Next(0, 200);
+                 tasks.Add(Task.Run(async () =>
+                 {
+                     try
+                     {
+                         await Task.Delay(delay, ct);
+                         
+                         // Update last ping time before pinging
+                         if (_state.TryGetValue(d.Id, out var state))
+                         {
+                             state.LastPingAt = DateTimeOffset.UtcNow;
+                         }
+                         
+                         var up = d.PreferTcp && _opt.TcpFallbackPort is int p
+                             ? await TcpProbeAsync(d.Ip, p, _opt.PingTimeoutMs, ct)
+                             : await IcmpProbeAsync(d.Ip, _opt.PingTimeoutMs, ct);
 
-            await Task.WhenAll(tasks);
-            _logger.LogDebug("Completed device ping cycle for {Count} devices", devicesToPing.Count);
+                         _logger.LogDebug("Ping result for {Name} ({Ip}): {Status}", d.Name, d.Ip, up ? "UP" : "DOWN");
+                         await UpdateStateAndPublishIfChanged(d, up, ct);
+                     }
+                     catch (Exception ex) when (ex is not OperationCanceledException)
+                     {
+                         _logger.LogWarning(ex, "Probe error for {Name} ({Ip}): {Error}", d.Name, d.Ip, ex.Message);
+                         await UpdateStateAndPublishIfChanged(d, up: false, ct);
+                     }
+                     finally
+                     {
+                         _gate.Release();
+                     }
+                 }, ct));
+             }
+
+             await Task.WhenAll(tasks);
+             _logger.LogDebug("Completed device ping cycle for {Count} devices", devicesToPing.Count);
+             
+             // Publish status snapshot after each ping cycle so the API has a fresh view of device statuses
+             try
+             {
+                 var snapshot = _state.Values.Select(s => new DeviceStatus(s.Id, s.Name, s.Ip, s.IsUp ? "ONLINE" : "OFFLINE", s.ChangedAt, null)).ToArray();
+                 _logger.LogInformation("Publishing status snapshot for {Count} devices after ping cycle", snapshot.Length);
+                 await _publisher.HeartbeatAsync(snapshot, ct);
+             }
+             catch (Exception ex)
+             {
+                 _logger.LogWarning(ex, "Failed to send status snapshot after ping cycle: {Error}", ex.Message);
+             }
         }
     }
 

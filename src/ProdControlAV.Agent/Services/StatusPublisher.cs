@@ -63,16 +63,34 @@ public sealed class StatusPublisher : IStatusPublisher
             }
             var dto = new
             {
+                // Use agent-style bulk upload format expected by API: { tenantId: guid, readings: [ { deviceId, isOnline, latencyMs, message } ] }
                 TenantId = _api.TenantId,
-                DeviceId = status.Id,
-                Status = status.State,
-                LatencyMs = status.PingMs,
-                ObservedAt = DateTimeOffset.UtcNow
-            };
+                Readings = new[]
+                {
+                    new {
+                        DeviceId = status.Id,
+                        IsOnline = string.Equals(status.State, "ONLINE", StringComparison.OrdinalIgnoreCase),
+                        LatencyMs = status.PingMs,
+                        Message = (string?)null
+                    }
+                }
+             };
+
+            // Log the serialized payload for debugging when API returns 400
+            string payloadJson = JsonSerializer.Serialize(dto, _json);
+            _logger.LogDebug("Status publish payload: {PayloadJson}", payloadJson);
+
             using var req = new HttpRequestMessage(HttpMethod.Post, _api.StatusEndpoint);
             req.Content = JsonContent.Create(dto, options: _json);
             req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
             var res = await _http.SendAsync(req, ct);
+
+            if (!res.IsSuccessStatusCode)
+            {
+                var errorBody = await res.Content.ReadAsStringAsync(ct);
+                _logger.LogWarning("Status publish failed: Code={StatusCode} Body={Body}", res.StatusCode, errorBody);
+            }
+
             res.EnsureSuccessStatusCode();
             _logger.LogInformation("State change posted successfully: {Name} {Ip} -> {State}", status.Name, status.Ip, status.State);
         }
@@ -105,6 +123,52 @@ public sealed class StatusPublisher : IStatusPublisher
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to send heartbeat: {Error}", ex.Message);
+        }
+
+        // Also send the status snapshot to the agents status endpoint so the API always receives fresh device statuses
+        if (string.IsNullOrWhiteSpace(_api.StatusEndpoint)) return;
+        try
+        {
+            var token = await _jwtAuth.GetValidTokenAsync(ct);
+            if (string.IsNullOrEmpty(token))
+            {
+                _logger.LogWarning("Failed to obtain valid JWT token for status snapshot publishing");
+                return;
+            }
+
+            var readings = snapshot.Select(s => new {
+                DeviceId = s.Id,
+                IsOnline = string.Equals(s.State, "ONLINE", StringComparison.OrdinalIgnoreCase),
+                LatencyMs = s.PingMs,
+                Message = (string?)null
+            }).ToArray();
+
+            var payload = new {
+                TenantId = _api.TenantId,
+                Readings = readings
+            };
+
+            string payloadJson = JsonSerializer.Serialize(payload, _json);
+            _logger.LogDebug("Status snapshot payload: {PayloadJson}", payloadJson);
+
+            using var req2 = new HttpRequestMessage(HttpMethod.Post, _api.StatusEndpoint);
+            req2.Content = JsonContent.Create(payload, options: _json);
+            req2.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            var res2 = await _http.SendAsync(req2, ct);
+            if (!res2.IsSuccessStatusCode)
+            {
+                var errorBody = await res2.Content.ReadAsStringAsync(ct);
+                _logger.LogWarning("Status snapshot publish failed: Code={StatusCode} Body={Body}", res2.StatusCode, errorBody);
+            }
+            else
+            {
+                _logger.LogDebug("Status snapshot published successfully");
+            }
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to publish status snapshot: {Error}", ex.Message);
         }
     }
 }

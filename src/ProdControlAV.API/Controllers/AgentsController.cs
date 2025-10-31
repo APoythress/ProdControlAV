@@ -7,6 +7,7 @@ using ProdControlAV.API.Models;
 using ProdControlAV.API.Services;
 using ProdControlAV.Core.Models;
 using ProdControlAV.Core.Interfaces;
+using ProdControlAV.Infrastructure.Services;
 using static Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults;
 
 namespace ProdControlAV.API.Controllers;
@@ -21,19 +22,25 @@ public sealed class AgentsController : ControllerBase
     private readonly IJwtService _jwtService;
     private readonly ILogger<AgentsController> _logger;
     private readonly IAgentCommandQueueService _queueService;
+    private readonly IDeviceStatusStore _statusStore;
+    private readonly IDeviceStore _deviceStore;
     
     public AgentsController(
         AppDbContext db, 
         IAgentAuth auth, 
         IJwtService jwtService, 
         ILogger<AgentsController> logger,
-        IAgentCommandQueueService queueService) 
+        IAgentCommandQueueService queueService,
+        IDeviceStatusStore statusStore,
+        IDeviceStore deviceStore) 
     { 
         _db = db; 
         _auth = auth;
         _jwtService = jwtService;
         _logger = logger;
         _queueService = queueService;
+        _statusStore = statusStore;
+        _deviceStore = deviceStore;
     }
 
     private string? GetAgentIdFromClaims()
@@ -197,43 +204,24 @@ public sealed class AgentsController : ControllerBase
             var now = DateTime.UtcNow;
             var saved = 0;
 
+            // Save status to Azure Table Storage for device status and update the Devices table projection
             foreach (var r in req.Readings)
             {
-                // Determine device name and IP from DB when possible
-                string deviceName = r.DeviceId ?? "";
-                string ip = string.Empty;
-
                 if (Guid.TryParse(r.DeviceId, out var deviceGuid))
                 {
-                    var device = await _db.Devices.FirstOrDefaultAsync(d => d.Id == deviceGuid, ct);
-                    if (device != null)
+                    var statusString = r.IsOnline ? "ONLINE" : "OFFLINE";
+                    try
                     {
-                        deviceName = string.IsNullOrWhiteSpace(device.Name) ? device.Id.ToString() : device.Name;
-                        ip = device.Ip ?? string.Empty;
-                        
-                        device.Status = r.IsOnline; // update the device table with the latest status
+                        await _statusStore.UpsertAsync(tenantId, deviceGuid, statusString, r.LatencyMs, DateTimeOffset.UtcNow, ct);
+                        await _deviceStore.UpsertStatusAsync(tenantId, deviceGuid, statusString, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, ct);
                     }
-
-                    await _db.SaveChangesAsync(ct);
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "[STATUS] Failed projecting status to table storage for TenantId={TenantId} DeviceId={DeviceId}", tenantId, deviceGuid);
+                    }
                 }
-
-                var lastPingMs = r.LatencyMs.HasValue ? (long)r.LatencyMs.Value : 0L;
-
-                var statusLog = new DeviceStatusLog
-                {
-                    Id = Guid.NewGuid(),
-                    DeviceName = deviceName ?? string.Empty,
-                    IP = ip ?? string.Empty,
-                    IsOnline = r.IsOnline,
-                    LastPingMs = lastPingMs,
-                    Timestamp = now
-                };
-                
-                _db.DeviceStatusLogs.Add(statusLog);
-                saved++;
             }
-
-            await _db.SaveChangesAsync(ct);
+            
             _logger.LogInformation("[STATUS] Saved {Count} status readings for TenantId={TenantId}", saved, tenantId);
             return Ok(new { ok = true, saved });
         }
