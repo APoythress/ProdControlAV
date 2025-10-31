@@ -173,14 +173,37 @@ builder.Services.AddSingleton<TableServiceClient>(sp => {
 // TableClient for DeviceStatus
 builder.Services.AddSingleton<TableClient>(sp => {
     var svc = sp.GetRequiredService<TableServiceClient>();
-    return svc.GetTableClient("DeviceStatus");
+    var client = svc.GetTableClient("DeviceStatus");
+    // Ensure the table exists at startup so projections don't fail later
+    try {
+        client.CreateIfNotExists();
+        var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("TableSetup");
+        logger.LogInformation("Ensured Azure Table exists: DeviceStatus");
+    } catch (Exception ex) {
+        var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("TableSetup");
+        logger.LogWarning(ex, "Failed to ensure Azure Table exists: DeviceStatus");
+    }
+    return client;
 });
 builder.Services.AddScoped<IDeviceStatusStore, TableDeviceStatusStore>();
 
 // TableClient for Devices (named registration)
 builder.Services.AddSingleton(sp => {
     var svc = sp.GetRequiredService<TableServiceClient>();
-    return svc.GetTableClient("Devices");
+    var client = svc.GetTableClient("Devices");
+    try {
+        client.CreateIfNotExists();
+        var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("TableSetup");
+        logger.LogInformation("Ensured Azure Table exists: Devices");
+    } catch (Exception ex) {
+        var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("TableSetup");
+        logger.LogWarning(ex, "Failed to ensure Azure Table exists: Devices");
+    }
+    return client;
 });
 builder.Services.AddScoped<IDeviceStore>(sp => {
     var tableClient = sp.GetRequiredService<TableServiceClient>().GetTableClient("Devices");

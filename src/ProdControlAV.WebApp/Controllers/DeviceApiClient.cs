@@ -13,19 +13,19 @@ public class DeviceApiClient
     public DeviceApiClient(HttpClient http) => _http = http;
 
     public async Task<IEnumerable<Device>> GetDevicesAsync(CancellationToken ct = default) =>
-        await _http.GetFromJsonAsync<IEnumerable<Device>>("api/devices", ct) ?? [];
+        await _http.GetFromJsonAsync<IEnumerable<Device>>("api/devices", ct) ?? Enumerable.Empty<Device>();
     
     public async Task<List<Device>> GetDevices(CancellationToken ct = default)
     {
-        var devices = await _http.GetFromJsonAsync<IEnumerable<Device>>("api/devices", ct);
+        var devices = await _http.GetFromJsonAsync<IEnumerable<Device>>("api/devices/devices", ct);
         return devices?.ToList() ?? new List<Device>();
     }
     
     public async Task<IEnumerable<DeviceAction>> GetDeviceActionsAsync(CancellationToken ct = default) =>
-        await _http.GetFromJsonAsync<IEnumerable<DeviceAction>>("api/devices/actions", ct) ?? [];
+        await _http.GetFromJsonAsync<IEnumerable<DeviceAction>>("api/devices/actions", ct) ?? Enumerable.Empty<DeviceAction>();
 
     public async Task AddNewDeviceAsync(Device device, CancellationToken ct = default) =>
-        await _http.PostAsync("app/devices", JsonContent.Create(device), ct);
+        await _http.PostAsync("api/devices", JsonContent.Create(device), ct);
     
     public async Task UpdateDevice(Device device, CancellationToken ct = default)
     {
