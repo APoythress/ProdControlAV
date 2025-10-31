@@ -32,37 +32,27 @@ namespace ProdControlAV.Infrastructure.Services
 
         public async Task UpsertStatusAsync(Guid tenantId, Guid deviceId, string status, DateTimeOffset lastSeenUtc, DateTimeOffset lastPolledUtc, CancellationToken ct)
         {
+            var partitionKey = tenantId.ToString().ToLowerInvariant();
+            var rowKey = deviceId.ToString();
+            
+            var entity = new TableEntity(partitionKey, rowKey)
+            {
+                ["Status"] = status,
+                ["LastSeenUtc"] = lastSeenUtc,
+                ["LastPolledUtc"] = lastPolledUtc
+            };
+            
             try
             {
-                // First, try to get the existing entity to ensure it exists before we merge status fields
-                // This prevents creating partial entities with only status fields when the device hasn't been projected yet
-                var partitionKey = tenantId.ToString().ToLowerInvariant();
-                var rowKey = deviceId.ToString();
-                
-                try
-                {
-                    await _table.GetEntityAsync<TableEntity>(partitionKey, rowKey, cancellationToken: ct);
-                }
-                catch (RequestFailedException ex) when (ex.Status == 404)
-                {
-                    // Device doesn't exist in table yet - skip status update
-                    // The device will be projected by DeviceProjectionHostedService and future status updates will work
-                    return;
-                }
-                
-                // Entity exists, safe to merge status fields
-                var entity = new TableEntity(partitionKey, rowKey)
-                {
-                    ["Status"] = status,
-                    ["LastSeenUtc"] = lastSeenUtc,
-                    ["LastPolledUtc"] = lastPolledUtc
-                };
-                await _table.UpsertEntityAsync(entity, TableUpdateMode.Merge, ct);
+                // Use UpdateEntity with Merge mode instead of UpsertEntity
+                // This will fail with 404 if the entity doesn't exist, preventing partial entity creation
+                // The device must be fully projected by DeviceProjectionHostedService before status updates work
+                await _table.UpdateEntityAsync(entity, ETag.All, TableUpdateMode.Merge, ct);
             }
-            catch (RequestFailedException)
+            catch (RequestFailedException ex) when (ex.Status == 404)
             {
-                // Silently fail - status updates are best-effort
-                // The entity will be updated on the next status check
+                // Device doesn't exist in table yet - skip status update silently
+                // The device will be projected by DeviceProjectionHostedService and future status updates will work
             }
         }
 
