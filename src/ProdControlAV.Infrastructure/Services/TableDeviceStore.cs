@@ -32,13 +32,28 @@ namespace ProdControlAV.Infrastructure.Services
 
         public async Task UpsertStatusAsync(Guid tenantId, Guid deviceId, string status, DateTimeOffset lastSeenUtc, DateTimeOffset lastPolledUtc, CancellationToken ct)
         {
-            var entity = new TableEntity(tenantId.ToString().ToLowerInvariant(), deviceId.ToString())
+            var partitionKey = tenantId.ToString().ToLowerInvariant();
+            var rowKey = deviceId.ToString();
+            
+            var entity = new TableEntity(partitionKey, rowKey)
             {
                 ["Status"] = status,
                 ["LastSeenUtc"] = lastSeenUtc,
                 ["LastPolledUtc"] = lastPolledUtc
             };
-            await _table.UpsertEntityAsync(entity, TableUpdateMode.Merge, ct);
+            
+            try
+            {
+                // Use UpdateEntity with Merge mode instead of UpsertEntity
+                // This will fail with 404 if the entity doesn't exist, preventing partial entity creation
+                // The device must be fully projected by DeviceProjectionHostedService before status updates work
+                await _table.UpdateEntityAsync(entity, ETag.All, TableUpdateMode.Merge, ct);
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+                // Device doesn't exist in table yet - skip status update silently
+                // The device will be projected by DeviceProjectionHostedService and future status updates will work
+            }
         }
 
         public async Task DeleteAsync(Guid tenantId, Guid deviceId, CancellationToken ct)

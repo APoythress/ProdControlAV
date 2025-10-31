@@ -214,6 +214,7 @@ public sealed class AgentsController : ControllerBase
                     {
                         await _statusStore.UpsertAsync(tenantId, deviceGuid, statusString, r.LatencyMs, DateTimeOffset.UtcNow, ct);
                         await _deviceStore.UpsertStatusAsync(tenantId, deviceGuid, statusString, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, ct);
+                        saved++;
                     }
                     catch (Exception ex)
                     {
