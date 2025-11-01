@@ -14,7 +14,7 @@ namespace ProdControlAV.Tests;
 public class TableDeviceStoreTests
 {
     [Fact]
-    public async Task UpsertStatusAsync_UsesMergeMode()
+    public async Task UpsertStatusAsync_UsesMergeMode_WhenEntityExists()
     {
         // Arrange
         var mockTableClient = new Mock<TableClient>();
@@ -29,11 +29,12 @@ public class TableDeviceStoreTests
         TableUpdateMode? capturedMode = null;
 
         mockTableClient
-            .Setup(x => x.UpsertEntityAsync(
+            .Setup(x => x.UpdateEntityAsync(
                 It.IsAny<TableEntity>(), 
+                It.IsAny<ETag>(),
                 It.IsAny<TableUpdateMode>(), 
                 It.IsAny<CancellationToken>()))
-            .Callback<TableEntity, TableUpdateMode, CancellationToken>((entity, mode, ct) =>
+            .Callback<TableEntity, ETag, TableUpdateMode, CancellationToken>((entity, etag, mode, ct) =>
             {
                 capturedEntity = entity;
                 capturedMode = mode;
@@ -44,8 +45,9 @@ public class TableDeviceStoreTests
         await store.UpsertStatusAsync(tenantId, deviceId, status, lastSeen, lastPolled, CancellationToken.None);
 
         // Assert
-        mockTableClient.Verify(x => x.UpsertEntityAsync(
-            It.IsAny<TableEntity>(), 
+        mockTableClient.Verify(x => x.UpdateEntityAsync(
+            It.IsAny<TableEntity>(),
+            ETag.All,
             TableUpdateMode.Merge, 
             CancellationToken.None), Times.Once);
 
@@ -60,6 +62,36 @@ public class TableDeviceStoreTests
 
     [Fact]
     public async Task UpsertAsync_UsesMergeMode()
+        // Arrange
+        var mockTableClient = new Mock<TableClient>();
+        var store = new TableDeviceStore(mockTableClient.Object);
+        var tenantId = Guid.NewGuid();
+        var deviceId = Guid.NewGuid();
+        var status = "Online";
+        var lastSeen = DateTimeOffset.UtcNow;
+        var lastPolled = DateTimeOffset.UtcNow.AddSeconds(-5);
+
+        mockTableClient
+            .Setup(x => x.UpdateEntityAsync(
+                It.IsAny<TableEntity>(), 
+                It.IsAny<ETag>(),
+                It.IsAny<TableUpdateMode>(), 
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new RequestFailedException(404, "Entity not found"));
+
+        // Act
+        await store.UpsertStatusAsync(tenantId, deviceId, status, lastSeen, lastPolled, CancellationToken.None);
+
+        // Assert - should not throw, just skip the update silently
+        mockTableClient.Verify(x => x.UpdateEntityAsync(
+            It.IsAny<TableEntity>(),
+            ETag.All,
+            TableUpdateMode.Merge, 
+            CancellationToken.None), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpsertAsync_UsesReplaceMode()
     {
         // Arrange
         var mockTableClient = new Mock<TableClient>();
