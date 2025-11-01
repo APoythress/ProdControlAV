@@ -105,7 +105,11 @@ public class DevicesController : ControllerBase
 
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<Device>> Get(Guid id) // use Guid to match route
-        => await _db.Devices.FindAsync(id, _tenant.TenantId) is { } d ? Ok(d) : NotFound();
+    {
+        var d = await _db.Devices.FindAsync(id);
+        if (d is null || d.TenantId != _tenant.TenantId) return NotFound();
+        return Ok(d);
+    }
 
     public record UpsertDevice(Guid? Id, string Name, string Model, string Brand, string Type, bool AllowTelNet, string Ip, int? Port, string? Location, int? PingFrequencySeconds);
 
@@ -155,7 +159,7 @@ public class DevicesController : ControllerBase
     public async Task<ActionResult<Device>> Update(Guid id, [FromBody] UpsertDevice dto)
     {
         var d = await _db.Devices.FindAsync(id);
-        if (d is null) return NotFound();
+        if (d is null || d.TenantId != _tenant.TenantId) return NotFound();
 
         if (!string.IsNullOrWhiteSpace(dto.Name)) d.Name = dto.Name.Trim();
         if (!string.IsNullOrWhiteSpace(dto.Ip))   d.Ip   = dto.Ip.Trim();
@@ -186,8 +190,8 @@ public class DevicesController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        var d = await _db.Devices.FindAsync(id, _tenant.TenantId);
-        if (d is null) return NotFound();
+        var d = await _db.Devices.FindAsync(id);
+        if (d is null || d.TenantId != _tenant.TenantId) return NotFound();
         _db.Devices.Remove(d);
         
         // Create outbox entry for deletion from Table Storage

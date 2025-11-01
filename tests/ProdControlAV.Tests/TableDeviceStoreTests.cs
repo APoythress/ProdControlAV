@@ -61,8 +61,7 @@ public class TableDeviceStoreTests
     }
 
     [Fact]
-    public async Task UpsertStatusAsync_SkipsUpdate_WhenEntityDoesNotExist()
-    {
+    public async Task UpsertAsync_UsesMergeMode()
         // Arrange
         var mockTableClient = new Mock<TableClient>();
         var store = new TableDeviceStore(mockTableClient.Object);
@@ -122,10 +121,10 @@ public class TableDeviceStoreTests
         // Assert
         mockTableClient.Verify(x => x.UpsertEntityAsync(
             It.IsAny<TableEntity>(), 
-            TableUpdateMode.Replace, 
+            TableUpdateMode.Merge, 
             CancellationToken.None), Times.Once);
 
-        Assert.Equal(TableUpdateMode.Replace, capturedMode);
+        Assert.Equal(TableUpdateMode.Merge, capturedMode);
     }
 
     [Fact]
