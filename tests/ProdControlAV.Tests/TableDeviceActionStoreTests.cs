@@ -9,19 +9,18 @@ using ProdControlAV.Infrastructure.Services;
 
 namespace ProdControlAV.Tests;
 
-public class TableDeviceStatusStoreTests
+public class TableDeviceActionStoreTests
 {
     [Fact]
     public async Task UpsertAsync_UsesMergeMode()
     {
         // Arrange
         var mockTableClient = new Mock<TableClient>();
-        var store = new TableDeviceStatusStore(mockTableClient.Object);
+        var store = new TableDeviceActionStore(mockTableClient.Object);
         var tenantId = Guid.NewGuid();
+        var actionId = Guid.NewGuid();
         var deviceId = Guid.NewGuid();
-        var status = "ONLINE";
-        var latencyMs = 42;
-        var timestamp = DateTimeOffset.UtcNow;
+        var actionName = "PowerOn";
 
         TableEntity? capturedEntity = null;
         TableUpdateMode? capturedMode = null;
@@ -39,7 +38,7 @@ public class TableDeviceStatusStoreTests
             .ReturnsAsync(Mock.Of<Response>());
 
         // Act
-        await store.UpsertAsync(tenantId, deviceId, status, latencyMs, timestamp, CancellationToken.None);
+        await store.UpsertAsync(tenantId, actionId, deviceId, actionName, CancellationToken.None);
 
         // Assert
         mockTableClient.Verify(x => x.UpsertEntityAsync(
@@ -50,10 +49,9 @@ public class TableDeviceStatusStoreTests
         Assert.NotNull(capturedEntity);
         Assert.Equal(TableUpdateMode.Merge, capturedMode);
         Assert.Equal(tenantId.ToString().ToLowerInvariant(), capturedEntity.PartitionKey);
-        Assert.Equal(deviceId.ToString(), capturedEntity.RowKey);
-        Assert.Equal(status, capturedEntity["Status"]);
-        Assert.Equal(latencyMs, capturedEntity["LatencyMs"]);
-        Assert.Equal(timestamp, capturedEntity["LastSeenUtc"]);
+        Assert.Equal(actionId.ToString(), capturedEntity.RowKey);
+        Assert.Equal(deviceId.ToString(), capturedEntity["DeviceId"]);
+        Assert.Equal(actionName, capturedEntity["ActionName"]);
     }
 
     [Fact]
@@ -61,12 +59,13 @@ public class TableDeviceStatusStoreTests
     {
         // Arrange
         var mockTableClient = new Mock<TableClient>();
-        var store = new TableDeviceStatusStore(mockTableClient.Object);
+        var store = new TableDeviceActionStore(mockTableClient.Object);
         var tenantId = Guid.NewGuid();
+        var actionId = Guid.NewGuid();
         var deviceId = Guid.NewGuid();
 
         // Act
-        await store.UpsertAsync(tenantId, deviceId, "ONLINE", 50, DateTimeOffset.UtcNow, CancellationToken.None);
+        await store.UpsertAsync(tenantId, actionId, deviceId, "PowerOff", CancellationToken.None);
 
         // Assert - Verify Merge mode is used, which preserves existing columns
         mockTableClient.Verify(x => x.UpsertEntityAsync(
