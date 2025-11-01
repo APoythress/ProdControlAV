@@ -19,6 +19,7 @@ namespace ProdControlAV.Infrastructure.Services
             {
                 ["Name"] = name,
                 ["IpAddress"] = ipAddress,
+                ["Ip"] = ipAddress, // write both keys to be backward/forward compatible
                 ["Type"] = type,
                 ["CreatedUtc"] = createdUtc,
                 ["Model"] = model ?? "",
@@ -27,7 +28,8 @@ namespace ProdControlAV.Infrastructure.Services
                 ["AllowTelNet"] = allowTelNet,
                 ["Port"] = port
             };
-            await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
+            // Use Merge so we don't wipe out any manual/custom columns that might be present
+            await _table.UpsertEntityAsync(entity, TableUpdateMode.Merge, ct);
         }
 
         public async Task UpsertStatusAsync(Guid tenantId, Guid deviceId, string status, DateTimeOffset lastSeenUtc, DateTimeOffset lastPolledUtc, CancellationToken ct)
@@ -67,8 +69,16 @@ namespace ProdControlAV.Infrastructure.Services
                 // Name (non-nullable string)
                 string name = (e.TryGetValue("Name", out v) && v != null) ? (v is string sv ? sv : Convert.ToString(v) ?? string.Empty) : string.Empty;
 
-                // IpAddress (non-nullable string)
-                string ipAddress = (e.TryGetValue("IpAddress", out v) && v != null) ? (v is string siv ? siv : Convert.ToString(v) ?? string.Empty) : string.Empty;
+                // IpAddress (non-nullable string) - accept either IpAddress or Ip for compatibility
+                string ipAddress = string.Empty;
+                if ((e.TryGetValue("IpAddress", out v) && v != null))
+                {
+                    ipAddress = (v is string siv ? siv : Convert.ToString(v) ?? string.Empty);
+                }
+                else if ((e.TryGetValue("Ip", out v) && v != null))
+                {
+                    ipAddress = (v is string siv2 ? siv2 : Convert.ToString(v) ?? string.Empty);
+                }
 
                 // Type (non-nullable string)
                 string type = (e.TryGetValue("Type", out v) && v != null) ? (v is string st ? st : Convert.ToString(v) ?? string.Empty) : string.Empty;
