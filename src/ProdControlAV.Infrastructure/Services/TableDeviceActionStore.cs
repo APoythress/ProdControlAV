@@ -19,7 +19,8 @@ namespace ProdControlAV.Infrastructure.Services
                 ["DeviceId"] = deviceId.ToString(),
                 ["ActionName"] = actionName
             };
-            await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
+            // Use Merge to preserve any other columns that may exist in the entity
+            await _table.UpsertEntityAsync(entity, TableUpdateMode.Merge, ct);
         }
 
         public async Task DeleteAsync(Guid tenantId, Guid actionId, CancellationToken ct)

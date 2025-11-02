@@ -62,6 +62,7 @@ public class TableDeviceStoreTests
 
     [Fact]
     public async Task UpsertAsync_UsesMergeMode()
+    {
         // Arrange
         var mockTableClient = new Mock<TableClient>();
         var store = new TableDeviceStore(mockTableClient.Object);

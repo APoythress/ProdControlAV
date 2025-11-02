@@ -20,7 +20,8 @@ namespace ProdControlAV.Infrastructure.Services
                 ["LatencyMs"] = latencyMs,
                 ["LastSeenUtc"] = ts
             };
-            await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
+            // Use Merge to preserve any other columns that may exist in the entity
+            await _table.UpsertEntityAsync(entity, TableUpdateMode.Merge, ct);
         }
 
         public async IAsyncEnumerable<DeviceStatusDto> GetAllForTenantAsync(Guid tenantId, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
