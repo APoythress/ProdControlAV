@@ -198,9 +198,9 @@ public class AgentsControllerTests
         var okResult = Assert.IsType<OkObjectResult>(result.Result);
         var deviceList = Assert.IsType<List<DeviceTargetDto>>(okResult.Value);
         Assert.Equal(3, deviceList.Count);
-        Assert.Equal("Device1", devices[0].Name);
-        Assert.Equal("Device2", devices[1].Name);
-        Assert.Equal("Device3", devices[2].Name);
+        Assert.Equal("192.168.1.1", deviceList[0].IpAddress);
+        Assert.Equal("192.168.1.2", deviceList[1].IpAddress);
+        Assert.Equal("192.168.1.3", deviceList[2].IpAddress);
 
         // Verify Table Storage was called once
         deviceStoreMock.Verify(s => s.GetAllForTenantAsync(tenantId, It.IsAny<CancellationToken>()), Times.Once);

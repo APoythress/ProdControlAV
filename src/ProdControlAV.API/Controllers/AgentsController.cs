@@ -17,6 +17,9 @@ namespace ProdControlAV.API.Controllers;
 [Route("api/agents")]
 public sealed class AgentsController : ControllerBase
 {
+    // Default ping frequency when not available from Table Storage (will be added to schema in future)
+    private const int DefaultPingFrequencySeconds = 300;
+    
     private readonly AppDbContext _db;
     private readonly IAgentAuth _auth;
     private readonly IJwtService _jwtService;
@@ -151,7 +154,7 @@ public sealed class AgentsController : ControllerBase
                 IpAddress = device.IpAddress,
                 Type = device.Type,
                 TcpPort = null,
-                PingFrequencySeconds = 300 // Default to 300 seconds (5 minutes) - PingFrequencySeconds not yet in Table Storage
+                PingFrequencySeconds = DefaultPingFrequencySeconds // PingFrequencySeconds not yet in Table Storage
             });
         }
         
