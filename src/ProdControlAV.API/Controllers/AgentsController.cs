@@ -17,6 +17,9 @@ namespace ProdControlAV.API.Controllers;
 [Route("api/agents")]
 public sealed class AgentsController : ControllerBase
 {
+    // Default ping frequency when not available from Table Storage (will be added to schema in future)
+    private const int DefaultPingFrequencySeconds = 300;
+    
     private readonly AppDbContext _db;
     private readonly IAgentAuth _auth;
     private readonly IJwtService _jwtService;
@@ -25,6 +28,7 @@ public sealed class AgentsController : ControllerBase
     private readonly IDeviceStatusStore _statusStore;
     private readonly IDeviceStore _deviceStore;
     private readonly IActivityMonitor _activityMonitor;
+    private readonly IAgentAuthStore _agentAuthStore;
     
     public AgentsController(
         AppDbContext db, 
@@ -34,7 +38,8 @@ public sealed class AgentsController : ControllerBase
         IAgentCommandQueueService queueService,
         IDeviceStatusStore statusStore,
         IDeviceStore deviceStore,
-        IActivityMonitor activityMonitor) 
+        IActivityMonitor activityMonitor,
+        IAgentAuthStore agentAuthStore) 
     { 
         _db = db; 
         _auth = auth;
@@ -44,6 +49,7 @@ public sealed class AgentsController : ControllerBase
         _statusStore = statusStore;
         _deviceStore = deviceStore;
         _activityMonitor = activityMonitor;
+        _agentAuthStore = agentAuthStore;
     }
 
     private string? GetAgentIdFromClaims()
@@ -115,15 +121,32 @@ public sealed class AgentsController : ControllerBase
             return Unauthorized(new { error = err });
         }
         
-        // Record agent activity
+        // Record agent activity in Table Storage (for idle monitoring)
         await _activityMonitor.RecordAgentActivityAsync(agent.Id.ToString(), agent.TenantId.ToString(), ct);
         
-        agent.LastHostname = req.Hostname;
-        agent.LastIp = req.IpAddress;
-        agent.Version = req.Version;
-        agent.LastSeenUtc = DateTime.UtcNow;
-        await _db.SaveChangesAsync(ct);
-        _logger.LogInformation("[HEARTBEAT] Updated agent status: AgentId={AgentId}, LastIp={LastIp}, Version={Version}", agent.Id, agent.LastIp, agent.Version);
+        // Check if metadata has changed - only update SQL and Table Storage if something changed
+        var metadataChanged = agent.LastHostname != req.Hostname ||
+                             agent.LastIp != req.IpAddress ||
+                             agent.Version != req.Version;
+        
+        if (metadataChanged)
+        {
+            // Update SQL for audit trail when metadata changes
+            agent.LastHostname = req.Hostname;
+            agent.LastIp = req.IpAddress;
+            agent.Version = req.Version;
+            agent.LastSeenUtc = DateTime.UtcNow;
+            await _db.SaveChangesAsync(ct);
+            _logger.LogInformation("[HEARTBEAT] Agent metadata changed - updated SQL: AgentId={AgentId}, LastIp={LastIp}, Version={Version}", agent.Id, agent.LastIp, agent.Version);
+            
+            // Also update Table Storage metadata for subsequent auth lookups
+            await _agentAuthStore.UpdateAgentMetadataAsync(agent.Id, agent.TenantId, req.Hostname, req.IpAddress, req.Version, ct);
+        }
+        else
+        {
+            _logger.LogDebug("[HEARTBEAT] Agent metadata unchanged - SQL update skipped: AgentId={AgentId}", agent.Id);
+        }
+        
         return Ok(new { ok = true });
     }
 
@@ -140,18 +163,22 @@ public sealed class AgentsController : ControllerBase
             _logger.LogWarning("[DEVICES] Invalid token claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
             return Unauthorized(new { error = "invalid_token_claims" });
         }
-        var devices = await _db.Devices
-            .Where(d => d.TenantId == tenantId)
-            .Select(d => new DeviceTargetDto
+        
+        // Use Table Storage instead of SQL for device list
+        var devices = new List<DeviceTargetDto>();
+        await foreach (var device in _deviceStore.GetAllForTenantAsync(tenantId, ct))
+        {
+            devices.Add(new DeviceTargetDto
             {
-                Id = d.Id,
-                IpAddress = d.Ip,
-                Type = d.Type,
+                Id = device.Id,
+                IpAddress = device.IpAddress,
+                Type = device.Type,
                 TcpPort = null,
-                PingFrequencySeconds = d.PingFrequencySeconds
-            })
-            .ToListAsync(ct);
-        _logger.LogInformation("[DEVICES] Returning {Count} devices for TenantId={TenantId}", devices.Count, tenantId);
+                PingFrequencySeconds = DefaultPingFrequencySeconds // PingFrequencySeconds not yet in Table Storage
+            });
+        }
+        
+        _logger.LogInformation("[DEVICES] Returning {Count} devices from Table Storage for TenantId={TenantId}", devices.Count, tenantId);
         return Ok(devices);
     }
 
@@ -247,10 +274,16 @@ public sealed class AgentsController : ControllerBase
     public sealed class CommandPullRequest { public int Max { get; set; } = 10; }
     public sealed class CommandPullResponse { public List<CommandEnvelope> Commands { get; set; } = new(); }
 
+    /// <summary>
+    /// Legacy SQL-based command polling endpoint. DEPRECATED: Use /commands/receive instead for queue-based polling.
+    /// This endpoint will be removed in a future version. It causes SQL load and should not be used in production.
+    /// </summary>
     [HttpPost("commands/next")]
     [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    [Obsolete("Use /api/agents/commands/receive instead. This endpoint polls SQL directly and should not be used in production.")]
     public async Task<ActionResult<CommandPullResponse>> Next([FromBody] CommandPullRequest req, CancellationToken ct)
     {
+        _logger.LogWarning("[COMMANDS/NEXT] DEPRECATED endpoint called. This endpoint polls SQL directly and causes unnecessary load. Migrate to /api/agents/commands/receive for queue-based polling.");
         _logger.LogInformation("[COMMANDS/NEXT] Headers: {Headers}", HttpContext.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString()));
         _logger.LogInformation("[COMMANDS/NEXT] Body: {Body}", req);
         var agentIdClaim = GetAgentIdFromClaims();
