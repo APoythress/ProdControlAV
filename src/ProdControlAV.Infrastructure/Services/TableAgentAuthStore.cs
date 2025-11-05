@@ -131,7 +131,7 @@ public sealed class TableAgentAuthStore : IAgentAuthStore
             var partitionKey = agent.TenantId.ToString().ToLowerInvariant();
             var rowKey = agent.AgentId.ToString();
 
-            // Upsert main agent record
+            // Upsert main agent record using Merge mode to preserve any additional columns
             var agentEntity = new TableEntity(partitionKey, rowKey)
             {
                 ["Name"] = agent.Name,
@@ -142,7 +142,7 @@ public sealed class TableAgentAuthStore : IAgentAuthStore
                 ["Version"] = agent.Version
             };
 
-            await _agentsTable.UpsertEntityAsync(agentEntity, TableUpdateMode.Replace, ct);
+            await _agentsTable.UpsertEntityAsync(agentEntity, TableUpdateMode.Merge, ct);
 
             // Upsert hash index entry for fast lookups
             var hashPartitionKey = agent.AgentKeyHash.Length >= 4 ? agent.AgentKeyHash[..4] : agent.AgentKeyHash;
