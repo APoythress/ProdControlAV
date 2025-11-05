@@ -140,18 +140,22 @@ public sealed class AgentsController : ControllerBase
             _logger.LogWarning("[DEVICES] Invalid token claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
             return Unauthorized(new { error = "invalid_token_claims" });
         }
-        var devices = await _db.Devices
-            .Where(d => d.TenantId == tenantId)
-            .Select(d => new DeviceTargetDto
+        
+        // Use Table Storage instead of SQL for device list
+        var devices = new List<DeviceTargetDto>();
+        await foreach (var device in _deviceStore.GetAllForTenantAsync(tenantId, ct))
+        {
+            devices.Add(new DeviceTargetDto
             {
-                Id = d.Id,
-                IpAddress = d.Ip,
-                Type = d.Type,
+                Id = device.Id,
+                IpAddress = device.IpAddress,
+                Type = device.Type,
                 TcpPort = null,
-                PingFrequencySeconds = d.PingFrequencySeconds
-            })
-            .ToListAsync(ct);
-        _logger.LogInformation("[DEVICES] Returning {Count} devices for TenantId={TenantId}", devices.Count, tenantId);
+                PingFrequencySeconds = 300 // Default to 300 seconds (5 minutes) - PingFrequencySeconds not yet in Table Storage
+            });
+        }
+        
+        _logger.LogInformation("[DEVICES] Returning {Count} devices from Table Storage for TenantId={TenantId}", devices.Count, tenantId);
         return Ok(devices);
     }
 
@@ -247,10 +251,16 @@ public sealed class AgentsController : ControllerBase
     public sealed class CommandPullRequest { public int Max { get; set; } = 10; }
     public sealed class CommandPullResponse { public List<CommandEnvelope> Commands { get; set; } = new(); }
 
+    /// <summary>
+    /// Legacy SQL-based command polling endpoint. DEPRECATED: Use /commands/receive instead for queue-based polling.
+    /// This endpoint will be removed in a future version. It causes SQL load and should not be used in production.
+    /// </summary>
     [HttpPost("commands/next")]
     [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    [Obsolete("Use /api/agents/commands/receive instead. This endpoint polls SQL directly and should not be used in production.")]
     public async Task<ActionResult<CommandPullResponse>> Next([FromBody] CommandPullRequest req, CancellationToken ct)
     {
+        _logger.LogWarning("[COMMANDS/NEXT] DEPRECATED endpoint called. This endpoint polls SQL directly and causes unnecessary load. Migrate to /api/agents/commands/receive for queue-based polling.");
         _logger.LogInformation("[COMMANDS/NEXT] Headers: {Headers}", HttpContext.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString()));
         _logger.LogInformation("[COMMANDS/NEXT] Body: {Body}", req);
         var agentIdClaim = GetAgentIdFromClaims();
