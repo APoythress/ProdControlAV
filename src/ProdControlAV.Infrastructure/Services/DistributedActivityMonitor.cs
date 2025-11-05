@@ -22,6 +22,11 @@ public class DistributedActivityMonitor : IActivityMonitor
     private readonly ILogger<DistributedActivityMonitor> _logger;
     private const string TableName = "SystemActivity";
     private const string PartitionKey = "Activity";
+    
+    // Query buffer multiplier: How far back to look beyond the idle timeout when querying activity.
+    // Set to 2x to provide margin for clock skew and delayed updates. This ensures we don't miss
+    // activity records that are slightly older than the idle timeout but still relevant.
+    private const int ActivityQueryBufferMultiplier = 2;
 
     public DistributedActivityMonitor(
         TableServiceClient tableServiceClient,
@@ -133,9 +138,10 @@ public class DistributedActivityMonitor : IActivityMonitor
     {
         try
         {
-            var cutoffTime = DateTimeOffset.UtcNow.AddMinutes(-_options.IdleTimeoutMinutes * 2);
+            // Query recent activity with buffer to account for clock skew and delayed updates
+            var cutoffTime = DateTimeOffset.UtcNow.AddMinutes(-_options.IdleTimeoutMinutes * ActivityQueryBufferMultiplier);
             
-            // Query recent activity entries (last 2x idle timeout to include buffer)
+            // Query recent activity entries (last N x idle timeout to include buffer)
             var filter = $"PartitionKey eq '{PartitionKey}' and Timestamp ge datetime'{cutoffTime:yyyy-MM-ddTHH:mm:ssZ}'";
             var entities = _tableClient.QueryAsync<TableEntity>(filter, cancellationToken: ct);
 
