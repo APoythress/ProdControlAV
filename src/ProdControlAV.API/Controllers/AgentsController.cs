@@ -24,6 +24,7 @@ public sealed class AgentsController : ControllerBase
     private readonly IAgentCommandQueueService _queueService;
     private readonly IDeviceStatusStore _statusStore;
     private readonly IDeviceStore _deviceStore;
+    private readonly IActivityMonitor _activityMonitor;
     
     public AgentsController(
         AppDbContext db, 
@@ -32,7 +33,8 @@ public sealed class AgentsController : ControllerBase
         ILogger<AgentsController> logger,
         IAgentCommandQueueService queueService,
         IDeviceStatusStore statusStore,
-        IDeviceStore deviceStore) 
+        IDeviceStore deviceStore,
+        IActivityMonitor activityMonitor) 
     { 
         _db = db; 
         _auth = auth;
@@ -41,6 +43,7 @@ public sealed class AgentsController : ControllerBase
         _queueService = queueService;
         _statusStore = statusStore;
         _deviceStore = deviceStore;
+        _activityMonitor = activityMonitor;
     }
 
     private string? GetAgentIdFromClaims()
@@ -87,6 +90,10 @@ public sealed class AgentsController : ControllerBase
             _logger.LogWarning("[AUTH] Agent key validation failed: {Error}", err);
             return Unauthorized(new { error = err });
         }
+        
+        // Record agent activity
+        await _activityMonitor.RecordAgentActivityAsync(agent.Id.ToString(), agent.TenantId.ToString(), ct);
+        
         // Generate JWT token
         var (token, expiresAt) = _jwtService.GenerateToken(agent);
         _logger.LogInformation("[AUTH] JWT issued for AgentId={AgentId}, TenantId={TenantId}, ExpiresAt={ExpiresAt}", agent.Id, agent.TenantId, expiresAt);
@@ -107,6 +114,10 @@ public sealed class AgentsController : ControllerBase
             _logger.LogWarning("[HEARTBEAT] Agent key validation failed: {Error}", err);
             return Unauthorized(new { error = err });
         }
+        
+        // Record agent activity
+        await _activityMonitor.RecordAgentActivityAsync(agent.Id.ToString(), agent.TenantId.ToString(), ct);
+        
         agent.LastHostname = req.Hostname;
         agent.LastIp = req.IpAddress;
         agent.Version = req.Version;

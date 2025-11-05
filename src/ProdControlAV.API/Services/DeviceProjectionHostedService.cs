@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ProdControlAV.Core.Models;
+using ProdControlAV.Core.Interfaces;
 using ProdControlAV.Infrastructure.Services;
 using System;
 using System.Linq;
@@ -34,6 +35,21 @@ namespace ProdControlAV.API.Services
             {
                 try
                 {
+                    // Check if system is idle before processing SQL operations
+                    using var scope = _serviceProvider.CreateScope();
+                    var activityMonitor = scope.ServiceProvider.GetService<IActivityMonitor>();
+                    
+                    if (activityMonitor != null)
+                    {
+                        var isIdle = await activityMonitor.IsSystemIdleAsync(stoppingToken);
+                        if (isIdle)
+                        {
+                            _logger.LogDebug("System is idle, skipping outbox projection to allow SQL to idle");
+                            await Task.Delay(TimeSpan.FromSeconds(PollingIntervalSeconds), stoppingToken);
+                            continue;
+                        }
+                    }
+
                     await ProcessOutboxBatchAsync(stoppingToken);
                 }
                 catch (Exception ex)
