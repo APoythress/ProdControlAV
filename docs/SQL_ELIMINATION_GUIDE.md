@@ -103,10 +103,16 @@ All device management operations:
   - Updates SQL (audit record)
   - Does not affect queue
 
-#### Authentication
+#### Authentication & Heartbeat (Optimized for Zero SQL During Normal Operations)
 - **POST /api/agents/auth** - Agent authentication
+  - Reads from Table Storage (agent auth lookup)
+  - No SQL queries during normal authentication
+  
 - **POST /api/agents/heartbeat** - Agent heartbeat
-- Both operations read/write SQL for authentication state
+  - Records activity in Table Storage (via IActivityMonitor)
+  - Only writes to SQL when agent metadata changes (hostname, IP, version)
+  - No SQL writes for repeated heartbeats with unchanged metadata
+  - This optimization prevents constant SQL writes and allows SQL to idle
 
 ## Data Flow Diagrams
 

@@ -28,6 +28,7 @@ public sealed class AgentsController : ControllerBase
     private readonly IDeviceStatusStore _statusStore;
     private readonly IDeviceStore _deviceStore;
     private readonly IActivityMonitor _activityMonitor;
+    private readonly IAgentAuthStore _agentAuthStore;
     
     public AgentsController(
         AppDbContext db, 
@@ -37,7 +38,8 @@ public sealed class AgentsController : ControllerBase
         IAgentCommandQueueService queueService,
         IDeviceStatusStore statusStore,
         IDeviceStore deviceStore,
-        IActivityMonitor activityMonitor) 
+        IActivityMonitor activityMonitor,
+        IAgentAuthStore agentAuthStore) 
     { 
         _db = db; 
         _auth = auth;
@@ -47,6 +49,7 @@ public sealed class AgentsController : ControllerBase
         _statusStore = statusStore;
         _deviceStore = deviceStore;
         _activityMonitor = activityMonitor;
+        _agentAuthStore = agentAuthStore;
     }
 
     private string? GetAgentIdFromClaims()
@@ -118,15 +121,32 @@ public sealed class AgentsController : ControllerBase
             return Unauthorized(new { error = err });
         }
         
-        // Record agent activity
+        // Record agent activity in Table Storage (for idle monitoring)
         await _activityMonitor.RecordAgentActivityAsync(agent.Id.ToString(), agent.TenantId.ToString(), ct);
         
-        agent.LastHostname = req.Hostname;
-        agent.LastIp = req.IpAddress;
-        agent.Version = req.Version;
-        agent.LastSeenUtc = DateTime.UtcNow;
-        await _db.SaveChangesAsync(ct);
-        _logger.LogInformation("[HEARTBEAT] Updated agent status: AgentId={AgentId}, LastIp={LastIp}, Version={Version}", agent.Id, agent.LastIp, agent.Version);
+        // Check if metadata has changed - only update SQL and Table Storage if something changed
+        var metadataChanged = agent.LastHostname != req.Hostname ||
+                             agent.LastIp != req.IpAddress ||
+                             agent.Version != req.Version;
+        
+        if (metadataChanged)
+        {
+            // Update SQL for audit trail when metadata changes
+            agent.LastHostname = req.Hostname;
+            agent.LastIp = req.IpAddress;
+            agent.Version = req.Version;
+            agent.LastSeenUtc = DateTime.UtcNow;
+            await _db.SaveChangesAsync(ct);
+            _logger.LogInformation("[HEARTBEAT] Agent metadata changed - updated SQL: AgentId={AgentId}, LastIp={LastIp}, Version={Version}", agent.Id, agent.LastIp, agent.Version);
+            
+            // Also update Table Storage metadata for subsequent auth lookups
+            await _agentAuthStore.UpdateAgentMetadataAsync(agent.Id, agent.TenantId, req.Hostname, req.IpAddress, req.Version, ct);
+        }
+        else
+        {
+            _logger.LogDebug("[HEARTBEAT] Agent metadata unchanged - SQL update skipped: AgentId={AgentId}", agent.Id);
+        }
+        
         return Ok(new { ok = true });
     }
 

@@ -35,6 +35,7 @@ public class AgentsControllerTests
         var statusStoreMock = new Mock<IDeviceStatusStore>();
         var deviceStoreMock = new Mock<IDeviceStore>();
         var activityMonitorMock = new Mock<IActivityMonitor>();
+        var agentAuthStoreMock = new Mock<IAgentAuthStore>();
 
         // Setup device store to return a device from Table Storage
         var devices = new List<DeviceDto>
@@ -65,7 +66,8 @@ public class AgentsControllerTests
             queueMock.Object,
             statusStoreMock.Object,
             deviceStoreMock.Object,
-            activityMonitorMock.Object
+            activityMonitorMock.Object,
+            agentAuthStoreMock.Object
         );
 
         // Setup JWT claims
@@ -108,6 +110,7 @@ public class AgentsControllerTests
         var statusStoreMock = new Mock<IDeviceStatusStore>();
         var deviceStoreMock = new Mock<IDeviceStore>();
         var activityMonitorMock = new Mock<IActivityMonitor>();
+        var agentAuthStoreMock = new Mock<IAgentAuthStore>();
 
         var controller = new AgentsController(
             null!, // GetDevices doesn't use AppDbContext
@@ -117,7 +120,8 @@ public class AgentsControllerTests
             queueMock.Object,
             statusStoreMock.Object,
             deviceStoreMock.Object,
-            activityMonitorMock.Object
+            activityMonitorMock.Object,
+            agentAuthStoreMock.Object
         );
 
         // Setup invalid claims (missing tenantId)
@@ -155,6 +159,7 @@ public class AgentsControllerTests
         var statusStoreMock = new Mock<IDeviceStatusStore>();
         var deviceStoreMock = new Mock<IDeviceStore>();
         var activityMonitorMock = new Mock<IActivityMonitor>();
+        var agentAuthStoreMock = new Mock<IAgentAuthStore>();
 
         // Setup multiple devices
         var devices = new List<DeviceDto>
@@ -175,7 +180,8 @@ public class AgentsControllerTests
             queueMock.Object,
             statusStoreMock.Object,
             deviceStoreMock.Object,
-            activityMonitorMock.Object
+            activityMonitorMock.Object,
+            agentAuthStoreMock.Object
         );
 
         // Setup JWT claims

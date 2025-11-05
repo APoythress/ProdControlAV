@@ -3,8 +3,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
 using ProdControlAV.Core.Models;
+using ProdControlAV.Infrastructure.Services;
 
 namespace ProdControlAV.API.Services;
 
@@ -14,17 +14,39 @@ public interface IAgentAuth
     string HashAgentKey(string agentKey);
 }
 
+/// <summary>
+/// Agent authentication service using Table Storage for lookups.
+/// Eliminates SQL dependency for agent authentication during normal operations.
+/// </summary>
 public sealed class AgentAuth : IAgentAuth
 {
-    private readonly AppDbContext _db;
-    public AgentAuth(AppDbContext db) => _db = db;
+    private readonly IAgentAuthStore _authStore;
+
+    public AgentAuth(IAgentAuthStore authStore) => _authStore = authStore;
 
     public async Task<(Agent? agent, string? error)> ValidateAsync(string agentKey, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(agentKey)) return (null, "missing_agent_key");
+        
         var hash = HashAgentKey(agentKey);
-        var agent = await _db.Agents.FirstOrDefaultAsync(a => a.AgentKeyHash == hash, ct);
-        return agent is null ? (null, "invalid_agent_key") : (agent, null);
+        var agentDto = await _authStore.ValidateAgentAsync(hash, ct);
+        
+        if (agentDto is null) return (null, "invalid_agent_key");
+
+        // Convert DTO to Agent model for backward compatibility
+        var agent = new Agent
+        {
+            Id = agentDto.AgentId,
+            TenantId = agentDto.TenantId,
+            Name = agentDto.Name,
+            AgentKeyHash = agentDto.AgentKeyHash,
+            LastHostname = agentDto.LastHostname,
+            LastIp = agentDto.LastIp,
+            LastSeenUtc = agentDto.LastSeenUtc?.UtcDateTime,
+            Version = agentDto.Version
+        };
+
+        return (agent, null);
     }
 
     public string HashAgentKey(string agentKey)

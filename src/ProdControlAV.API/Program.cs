@@ -217,6 +217,9 @@ builder.Services.AddScoped<IDeviceActionStore>(sp => {
     return new TableDeviceActionStore(tableClient);
 });
 
+// Agent Auth Store - Table Storage for agent authentication (eliminates SQL dependency for auth)
+builder.Services.AddScoped<IAgentAuthStore, TableAgentAuthStore>();
+
 // Activity Monitor for idle detection and SQL suspension
 builder.Services.Configure<ActivityMonitorOptions>(builder.Configuration.GetSection("ActivityMonitor"));
 builder.Services.AddSingleton<IActivityMonitor, DistributedActivityMonitor>();
