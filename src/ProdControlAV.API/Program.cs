@@ -15,6 +15,7 @@ using ProdControlAV.API.Models;
 using ProdControlAV.API.Services;
 using ProdControlAV.Infrastructure.Services;
 using ProdControlAV.Core.Interfaces;
+using ProdControlAV.Core.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using ProdControlAV.API.Auth;
@@ -215,6 +216,10 @@ builder.Services.AddScoped<IDeviceActionStore>(sp => {
     var tableClient = sp.GetRequiredService<TableServiceClient>().GetTableClient("DeviceActions");
     return new TableDeviceActionStore(tableClient);
 });
+
+// Activity Monitor for idle detection and SQL suspension
+builder.Services.Configure<ActivityMonitorOptions>(builder.Configuration.GetSection("ActivityMonitor"));
+builder.Services.AddSingleton<IActivityMonitor, DistributedActivityMonitor>();
 
 // Background service for device projection
 builder.Services.AddHostedService<DeviceProjectionHostedService>();

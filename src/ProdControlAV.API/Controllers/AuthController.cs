@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProdControlAV.Core.Models;
+using ProdControlAV.Core.Interfaces;
 
 namespace ProdControlAV.API.Controllers;
 
@@ -15,11 +16,13 @@ public class AuthController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly ILogger<AuthController> _logger;
+    private readonly IActivityMonitor _activityMonitor;
 
-    public AuthController(AppDbContext db, ILogger<AuthController> logger)
+    public AuthController(AppDbContext db, ILogger<AuthController> logger, IActivityMonitor activityMonitor)
     {
         _db = db;
         _logger = logger;
+        _activityMonitor = activityMonitor;
     }
 
     // ===== DTOs =====
@@ -167,6 +170,10 @@ public class AuthController : ControllerBase
             CookieAuthenticationDefaults.AuthenticationScheme,
             principal,
             new AuthenticationProperties { IsPersistent = true });
+
+        // Record user activity
+        await _activityMonitor.RecordUserActivityAsync(user.UserId.ToString(), activeTenant.ToString(), ct);
+        _logger.LogInformation("User {UserId} logged in to tenant {TenantId}", user.UserId, activeTenant);
 
         return Ok(new { ok = true, tenantId = activeTenant });
     }
