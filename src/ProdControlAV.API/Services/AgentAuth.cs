@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using ProdControlAV.Core.Models;
 using ProdControlAV.Infrastructure.Services;
 
@@ -21,14 +22,20 @@ public interface IAgentAuth
 public sealed class AgentAuth : IAgentAuth
 {
     private readonly IAgentAuthStore _authStore;
+    private readonly ILogger<AgentAuth> _logger;
 
-    public AgentAuth(IAgentAuthStore authStore) => _authStore = authStore;
+    public AgentAuth(IAgentAuthStore authStore, ILogger<AgentAuth> logger)
+    {
+        _authStore = authStore;
+        _logger = logger;
+    }
 
     public async Task<(Agent? agent, string? error)> ValidateAsync(string agentKey, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(agentKey)) return (null, "missing_agent_key");
         
         var hash = HashAgentKey(agentKey);
+        _logger.LogDebug("Computed agent key hash for incoming agent: {AgentKeyHash}", hash);
         var agentDto = await _authStore.ValidateAgentAsync(hash, ct);
         
         if (agentDto is null) return (null, "invalid_agent_key");
