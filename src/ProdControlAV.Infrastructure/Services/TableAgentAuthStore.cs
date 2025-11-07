@@ -59,6 +59,9 @@ public sealed class TableAgentAuthStore : IAgentAuthStore
             if (!indexEntity.TryGetValue("AgentId", out var agentIdObj) ||
                 !indexEntity.TryGetValue("TenantId", out var tenantIdObj))
             {
+                var presentKeys = indexEntity.Keys != null ? string.Join(", ", indexEntity.Keys) : "(none)";
+                _logger.LogDebug("Index entity for hash {Hash} missing required properties; present properties: {PresentKeys}", 
+                    agentKeyHash, presentKeys);
                 _logger.LogWarning("Invalid index entry for hash: {Hash}", agentKeyHash);
                 return null;
             }
