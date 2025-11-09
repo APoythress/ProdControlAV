@@ -73,9 +73,16 @@ public sealed class TableAgentAuthStore : IAgentAuthStore
             TableEntity? agentEntity;
             try
             {
+                var agentPartitionKey = tenantId.ToString().ToLowerInvariant();
+                var agentRowKey = agentId.ToString();
+                
+                // Purpose: log exactly what keys/filters you are using so you can confirm they're correct.
+                _logger.LogDebug("[TableAgentAuthStore] Looking up agent. Table={Table}, PartitionKey={PartitionKey}, RowKey={RowKey}, Filter={Filter}",
+                    _agentsTable.Name, agentPartitionKey, agentRowKey, "(none - direct lookup)");
+                
                 agentEntity = await _agentsTable.GetEntityAsync<TableEntity>(
-                    tenantId.ToString().ToLowerInvariant(),
-                    agentId.ToString(),
+                    agentPartitionKey,
+                    agentRowKey,
                     cancellationToken: ct);
             }
             catch (Azure.RequestFailedException ex) when (ex.Status == 404)
