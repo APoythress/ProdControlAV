@@ -16,7 +16,7 @@ public class AppDbContext : DbContext
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<UserTenant> UserTenants => Set<UserTenant>();
     public DbSet<AppUser> Users => Set<AppUser>();
-    public DbSet<Agent> Agents => Set<Agent>();
+    public virtual DbSet<Agent> Agents => Set<Agent>();
     public DbSet<AgentCommand> AgentCommands => Set<AgentCommand>();
     public DbSet<OutboxEntry> OutboxEntries => Set<OutboxEntry>();
 // Ensure you already have: Devices, DeviceStatusHistory
