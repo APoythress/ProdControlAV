@@ -8,6 +8,7 @@ namespace ProdControlAV.API.Controllers;
 
 [ApiController]
 [Route("api/command-templates")]
+[Authorize(Policy = "TenantMember")]
 public class CommandTemplateController : ControllerBase
 {
     private readonly AppDbContext _db;

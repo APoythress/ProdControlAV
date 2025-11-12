@@ -332,14 +332,24 @@
         {
             // Load commands, devices, and device statuses in parallel
             var commandsTask = Http.GetFromJsonAsync<List<Command>>("api/commands");
-            var devicesTask = Http.GetFromJsonAsync<List<DeviceDto>>("api/devices");
-            var statusTask = Http.GetFromJsonAsync<List<DeviceStatusDto>>("api/status");
+            var devicesTask = Http.GetFromJsonAsync<List<DeviceDto>>("api/devices/devices");
+            var statusTask = Http.GetFromJsonAsync<StatusListDto>("api/status");
             
             await Task.WhenAll(commandsTask, devicesTask, statusTask);
             
             commands = commandsTask.Result ?? new();
-            devices = devicesTask.Result ?? new();
-            deviceStatuses = statusTask.Result ?? new();
+            
+            // Map DashboardDeviceDto to DeviceDto
+            var dashboardDevices = devicesTask.Result ?? new();
+            devices = dashboardDevices.Select(d => new DeviceDto
+            {
+                Id = d.Id,
+                Name = d.Name,
+                Ip = d.Ip,
+                Port = d.Port
+            }).ToList();
+            
+            deviceStatuses = statusTask.Result?.Items?.ToList() ?? new();
         }
         catch (Exception ex)
         {
@@ -590,6 +600,14 @@
         public bool RequireDeviceOnline { get; set; } = true;
     }
 
+    private class DashboardDeviceDto
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = "";
+        public string Ip { get; set; } = "";
+        public int Port { get; set; }
+    }
+
     private class DeviceDto
     {
         public Guid Id { get; set; }
@@ -604,6 +622,13 @@
         public string Status { get; set; } = "";
         public int? LatencyMs { get; set; }
         public DateTimeOffset LastSeenUtc { get; set; }
+    }
+
+    private class StatusListDto
+    {
+        public Guid TenantId { get; set; }
+        public List<DeviceStatusDto> Items { get; set; } = new();
+        public DateTimeOffset AsOfUtc { get; set; }
     }
 
     private class TriggerResponse

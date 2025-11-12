@@ -31,14 +31,25 @@ public sealed class AdminHandler : AuthorizationHandler<AdminRequirement>
         if (!Guid.TryParse(userIdStr, out var userId)) return; // not authenticated
         if (!Guid.TryParse(tidValue, out var tenantId) || tenantId == Guid.Empty) return; // no active tenant
 
-        // Check if user has Admin role for the current tenant
-        var isAdmin = await _db.UserTenants
+        // Check if user has Admin or DevAdmin role
+        // DevAdmin has global access, Admin is tenant-specific
+        var userRoles = await _db.UserTenants
             .AsNoTracking()
-            .AnyAsync(ut => ut.UserId == userId 
-                         && ut.TenantId == tenantId 
-                         && ut.Role == "Admin");
+            .Where(ut => ut.UserId == userId)
+            .Select(ut => new { ut.Role, ut.TenantId })
+            .ToListAsync();
 
-        if (isAdmin)
+        // DevAdmin has access to everything
+        if (userRoles.Any(r => r.Role == "DevAdmin"))
+        {
             context.Succeed(requirement);
+            return;
+        }
+
+        // Admin has access to their tenant's resources
+        if (userRoles.Any(r => r.Role == "Admin" && r.TenantId == tenantId))
+        {
+            context.Succeed(requirement);
+        }
     }
 }

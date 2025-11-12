@@ -135,9 +135,13 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("TenantMember", policy =>
         policy.Requirements.Add(new TenantMemberRequirement()));
     
-    // Admin policy - requires Admin role in UserTenants
+    // Admin policy - requires Admin or DevAdmin role in UserTenants
     options.AddPolicy("Admin", policy =>
         policy.Requirements.Add(new AdminRequirement()));
+    
+    // DevAdmin policy - requires DevAdmin role (global admin)
+    options.AddPolicy("DevAdmin", policy =>
+        policy.Requirements.Add(new DevAdminRequirement()));
     
     // JWT Agent policy - requires tenantId claim from JWT
     options.AddPolicy("JwtAgent", policy =>
@@ -151,6 +155,7 @@ builder.Services.AddAuthorization(options =>
 // IMPORTANT: register the handler as Scoped (or Transient), not Singleton
 builder.Services.AddScoped<IAuthorizationHandler, TenantMemberHandler>();
 builder.Services.AddScoped<IAuthorizationHandler, AdminHandler>();
+builder.Services.AddScoped<IAuthorizationHandler, DevAdminHandler>();
 
 // Device/infra services
 builder.Services.AddSingleton<ICommandQueue>(new JsonCommandQueue("Data/Commands"));

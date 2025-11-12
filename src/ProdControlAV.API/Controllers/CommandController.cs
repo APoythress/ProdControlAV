@@ -21,7 +21,7 @@ namespace ProdControlAV.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/commands")]
-[Authorize(Policy = "TenantMember")]
+[Authorize(Policy = "Admin")]
 public class CommandController : ControllerBase
 {
     private readonly AppDbContext _db;

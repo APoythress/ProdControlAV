@@ -3,7 +3,7 @@ using ProdControlAV.Core.Models;
 
 namespace ProdControlAV.API.Controllers.Device_Management;
 
-[Authorize(Policy = "TenantMember")]
+[Authorize(Policy = "Admin")]
 public class DeviceManagerController
 {
     private readonly HttpClient _http;
