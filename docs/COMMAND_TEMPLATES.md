@@ -105,9 +105,27 @@ This endpoint:
 
 ## Database Seeding
 
-### Using the Seeder Script
+### Recommended: Admin API Endpoint (Production)
 
-A console application is provided to seed the database with HyperDeck command templates:
+The preferred method for production environments is to use the admin API endpoint, which allows authorized administrators to trigger seeding from the frontend:
+
+```http
+POST /api/admin/seed-command-templates
+Authorization: Admin role required
+```
+
+This approach:
+- Requires Admin role in UserTenants table
+- Is accessible from the frontend admin panel
+- Provides immediate feedback and statistics
+- Is fully logged and auditable
+- Does not require direct database access
+
+See [Admin Seeding Guide](ADMIN_SEEDING.md) for complete documentation.
+
+### Alternative: Seeder Script (Development)
+
+For development or initial setup, a console application is provided:
 
 ```bash
 cd scripts/SeedCommandTemplates
