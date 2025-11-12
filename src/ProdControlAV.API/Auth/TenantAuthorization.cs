@@ -1,6 +1,7 @@
 // Policy marker
 
 using System;
+using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -24,6 +25,20 @@ public sealed class TenantMemberHandler : AuthorizationHandler<TenantMemberRequi
         if (!Guid.TryParse(userIdStr, out var userId)) return; // not authenticated
         if (!Guid.TryParse(tidValue, out var tenantId) || tenantId == Guid.Empty) return; // no active tenant
 
+        // Check if user has DevAdmin role - if so, grant access to all endpoints
+        var userRoles = await _db.UserTenants
+            .AsNoTracking()
+            .Where(ut => ut.UserId == userId)
+            .Select(ut => ut.Role)
+            .ToListAsync();
+
+        if (userRoles.Any(r => r == "DevAdmin"))
+        {
+            context.Succeed(requirement);
+            return;
+        }
+
+        // Otherwise, check if user is a member of the current tenant
         var isMember = await _db.UserTenants
             .AsNoTracking()
             .AnyAsync(ut => ut.UserId == userId && ut.TenantId == tenantId);

@@ -503,4 +503,134 @@ public sealed class AgentsController : ControllerBase
             return StatusCode(500, new { error = "failed_to_receive_command" });
         }
     }
+
+    /// <summary>
+    /// Poll CommandQueue table for pending commands (Table Storage-based)
+    /// </summary>
+    [HttpPost("commands/poll")]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme, Policy = "JwtAgent")]
+    public async Task<IActionResult> PollCommandQueue(CancellationToken ct)
+    {
+        var agentIdClaim = User.FindFirst("sub")?.Value ?? User.FindFirst("agentId")?.Value;
+        var tenantIdClaim = User.FindFirst("tenantId")?.Value;
+
+        if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
+        {
+            _logger.LogWarning("[COMMANDS/POLL] Invalid token claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
+            return Unauthorized(new { error = "invalid_token_claims" });
+        }
+
+        try
+        {
+            var queueStore = HttpContext.RequestServices.GetRequiredService<ICommandQueueStore>();
+            
+            // Get all pending commands for this tenant from Table Storage
+            var pendingCommands = new List<CommandQueueDto>();
+            await foreach (var cmd in queueStore.GetPendingForTenantAsync(tenantId, ct))
+            {
+                pendingCommands.Add(cmd);
+            }
+
+            // Return first command if available
+            if (pendingCommands.Any())
+            {
+                var firstCmd = pendingCommands.First();
+                
+                // Mark as processing
+                await queueStore.MarkAsProcessingAsync(tenantId, firstCmd.CommandId, ct);
+                
+                var envelope = new CommandEnvelope
+                {
+                    CommandId = firstCmd.CommandId,
+                    DeviceId = firstCmd.DeviceId,
+                    Verb = firstCmd.CommandType, // REST or Telnet
+                    Payload = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        commandName = firstCmd.CommandName,
+                        commandType = firstCmd.CommandType,
+                        commandData = firstCmd.CommandData,
+                        httpMethod = firstCmd.HttpMethod,
+                        requestBody = firstCmd.RequestBody,
+                        requestHeaders = firstCmd.RequestHeaders,
+                        deviceIp = firstCmd.DeviceIp,
+                        devicePort = firstCmd.DevicePort
+                    })
+                };
+
+                return Ok(new { command = envelope });
+            }
+
+            return Ok(new { command = (CommandEnvelope?)null });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[COMMANDS/POLL] Error polling command queue for tenant {TenantId}", tenantId);
+            return StatusCode(500, new { error = "failed_to_poll_queue" });
+        }
+    }
+
+    /// <summary>
+    /// Record command execution result in CommandHistory table (Table Storage)
+    /// </summary>
+    [HttpPost("commands/history")]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme, Policy = "JwtAgent")]
+    public async Task<IActionResult> RecordCommandHistory([FromBody] CommandHistoryRequest req, CancellationToken ct)
+    {
+        var agentIdClaim = User.FindFirst("sub")?.Value ?? User.FindFirst("agentId")?.Value;
+        var tenantIdClaim = User.FindFirst("tenantId")?.Value;
+
+        if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
+        {
+            _logger.LogWarning("[COMMANDS/HISTORY] Invalid token claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
+            return Unauthorized(new { error = "invalid_token_claims" });
+        }
+
+        try
+        {
+            var historyStore = HttpContext.RequestServices.GetRequiredService<ICommandHistoryStore>();
+            var queueStore = HttpContext.RequestServices.GetRequiredService<ICommandQueueStore>();
+            
+            var history = new CommandHistoryDto(
+                ExecutionId: Guid.NewGuid(),
+                CommandId: req.CommandId,
+                TenantId: tenantId,
+                DeviceId: req.DeviceId,
+                CommandName: req.CommandName ?? "Unknown",
+                ExecutedUtc: DateTimeOffset.UtcNow,
+                Success: req.Success,
+                ErrorMessage: req.ErrorMessage,
+                Response: req.Response,
+                HttpStatusCode: req.HttpStatusCode,
+                ExecutionTimeMs: req.ExecutionTimeMs
+            );
+
+            await historyStore.RecordExecutionAsync(history, ct);
+            
+            // Remove command from queue after recording history
+            await queueStore.DequeueAsync(tenantId, req.CommandId, ct);
+            
+            _logger.LogInformation("[COMMANDS/HISTORY] Recorded execution for command {CommandId}, Success={Success}", 
+                req.CommandId.ToString("D"), req.Success);
+            
+            return Ok(new { success = true, executionId = history.ExecutionId });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[COMMANDS/HISTORY] Error recording command history for command {CommandId}", 
+                req.CommandId.ToString("D"));
+            return StatusCode(500, new { error = "failed_to_record_history" });
+        }
+    }
+
+    public sealed class CommandHistoryRequest
+    {
+        public Guid CommandId { get; set; }
+        public Guid DeviceId { get; set; }
+        public string? CommandName { get; set; }
+        public bool Success { get; set; }
+        public string? ErrorMessage { get; set; }
+        public string? Response { get; set; }
+        public int? HttpStatusCode { get; set; }
+        public double? ExecutionTimeMs { get; set; }
+    }
 }

@@ -12,11 +12,3 @@ public class DeviceAction
     public string HttpMethod { get; set; }
     public string? Response { get; set; }
 }
-
-public class Command
-{
-    public string CommandString { get; set; }
-    public string Response { get; set; }
-    public Guid DeviceId { get; set; } // bind the action to the device
-    // the deviceId will be leveraged to generate the IP and the Port upon execution
-}
