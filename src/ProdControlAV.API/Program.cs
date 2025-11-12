@@ -269,8 +269,9 @@ builder.Services.AddScoped<IAgentAuthStore, TableAgentAuthStore>();
 builder.Services.Configure<ActivityMonitorOptions>(builder.Configuration.GetSection("ActivityMonitor"));
 builder.Services.AddSingleton<IActivityMonitor, DistributedActivityMonitor>();
 
-// Background service for device projection
-builder.Services.AddHostedService<DeviceProjectionHostedService>();
+// Background service for device projection - DISABLED to stop continuous DB polling
+// Devices and DeviceActions are now written directly to Table Storage when created/updated
+// builder.Services.AddHostedService<DeviceProjectionHostedService>();
 
 // Background service for table retention enforcement (deletes entries older than 8 days)
 builder.Services.AddHostedService<TableRetentionEnforcementService>();

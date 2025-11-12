@@ -4,9 +4,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Moq;
 using ProdControlAV.API.Controllers;
 using ProdControlAV.API.Data;
 using ProdControlAV.Core.Models;
+using ProdControlAV.Infrastructure.Services;
 using Xunit;
 
 namespace ProdControlAV.Tests;
@@ -23,7 +26,14 @@ public class CommandTemplateControllerTests
 
         var tenantProvider = new TestTenantProvider(_testTenantId);
         var context = new AppDbContext(options, tenantProvider);
-        var controller = new CommandTemplateController(context, tenantProvider);
+        
+        // Mock IDeviceActionStore
+        var deviceActionStore = new Mock<IDeviceActionStore>();
+        
+        // Mock ILogger
+        var logger = new Mock<ILogger<CommandTemplateController>>();
+        
+        var controller = new CommandTemplateController(context, tenantProvider, deviceActionStore.Object, logger.Object);
 
         return (context, controller);
     }
