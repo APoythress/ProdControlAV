@@ -1,0 +1,616 @@
+@page "/Commands"
+@using System.Net.Http
+@using System.Net.Http.Json
+@using System.Threading
+@using ProdControlAV.Core.Models
+
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+
+<div class="container mt-5 text-white">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3><u>Command Management</u></h3>
+        <button class="btn btn-primary" @onclick="ShowCreateCommandModal">
+            <i class="fas fa-plus"></i> Create Command
+        </button>
+    </div>
+
+    @if (loading)
+    {
+        <div class="text-center">
+            <div class="spinner-border text-light" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger">@errorMessage</div>
+    }
+    else if (!commands.Any())
+    {
+        <div class="alert alert-info">
+            No commands found. Click "Create Command" to add your first command.
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-dark table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>Command Name</th>
+                        <th>Device</th>
+                        <th>Type</th>
+                        <th>Description</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var cmd in commands)
+                    {
+                        <tr>
+                            <td>@cmd.CommandName</td>
+                            <td>@GetDeviceName(cmd.DeviceId)</td>
+                            <td>
+                                <span class="badge @GetCommandTypeBadgeClass(cmd.CommandType)">
+                                    @cmd.CommandType
+                                </span>
+                            </td>
+                            <td>@(cmd.Description ?? "-")</td>
+                            <td>
+                                <button class="btn btn-sm btn-success me-1" 
+                                        @onclick="@(() => ShowTriggerModal(cmd))"
+                                        title="Trigger Command">
+                                    <i class="fas fa-play"></i>
+                                </button>
+                                <button class="btn btn-sm btn-warning me-1" 
+                                        @onclick="@(() => ShowEditModal(cmd))"
+                                        title="Edit Command">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn btn-sm btn-danger" 
+                                        @onclick="@(() => ShowDeleteConfirmation(cmd))"
+                                        title="Delete Command">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <!-- Create/Edit Command Modal -->
+    <div class="modal fade" id="commandModal" tabindex="-1" aria-labelledby="commandModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content bg-dark text-white">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="commandModalLabel">@(editingCommand?.CommandId != Guid.Empty ? "Edit Command" : "Create Command")</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="commandName" class="form-label">Command Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="commandName" @bind="commandForm.CommandName" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="deviceId" class="form-label">Device <span class="text-danger">*</span></label>
+                            <select class="form-select" id="deviceId" @bind="commandForm.DeviceId" required>
+                                <option value="@Guid.Empty">-- Select Device --</option>
+                                @foreach (var device in devices)
+                                {
+                                    <option value="@device.Id">@device.Name (@device.Ip)</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-12">
+                            <label for="description" class="form-label">Description</label>
+                            <input type="text" class="form-control" id="description" @bind="commandForm.Description">
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="commandType" class="form-label">Command Type <span class="text-danger">*</span></label>
+                            <select class="form-select" id="commandType" @bind="commandForm.CommandType" required>
+                                <option value="REST">REST API</option>
+                                <option value="Telnet">Telnet</option>
+                            </select>
+                        </div>
+                        @if (commandForm.CommandType == "REST")
+                        {
+                            <div class="col-md-6">
+                                <label for="httpMethod" class="form-label">HTTP Method</label>
+                                <select class="form-select" id="httpMethod" @bind="commandForm.HttpMethod">
+                                    <option value="GET">GET</option>
+                                    <option value="POST">POST</option>
+                                    <option value="PUT">PUT</option>
+                                    <option value="DELETE">DELETE</option>
+                                    <option value="PATCH">PATCH</option>
+                                </select>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-12">
+                            <label for="commandData" class="form-label">
+                                @(commandForm.CommandType == "REST" ? "API Endpoint Path" : "Telnet Command")
+                            </label>
+                            <input type="text" class="form-control" id="commandData" 
+                                   @bind="commandForm.CommandData" 
+                                   placeholder="@(commandForm.CommandType == "REST" ? "/api/power/on" : "power on")">
+                        </div>
+                    </div>
+
+                    @if (commandForm.CommandType == "REST")
+                    {
+                        <div class="row mb-3">
+                            <div class="col-12">
+                                <label for="requestBody" class="form-label">Request Body (JSON)</label>
+                                <textarea class="form-control" id="requestBody" @bind="commandForm.RequestBody" rows="3" 
+                                          placeholder='{"key": "value"}'></textarea>
+                            </div>
+                        </div>
+
+                        <div class="row mb-3">
+                            <div class="col-12">
+                                <label for="requestHeaders" class="form-label">Request Headers (JSON)</label>
+                                <textarea class="form-control" id="requestHeaders" @bind="commandForm.RequestHeaders" rows="2" 
+                                          placeholder='{"Authorization": "Bearer token"}'></textarea>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="row mb-3">
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="requireDeviceOnline" @bind="commandForm.RequireDeviceOnline">
+                                <label class="form-check-label" for="requireDeviceOnline">
+                                    Require Device Online
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(modalMessage))
+                    {
+                        <div class="alert @modalMessageCss mt-3" role="alert">
+                            @modalMessage
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-success" @onclick="SaveCommand" disabled="@isSaving">
+                        @if (isSaving)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status"></span>
+                            <text> Saving...</text>
+                        }
+                        else
+                        {
+                            <text>Save</text>
+                        }
+                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trigger Command Modal -->
+    <div class="modal fade" id="triggerModal" tabindex="-1" aria-labelledby="triggerModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content bg-dark text-white">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="triggerModalLabel">Trigger Command</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    @if (selectedCommand != null)
+                    {
+                        <p><strong>Command:</strong> @selectedCommand.CommandName</p>
+                        <p><strong>Device:</strong> @GetDeviceName(selectedCommand.DeviceId)</p>
+                        <p><strong>Type:</strong> @selectedCommand.CommandType</p>
+                        @if (!string.IsNullOrEmpty(selectedCommand.Description))
+                        {
+                            <p><strong>Description:</strong> @selectedCommand.Description</p>
+                        }
+                        
+                        @if (selectedCommand.RequireDeviceOnline)
+                        {
+                            var deviceStatus = GetDeviceStatus(selectedCommand.DeviceId);
+                            <p>
+                                <strong>Device Status:</strong> 
+                                <span class="badge @(deviceStatus ? "bg-success" : "bg-danger")">
+                                    @(deviceStatus ? "Online" : "Offline")
+                                </span>
+                            </p>
+                            
+                            @if (!deviceStatus)
+                            {
+                                <div class="alert alert-warning">
+                                    <i class="fas fa-exclamation-triangle"></i> This command requires the device to be online, but it is currently offline.
+                                </div>
+                            }
+                        }
+                    }
+
+                    @if (!string.IsNullOrEmpty(triggerMessage))
+                    {
+                        <div class="alert @triggerMessageCss mt-3" role="alert">
+                            @triggerMessage
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-success" @onclick="TriggerCommand" disabled="@isTriggering">
+                        @if (isTriggering)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status"></span>
+                            <text> Running...</text>
+                        }
+                        else
+                        {
+                            <text>Run</text>
+                        }
+                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content bg-dark text-white">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="deleteModalLabel">Confirm Delete</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete the command "<strong>@(commandToDelete?.CommandName ?? "")</strong>"?</p>
+                    <p class="text-warning"><i class="fas fa-exclamation-triangle"></i> This action cannot be undone.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-danger" @onclick="ConfirmDelete" disabled="@isDeleting">
+                        @if (isDeleting)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status"></span>
+                            <text> Deleting...</text>
+                        }
+                        else
+                        {
+                            <text>Delete</text>
+                        }
+                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<Command> commands = new();
+    private List<DeviceDto> devices = new();
+    private List<DeviceStatusDto> deviceStatuses = new();
+    private bool loading = true;
+    private string? errorMessage;
+    
+    private Command? editingCommand;
+    private Command? selectedCommand;
+    private Command? commandToDelete;
+    private CommandForm commandForm = new();
+    
+    private bool isSaving = false;
+    private bool isTriggering = false;
+    private bool isDeleting = false;
+    private string? modalMessage;
+    private string modalMessageCss = "alert-info";
+    private string? triggerMessage;
+    private string triggerMessageCss = "alert-info";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        loading = true;
+        errorMessage = null;
+        
+        try
+        {
+            // Load commands, devices, and device statuses in parallel
+            var commandsTask = Http.GetFromJsonAsync<List<Command>>("api/commands");
+            var devicesTask = Http.GetFromJsonAsync<List<DeviceDto>>("api/devices");
+            var statusTask = Http.GetFromJsonAsync<List<DeviceStatusDto>>("api/status");
+            
+            await Task.WhenAll(commandsTask, devicesTask, statusTask);
+            
+            commands = commandsTask.Result ?? new();
+            devices = devicesTask.Result ?? new();
+            deviceStatuses = statusTask.Result ?? new();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading data: {ex.Message}";
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task ShowCreateCommandModal()
+    {
+        editingCommand = null;
+        commandForm = new CommandForm { RequireDeviceOnline = true, CommandType = "REST", HttpMethod = "POST" };
+        modalMessage = null;
+        await ShowModal("commandModal");
+    }
+
+    private async Task ShowEditModal(Command cmd)
+    {
+        editingCommand = cmd;
+        commandForm = new CommandForm
+        {
+            CommandName = cmd.CommandName,
+            Description = cmd.Description,
+            DeviceId = cmd.DeviceId,
+            CommandType = cmd.CommandType,
+            CommandData = cmd.CommandData,
+            HttpMethod = cmd.HttpMethod ?? "POST",
+            RequestBody = cmd.RequestBody,
+            RequestHeaders = cmd.RequestHeaders,
+            RequireDeviceOnline = cmd.RequireDeviceOnline
+        };
+        modalMessage = null;
+        await ShowModal("commandModal");
+    }
+
+    private async Task SaveCommand()
+    {
+        if (string.IsNullOrWhiteSpace(commandForm.CommandName))
+        {
+            modalMessage = "Command name is required";
+            modalMessageCss = "alert-danger";
+            return;
+        }
+        
+        if (commandForm.DeviceId == Guid.Empty)
+        {
+            modalMessage = "Device is required";
+            modalMessageCss = "alert-danger";
+            return;
+        }
+
+        isSaving = true;
+        modalMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            HttpResponseMessage response;
+            
+            if (editingCommand?.CommandId != Guid.Empty)
+            {
+                // Update existing command
+                var updateDto = new
+                {
+                    CommandName = commandForm.CommandName,
+                    Description = commandForm.Description,
+                    CommandType = commandForm.CommandType,
+                    CommandData = commandForm.CommandData,
+                    HttpMethod = commandForm.HttpMethod,
+                    RequestBody = commandForm.RequestBody,
+                    RequestHeaders = commandForm.RequestHeaders,
+                    RequireDeviceOnline = commandForm.RequireDeviceOnline
+                };
+                response = await Http.PutAsJsonAsync($"api/commands/{editingCommand.CommandId}", updateDto);
+            }
+            else
+            {
+                // Create new command
+                var createDto = new
+                {
+                    CommandName = commandForm.CommandName,
+                    Description = commandForm.Description,
+                    DeviceId = commandForm.DeviceId,
+                    CommandType = commandForm.CommandType,
+                    CommandData = commandForm.CommandData,
+                    HttpMethod = commandForm.HttpMethod,
+                    RequestBody = commandForm.RequestBody,
+                    RequestHeaders = commandForm.RequestHeaders,
+                    RequireDeviceOnline = commandForm.RequireDeviceOnline
+                };
+                response = await Http.PostAsJsonAsync("api/commands", createDto);
+            }
+
+            if (response.IsSuccessStatusCode)
+            {
+                await HideModal("commandModal");
+                await LoadData();
+            }
+            else
+            {
+                modalMessage = $"Failed to save command: {response.ReasonPhrase}";
+                modalMessageCss = "alert-danger";
+            }
+        }
+        catch (Exception ex)
+        {
+            modalMessage = $"Error saving command: {ex.Message}";
+            modalMessageCss = "alert-danger";
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ShowTriggerModal(Command cmd)
+    {
+        selectedCommand = cmd;
+        triggerMessage = null;
+        await ShowModal("triggerModal");
+    }
+
+    private async Task TriggerCommand()
+    {
+        if (selectedCommand == null) return;
+
+        isTriggering = true;
+        triggerMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var response = await Http.PostAsync($"api/commands/{selectedCommand.CommandId}/trigger", null);
+            var result = await response.Content.ReadFromJsonAsync<TriggerResponse>();
+
+            if (response.IsSuccessStatusCode && result?.success == true)
+            {
+                triggerMessage = result.message ?? "Command queued successfully";
+                triggerMessageCss = "alert-success";
+            }
+            else
+            {
+                triggerMessage = result?.message ?? $"Failed: {response.ReasonPhrase}";
+                triggerMessageCss = "alert-danger";
+            }
+        }
+        catch (Exception ex)
+        {
+            triggerMessage = $"Error: {ex.Message}";
+            triggerMessageCss = "alert-danger";
+        }
+        finally
+        {
+            isTriggering = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ShowDeleteConfirmation(Command cmd)
+    {
+        commandToDelete = cmd;
+        await ShowModal("deleteModal");
+    }
+
+    private async Task ConfirmDelete()
+    {
+        if (commandToDelete == null) return;
+
+        isDeleting = true;
+        StateHasChanged();
+
+        try
+        {
+            var response = await Http.DeleteAsync($"api/commands/{commandToDelete.CommandId}");
+            
+            if (response.IsSuccessStatusCode)
+            {
+                await HideModal("deleteModal");
+                await LoadData();
+            }
+        }
+        catch (Exception ex)
+        {
+            // Show error but keep modal open
+        }
+        finally
+        {
+            isDeleting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ShowModal(string modalId)
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("eval", $"new bootstrap.Modal(document.getElementById('{modalId}')).show()");
+        }
+        catch (Exception) { }
+    }
+
+    private async Task HideModal(string modalId)
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("eval", $"bootstrap.Modal.getInstance(document.getElementById('{modalId}')).hide()");
+        }
+        catch (Exception) { }
+    }
+
+    private string GetDeviceName(Guid deviceId)
+    {
+        var device = devices.FirstOrDefault(d => d.Id == deviceId);
+        return device?.Name ?? "Unknown Device";
+    }
+
+    private bool GetDeviceStatus(Guid deviceId)
+    {
+        var status = deviceStatuses.FirstOrDefault(s => s.DeviceId == deviceId);
+        return status?.Status?.ToLower() == "online";
+    }
+
+    private string GetCommandTypeBadgeClass(string type)
+    {
+        return type switch
+        {
+            "REST" => "bg-primary",
+            "Telnet" => "bg-info",
+            _ => "bg-secondary"
+        };
+    }
+
+    // DTOs
+    private class CommandForm
+    {
+        public string CommandName { get; set; } = "";
+        public string? Description { get; set; }
+        public Guid DeviceId { get; set; }
+        public string CommandType { get; set; } = "REST";
+        public string? CommandData { get; set; }
+        public string HttpMethod { get; set; } = "POST";
+        public string? RequestBody { get; set; }
+        public string? RequestHeaders { get; set; }
+        public bool RequireDeviceOnline { get; set; } = true;
+    }
+
+    private class DeviceDto
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = "";
+        public string Ip { get; set; } = "";
+        public int Port { get; set; }
+    }
+
+    private class DeviceStatusDto
+    {
+        public Guid DeviceId { get; set; }
+        public string Status { get; set; } = "";
+        public int? LatencyMs { get; set; }
+        public DateTimeOffset LastSeenUtc { get; set; }
+    }
+
+    private class TriggerResponse
+    {
+        public bool success { get; set; }
+        public string? message { get; set; }
+        public Guid commandId { get; set; }
+        public string? deviceName { get; set; }
+    }
+}
