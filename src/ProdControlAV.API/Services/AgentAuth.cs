@@ -59,27 +59,22 @@ public sealed class AgentAuth : IAgentAuth
             _logger.LogInformation("Agent found in database: AgentId={AgentId}, TenantId={TenantId}, syncing to table store", 
                 dbAgent.Id, dbAgent.TenantId);
             
-            // Sync agent from database to table store for future fast lookups
-            try
+            // Sync agent from database to table store for future fast lookups with retry logic
+            var agentAuthDto = new AgentAuthDto(
+                AgentId: dbAgent.Id,
+                TenantId: dbAgent.TenantId,
+                Name: dbAgent.Name,
+                AgentKeyHash: dbAgent.AgentKeyHash,
+                LastHostname: dbAgent.LastHostname,
+                LastIp: dbAgent.LastIp,
+                LastSeenUtc: dbAgent.LastSeenUtc.HasValue ? new DateTimeOffset(dbAgent.LastSeenUtc.Value) : null,
+                Version: dbAgent.Version
+            );
+            
+            var syncSuccess = await TrySyncAgentToTableStoreAsync(agentAuthDto, ct);
+            if (!syncSuccess)
             {
-                var agentAuthDto = new AgentAuthDto(
-                    AgentId: dbAgent.Id,
-                    TenantId: dbAgent.TenantId,
-                    Name: dbAgent.Name,
-                    AgentKeyHash: dbAgent.AgentKeyHash,
-                    LastHostname: dbAgent.LastHostname,
-                    LastIp: dbAgent.LastIp,
-                    LastSeenUtc: dbAgent.LastSeenUtc.HasValue ? new DateTimeOffset(dbAgent.LastSeenUtc.Value) : null,
-                    Version: dbAgent.Version
-                );
-                
-                await _authStore.UpsertAgentAsync(agentAuthDto, ct);
-                _logger.LogInformation("Successfully synced agent to table store: AgentId={AgentId}", dbAgent.Id);
-            }
-            catch (Exception ex)
-            {
-                // Log error but don't fail authentication - table store sync is for performance, not correctness
-                _logger.LogError(ex, "Failed to sync agent to table store: AgentId={AgentId}", dbAgent.Id);
+                _logger.LogWarning("Failed to sync agent {AgentId} to Table Storage after retries. Agent will continue to hit SQL on next auth.", dbAgent.Id);
             }
             
             // Return the database agent
@@ -100,6 +95,43 @@ public sealed class AgentAuth : IAgentAuth
         };
 
         return (agent, null);
+    }
+    
+    /// <summary>
+    /// Attempts to sync agent to Table Storage with exponential backoff retry logic
+    /// </summary>
+    private async Task<bool> TrySyncAgentToTableStoreAsync(AgentAuthDto agentDto, CancellationToken ct)
+    {
+        const int maxRetries = 3;
+        var baseDelay = TimeSpan.FromMilliseconds(100);
+        
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                await _authStore.UpsertAgentAsync(agentDto, ct);
+                _logger.LogInformation("Successfully synced agent to table store: AgentId={AgentId} (attempt {Attempt})", 
+                    agentDto.AgentId, attempt);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                if (attempt == maxRetries)
+                {
+                    _logger.LogError(ex, "Failed to sync agent to table store after {MaxRetries} attempts: AgentId={AgentId}", 
+                        maxRetries, agentDto.AgentId);
+                    return false;
+                }
+                
+                var delay = baseDelay * Math.Pow(2, attempt - 1); // Exponential backoff
+                _logger.LogWarning(ex, "Failed to sync agent to table store (attempt {Attempt}/{MaxRetries}): AgentId={AgentId}. Retrying in {Delay}ms", 
+                    attempt, maxRetries, agentDto.AgentId, delay.TotalMilliseconds);
+                
+                await Task.Delay(delay, ct);
+            }
+        }
+        
+        return false;
     }
 
     public string HashAgentKey(string agentKey)
