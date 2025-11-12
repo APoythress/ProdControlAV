@@ -50,24 +50,29 @@ public sealed class StatusController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<StatusListDto>> Get([FromQuery] Guid tenantId, CancellationToken ct)
+    public async Task<ActionResult<StatusListDto>> Get([FromQuery] Guid? tenantId, CancellationToken ct)
     {
         // Validate claims vs tenantId
         var tenantIdClaim = User.FindFirst("tenant_id")?.Value ?? User.FindFirst("tenantId")?.Value;
         if (string.IsNullOrWhiteSpace(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out var claimTenantId))
             return Forbid();
-        if (claimTenantId != tenantId)
+        
+        // If tenantId is not provided in query, use the one from claims
+        var effectiveTenantId = tenantId ?? claimTenantId;
+        
+        // Ensure the user can only access their own tenant's data
+        if (claimTenantId != effectiveTenantId)
             return Forbid();
 
         var items = new List<DeviceStatusDto>();
         int readCount = 0;
-        await foreach (var s in _statusStore.GetAllForTenantAsync(tenantId, ct))
+        await foreach (var s in _statusStore.GetAllForTenantAsync(effectiveTenantId, ct))
         {
             items.Add(s);
             readCount++;
         }
-        _logger.LogInformation("TableStorage Read: tenant={TenantId} count={Count}", tenantId, readCount);
-        return Ok(new StatusListDto(tenantId, items, DateTimeOffset.UtcNow));
+        _logger.LogInformation("TableStorage Read: tenant={TenantId} count={Count}", effectiveTenantId, readCount);
+        return Ok(new StatusListDto(effectiveTenantId, items, DateTimeOffset.UtcNow));
     }
 }
 

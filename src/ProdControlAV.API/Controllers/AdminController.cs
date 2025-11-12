@@ -24,9 +24,11 @@ public class AdminController : ControllerBase
     /// <summary>
     /// Trigger seeding of command templates
     /// This populates the CommandTemplates table with pre-defined HyperDeck commands
+    /// DevAdmin only - this is a migration/setup endpoint
     /// </summary>
     /// <returns>Summary of seeded templates</returns>
     [HttpPost("seed-command-templates")]
+    [Authorize(Policy = "DevAdmin")]
     public IActionResult SeedCommandTemplates()
     {
         try
