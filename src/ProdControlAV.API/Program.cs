@@ -69,8 +69,11 @@ builder.Services
     .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, o =>
     {
         o.LoginPath = "/signin"; // optional
+        o.AccessDeniedPath = "/signin"; // Use signin page instead of default /Account/AccessDenied
         o.Cookie.Name = "prodcontrolav.auth";
         o.SlidingExpiration = true;
+        o.Cookie.SecurePolicy = CookieSecurePolicy.Always; // Require HTTPS
+        o.Cookie.SameSite = SameSiteMode.Strict;
     })
     .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
     {
