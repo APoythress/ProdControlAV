@@ -150,6 +150,8 @@ public class AuthController : ControllerBase
             activeTenant = req.TenantId;
         }
         
+        // Get the role for the active tenant
+        var activeRole = membershipList.FirstOrDefault(m => m.TenantId == activeTenant)?.Role ?? "Member";
         bool isMember = membershipList.Select(m => m.Role).Contains("Member");
 
         // Build claims ONLY from membership-derived tenantIds
@@ -158,6 +160,7 @@ public class AuthController : ControllerBase
             new(ClaimTypes.NameIdentifier, user.UserId.ToString()),
             new(ClaimTypes.Email, user.Email),
             new(ClaimTypes.Name, user.DisplayName ?? user.Email),
+            new(ClaimTypes.Role, activeRole),
             new("tenant_ids", string.Join(" ", tenantIds.Select(t => t.ToString()))),
             new("tenant_id", activeTenant.ToString()),
             new("tenant_member", isMember ? "member" : "deny")
@@ -202,11 +205,16 @@ public class AuthController : ControllerBase
             .FirstOrDefaultAsync(u => u.UserId == userId, ct);
 
         var tenantIds = memberships.Select(m => m.TenantId).ToList();
+        
+        // Get the role for the selected tenant
+        var activeRole = memberships.FirstOrDefault(m => m.TenantId == req.TenantId)?.Role ?? "Member";
+        
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, userId.ToString()),
             new(ClaimTypes.Email, email),
             new(ClaimTypes.Name, user?.DisplayName ?? email),
+            new(ClaimTypes.Role, activeRole),
             new("tenant_ids", string.Join(" ", tenantIds.Select(id => id.ToString()))),
             new("tenant_id", req.TenantId.ToString())
         };

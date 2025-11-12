@@ -6,7 +6,7 @@ using ProdControlAV.Infrastructure.Services;
 using System.Text.Json;
 
 [ApiController]
-[Authorize(Policy = "IsMember")]
+[Authorize(Policy = "TenantMember")]
 [Route("api/[controller]")]
 public class DevicesController : ControllerBase
 {
