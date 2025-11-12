@@ -609,13 +609,15 @@ public sealed class AgentsController : ControllerBase
             // Remove command from queue after recording history
             await queueStore.DequeueAsync(tenantId, req.CommandId, ct);
             
-            _logger.LogInformation("[COMMANDS/HISTORY] Recorded execution for command {CommandId}, Success={Success}", req.CommandId, req.Success);
+            _logger.LogInformation("[COMMANDS/HISTORY] Recorded execution for command {CommandId}, Success={Success}", 
+                req.CommandId.ToString("D"), req.Success);
             
             return Ok(new { success = true, executionId = history.ExecutionId });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[COMMANDS/HISTORY] Error recording command history for command {CommandId}", req.CommandId);
+            _logger.LogError(ex, "[COMMANDS/HISTORY] Error recording command history for command {CommandId}", 
+                req.CommandId.ToString("D"));
             return StatusCode(500, new { error = "failed_to_record_history" });
         }
     }
