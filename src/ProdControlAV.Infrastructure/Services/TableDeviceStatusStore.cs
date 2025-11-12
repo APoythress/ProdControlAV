@@ -37,6 +37,29 @@ namespace ProdControlAV.Infrastructure.Services
                 );
             }
         }
+
+        public async Task<DeviceStatusDto?> GetDeviceStatusAsync(Guid tenantId, Guid deviceId, CancellationToken ct)
+        {
+            try
+            {
+                var response = await _table.GetEntityAsync<TableEntity>(
+                    tenantId.ToString().ToLowerInvariant(),
+                    deviceId.ToString(),
+                    cancellationToken: ct);
+
+                var e = response.Value;
+                return new DeviceStatusDto(
+                    Guid.Parse(e.RowKey),
+                    (string)e["Status"],
+                    e.ContainsKey("LatencyMs") ? (int?)Convert.ToInt32(e["LatencyMs"]) : null,
+                    (DateTimeOffset)e["LastSeenUtc"]
+                );
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+                return null;
+            }
+        }
     }
 }
 

@@ -217,6 +217,38 @@ builder.Services.AddScoped<IDeviceActionStore>(sp => {
     return new TableDeviceActionStore(tableClient);
 });
 
+// TableClient for CommandQueue
+builder.Services.AddScoped<ICommandQueueStore>(sp => {
+    var tableClient = sp.GetRequiredService<TableServiceClient>().GetTableClient("CommandQueue");
+    try {
+        tableClient.CreateIfNotExists();
+        var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("TableSetup");
+        logger.LogInformation("Ensured Azure Table exists: CommandQueue");
+    } catch (Exception ex) {
+        var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("TableSetup");
+        logger.LogWarning(ex, "Failed to ensure Azure Table exists: CommandQueue");
+    }
+    return new TableCommandQueueStore(tableClient);
+});
+
+// TableClient for CommandHistory
+builder.Services.AddScoped<ICommandHistoryStore>(sp => {
+    var tableClient = sp.GetRequiredService<TableServiceClient>().GetTableClient("CommandHistory");
+    try {
+        tableClient.CreateIfNotExists();
+        var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("TableSetup");
+        logger.LogInformation("Ensured Azure Table exists: CommandHistory");
+    } catch (Exception ex) {
+        var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("TableSetup");
+        logger.LogWarning(ex, "Failed to ensure Azure Table exists: CommandHistory");
+    }
+    return new TableCommandHistoryStore(tableClient);
+});
+
 // Agent Auth Store - Table Storage for agent authentication (eliminates SQL dependency for auth)
 builder.Services.AddScoped<IAgentAuthStore, TableAgentAuthStore>();
 

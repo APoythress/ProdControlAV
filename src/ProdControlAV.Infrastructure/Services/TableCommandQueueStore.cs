@@ -1,0 +1,145 @@
+using Azure;
+using Azure.Data.Tables;
+using System;
+using System.Collections.Generic;
+using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace ProdControlAV.Infrastructure.Services
+{
+    /// <summary>
+    /// Table Storage implementation for command queue
+    /// Partition Key: TenantId
+    /// Row Key: CommandId_QueuedUtc (for chronological ordering)
+    /// </summary>
+    public sealed class TableCommandQueueStore : ICommandQueueStore
+    {
+        private readonly TableClient _table;
+
+        public TableCommandQueueStore(TableClient table) => _table = table;
+
+        public async Task EnqueueAsync(CommandQueueDto command, CancellationToken ct)
+        {
+            var rowKey = $"{command.CommandId:N}_{command.QueuedUtc:yyyyMMddHHmmssfff}";
+            
+            var entity = new TableEntity(command.TenantId.ToString().ToLowerInvariant(), rowKey)
+            {
+                ["CommandId"] = command.CommandId.ToString(),
+                ["DeviceId"] = command.DeviceId.ToString(),
+                ["CommandName"] = command.CommandName,
+                ["CommandType"] = command.CommandType,
+                ["CommandData"] = command.CommandData,
+                ["HttpMethod"] = command.HttpMethod,
+                ["RequestBody"] = command.RequestBody,
+                ["RequestHeaders"] = command.RequestHeaders,
+                ["QueuedUtc"] = command.QueuedUtc,
+                ["QueuedByUserId"] = command.QueuedByUserId.ToString(),
+                ["DeviceIp"] = command.DeviceIp,
+                ["DevicePort"] = command.DevicePort,
+                ["Status"] = command.Status
+            };
+
+            await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
+        }
+
+        public async IAsyncEnumerable<CommandQueueDto> GetPendingForDeviceAsync(
+            Guid tenantId, 
+            Guid deviceId, 
+            [EnumeratorCancellation] CancellationToken ct)
+        {
+            var partitionKey = tenantId.ToString().ToLowerInvariant();
+            var deviceIdStr = deviceId.ToString();
+            
+            var query = _table.QueryAsync<TableEntity>(
+                e => e.PartitionKey == partitionKey && e["DeviceId"].ToString() == deviceIdStr && e["Status"].ToString() == "Pending",
+                cancellationToken: ct);
+
+            await foreach (var e in query)
+            {
+                yield return MapToDto(e);
+            }
+        }
+
+        public async IAsyncEnumerable<CommandQueueDto> GetPendingForTenantAsync(
+            Guid tenantId, 
+            [EnumeratorCancellation] CancellationToken ct)
+        {
+            var partitionKey = tenantId.ToString().ToLowerInvariant();
+            
+            var query = _table.QueryAsync<TableEntity>(
+                e => e.PartitionKey == partitionKey && e["Status"].ToString() == "Pending",
+                cancellationToken: ct);
+
+            await foreach (var e in query)
+            {
+                yield return MapToDto(e);
+            }
+        }
+
+        public async Task MarkAsProcessingAsync(Guid tenantId, Guid commandId, CancellationToken ct)
+        {
+            var partitionKey = tenantId.ToString().ToLowerInvariant();
+            var commandIdStr = commandId.ToString();
+            
+            // Find the entity first
+            var query = _table.QueryAsync<TableEntity>(
+                e => e.PartitionKey == partitionKey && e["CommandId"].ToString() == commandIdStr,
+                maxPerPage: 1,
+                cancellationToken: ct);
+
+            await foreach (var entity in query)
+            {
+                entity["Status"] = "Processing";
+                entity["ProcessingStartedUtc"] = DateTimeOffset.UtcNow;
+                await _table.UpdateEntityAsync(entity, entity.ETag, TableUpdateMode.Replace, ct);
+                return;
+            }
+        }
+
+        public async Task DequeueAsync(Guid tenantId, Guid commandId, CancellationToken ct)
+        {
+            var partitionKey = tenantId.ToString().ToLowerInvariant();
+            var commandIdStr = commandId.ToString();
+            
+            // Find and delete the entity
+            var query = _table.QueryAsync<TableEntity>(
+                e => e.PartitionKey == partitionKey && e["CommandId"].ToString() == commandIdStr,
+                maxPerPage: 1,
+                cancellationToken: ct);
+
+            await foreach (var entity in query)
+            {
+                try
+                {
+                    await _table.DeleteEntityAsync(entity.PartitionKey, entity.RowKey, cancellationToken: ct);
+                }
+                catch (RequestFailedException ex) when (ex.Status == 404)
+                {
+                    // Already deleted, ignore
+                }
+                return;
+            }
+        }
+
+        private static CommandQueueDto MapToDto(TableEntity e)
+        {
+            return new CommandQueueDto(
+                Guid.Parse(e["CommandId"].ToString()!),
+                Guid.Parse(e.PartitionKey),
+                Guid.Parse(e["DeviceId"].ToString()!),
+                e["CommandName"].ToString()!,
+                e["CommandType"].ToString()!,
+                e.TryGetValue("CommandData", out var cmdData) ? cmdData?.ToString() : null,
+                e.TryGetValue("HttpMethod", out var method) ? method?.ToString() : null,
+                e.TryGetValue("RequestBody", out var body) ? body?.ToString() : null,
+                e.TryGetValue("RequestHeaders", out var headers) ? headers?.ToString() : null,
+                e["QueuedUtc"] is DateTimeOffset queuedUtc ? queuedUtc : DateTimeOffset.UtcNow,
+                Guid.Parse(e["QueuedByUserId"].ToString()!),
+                e.TryGetValue("DeviceIp", out var ip) ? ip?.ToString() : null,
+                e.TryGetValue("DevicePort", out var port) && port != null ? Convert.ToInt32(port) : null,
+                e.TryGetValue("Status", out var status) ? status?.ToString() ?? "Pending" : "Pending"
+            );
+        }
+    }
+}

@@ -11,6 +11,7 @@ namespace ProdControlAV.Infrastructure.Services
     {
         Task UpsertAsync(Guid tenantId, Guid deviceId, string status, int? latencyMs, DateTimeOffset ts, CancellationToken ct);
         IAsyncEnumerable<DeviceStatusDto> GetAllForTenantAsync(Guid tenantId, CancellationToken ct);
+        Task<DeviceStatusDto?> GetDeviceStatusAsync(Guid tenantId, Guid deviceId, CancellationToken ct);
     }
 }
 

@@ -19,6 +19,7 @@ public class AppDbContext : DbContext
     public virtual DbSet<Agent> Agents => Set<Agent>();
     public DbSet<AgentCommand> AgentCommands => Set<AgentCommand>();
     public DbSet<OutboxEntry> OutboxEntries => Set<OutboxEntry>();
+    public DbSet<Command> Commands => Set<Command>();
 // Ensure you already have: Devices, DeviceStatusHistory
 
 
@@ -49,11 +50,23 @@ public class AppDbContext : DbContext
             e.Property(x => x.Operation).HasMaxLength(50).IsRequired();
             e.HasIndex(x => new { x.ProcessedUtc, x.CreatedUtc });
         });
+        
+        b.Entity<Command>(e =>
+        {
+            e.HasKey(x => x.CommandId);
+            e.Property(x => x.CommandName).HasMaxLength(200).IsRequired();
+            e.Property(x => x.CommandType).HasMaxLength(50).IsRequired();
+            e.HasIndex(x => new { x.TenantId, x.DeviceId });
+            e.HasIndex(x => new { x.TenantId, x.CommandName });
+        });
 
 
         // Use the instance property instead of capturing a local
         b.Entity<Device>()
             .HasQueryFilter(d => d.TenantId == _tenant.TenantId);
+        
+        b.Entity<Command>()
+            .HasQueryFilter(c => c.TenantId == _tenant.TenantId);
         
         // Automatically pick up all IEntityTypeConfiguration<T> in this assembly
         b.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
