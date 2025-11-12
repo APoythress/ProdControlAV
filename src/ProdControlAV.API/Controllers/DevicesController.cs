@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProdControlAV.Core.Models;
 using ProdControlAV.Infrastructure.Services;
-using System.Text.Json;
 
 [ApiController]
 [Authorize(Policy = "TenantMember")]
@@ -136,22 +135,31 @@ public class DevicesController : ControllerBase
             PingFrequencySeconds = dto.PingFrequencySeconds.GetValueOrDefault(300)
         };
         _db.Devices.Add(d);
-        
-        // Create outbox entry for projection to Table Storage
-        var outboxEntry = new OutboxEntry
-        {
-            Id = Guid.NewGuid(),
-            TenantId = _tenant.TenantId,
-            EntityType = "Device",
-            EntityId = d.Id,
-            Operation = "Upsert",
-            Payload = JsonSerializer.Serialize(d),
-            CreatedUtc = DateTimeOffset.UtcNow,
-            RetryCount = 0
-        };
-        _db.OutboxEntries.Add(outboxEntry);
-        
         await _db.SaveChangesAsync();
+        
+        // Write directly to Table Storage (no longer using outbox pattern)
+        try
+        {
+            await _deviceStore.UpsertAsync(
+                _tenant.TenantId,
+                d.Id,
+                d.Name,
+                d.Ip,
+                d.Type,
+                DateTimeOffset.UtcNow,
+                d.Model,
+                d.Brand,
+                d.Location,
+                d.AllowTelNet,
+                d.Port,
+                CancellationToken.None);
+            _logger.LogInformation("Created device {DeviceId} in SQL and Table Storage", d.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to write device {DeviceId} to Table Storage, but SQL write succeeded", d.Id);
+        }
+        
         return CreatedAtAction(nameof(Get), new { id = d.Id }, d);
     }
 
@@ -169,21 +177,31 @@ public class DevicesController : ControllerBase
         d.AllowTelNet = dto.AllowTelNet;
         d.Location = dto.Location?.Trim();
 
-        // Create outbox entry for projection to Table Storage
-        var outboxEntry = new OutboxEntry
-        {
-            Id = Guid.NewGuid(),
-            TenantId = _tenant.TenantId,
-            EntityType = "Device",
-            EntityId = d.Id,
-            Operation = "Upsert",
-            Payload = JsonSerializer.Serialize(d),
-            CreatedUtc = DateTimeOffset.UtcNow,
-            RetryCount = 0
-        };
-        _db.OutboxEntries.Add(outboxEntry);
-        
         await _db.SaveChangesAsync();
+        
+        // Write directly to Table Storage (no longer using outbox pattern)
+        try
+        {
+            await _deviceStore.UpsertAsync(
+                _tenant.TenantId,
+                d.Id,
+                d.Name,
+                d.Ip,
+                d.Type,
+                DateTimeOffset.UtcNow,
+                d.Model,
+                d.Brand,
+                d.Location,
+                d.AllowTelNet,
+                d.Port,
+                CancellationToken.None);
+            _logger.LogInformation("Updated device {DeviceId} in SQL and Table Storage", d.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update device {DeviceId} in Table Storage, but SQL update succeeded", d.Id);
+        }
+        
         return Ok(d);
     }
 
@@ -193,22 +211,19 @@ public class DevicesController : ControllerBase
         var d = await _db.Devices.FindAsync(id);
         if (d is null || d.TenantId != _tenant.TenantId) return NotFound();
         _db.Devices.Remove(d);
-        
-        // Create outbox entry for deletion from Table Storage
-        var outboxEntry = new OutboxEntry
-        {
-            Id = Guid.NewGuid(),
-            TenantId = _tenant.TenantId,
-            EntityType = "Device",
-            EntityId = id,
-            Operation = "Delete",
-            Payload = null,
-            CreatedUtc = DateTimeOffset.UtcNow,
-            RetryCount = 0
-        };
-        _db.OutboxEntries.Add(outboxEntry);
-        
         await _db.SaveChangesAsync();
+        
+        // Delete from Table Storage (no longer using outbox pattern)
+        try
+        {
+            await _deviceStore.DeleteAsync(_tenant.TenantId, id, CancellationToken.None);
+            _logger.LogInformation("Deleted device {DeviceId} from SQL and Table Storage", id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete device {DeviceId} from Table Storage, but SQL delete succeeded", id);
+        }
+        
         return NoContent();
     }
 }

@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProdControlAV.Core.Models;
-using System.Text.Json;
+using ProdControlAV.Infrastructure.Services;
 
 namespace ProdControlAV.API.Controllers;
 
@@ -13,11 +13,19 @@ public class CommandTemplateController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly ITenantProvider _tenant;
+    private readonly IDeviceActionStore _deviceActionStore;
+    private readonly ILogger<CommandTemplateController> _logger;
 
-    public CommandTemplateController(AppDbContext db, ITenantProvider tenant)
+    public CommandTemplateController(
+        AppDbContext db, 
+        ITenantProvider tenant,
+        IDeviceActionStore deviceActionStore,
+        ILogger<CommandTemplateController> logger)
     {
         _db = db;
         _tenant = tenant;
+        _deviceActionStore = deviceActionStore;
+        _logger = logger;
     }
 
     /// <summary>
@@ -100,22 +108,23 @@ public class CommandTemplateController : ControllerBase
         };
 
         _db.DeviceActions.Add(deviceAction);
-
-        // Create outbox entry for projection to Table Storage
-        var outboxEntry = new OutboxEntry
-        {
-            Id = Guid.NewGuid(),
-            TenantId = tenantId,
-            EntityType = "DeviceAction",
-            EntityId = deviceAction.ActionId,
-            Operation = "Upsert",
-            Payload = JsonSerializer.Serialize(deviceAction),
-            CreatedUtc = DateTimeOffset.UtcNow,
-            RetryCount = 0
-        };
-        _db.OutboxEntries.Add(outboxEntry);
-
         await _db.SaveChangesAsync(ct);
+
+        // Write directly to Table Storage (no longer using outbox pattern)
+        try
+        {
+            await _deviceActionStore.UpsertAsync(
+                tenantId,
+                deviceAction.ActionId,
+                deviceAction.DeviceId,
+                deviceAction.ActionName,
+                ct);
+            _logger.LogInformation("Created device action {ActionId} in SQL and Table Storage", deviceAction.ActionId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to write device action {ActionId} to Table Storage, but SQL write succeeded", deviceAction.ActionId);
+        }
 
         return CreatedAtAction(
             nameof(GetTemplate),
