@@ -34,7 +34,6 @@ public interface ICommandService
 {
     Task<List<CommandEnvelope>> PollCommandsAsync(CancellationToken ct);
     Task ExecuteCommandAsync(CommandEnvelope command, CancellationToken ct);
-    Task CompleteCommandAsync(Guid commandId, bool success, string? message, int? durationMs, CancellationToken ct);
 }
 
 public class CommandService : ICommandService
@@ -63,10 +62,6 @@ public class CommandService : ICommandService
     {
         try
         {
-            // Use the new queue-based endpoint instead of SQL polling
-            if (string.IsNullOrWhiteSpace(_api.CommandsEndpoint))
-                return new List<CommandEnvelope>();
-
             // Get valid JWT token
             var token = await _jwtAuth.GetValidTokenAsync(ct);
             if (string.IsNullOrEmpty(token))
@@ -75,8 +70,8 @@ public class CommandService : ICommandService
                 return new List<CommandEnvelope>();
             }
 
-            // Use the new /commands/receive endpoint for queue-based polling
-            var endpoint = _api.CommandsEndpoint.Replace("/commands/next", "/commands/receive");
+            // Use the new Table Storage-based polling endpoint
+            var endpoint = "/api/agents/commands/poll";
             
             using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
             req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
@@ -105,14 +100,6 @@ public class CommandService : ICommandService
                 Verb = commandProp.GetProperty("verb").GetString()!,
                 Payload = commandProp.TryGetProperty("payload", out var payload) ? payload.GetString() : null
             };
-            
-            // Store message metadata for later acknowledgment
-            if (commandProp.TryGetProperty("messageId", out var msgId) && 
-                commandProp.TryGetProperty("popReceipt", out var popReceipt))
-            {
-                command.MessageId = msgId.GetString();
-                command.PopReceipt = popReceipt.GetString();
-            }
 
             return new List<CommandEnvelope> { command };
         }
@@ -132,28 +119,61 @@ public class CommandService : ICommandService
         var startTime = DateTime.UtcNow;
         bool success = false;
         string message = "";
+        string? response = null;
+        int? httpStatusCode = null;
 
         try
         {
-            // For security, only execute whitelisted commands
-            switch (command.Verb?.ToUpperInvariant())
+            // Parse payload to get command details
+            if (!string.IsNullOrEmpty(command.Payload))
             {
-                case "PING":
-                    await ExecutePingCommand(command, ct);
-                    success = true;
-                    message = "Ping command executed successfully";
-                    break;
+                var payloadJson = JsonSerializer.Deserialize<JsonElement>(command.Payload, s_jsonOptions);
                 
-                case "STATUS":
-                    await ExecuteStatusCommand(command, ct);
-                    success = true;
-                    message = "Status command executed successfully";
-                    break;
-                    
-                default:
-                    message = $"Unknown or unauthorized command: {command.Verb}";
+                var commandType = payloadJson.GetProperty("commandType").GetString();
+                
+                if (commandType == "REST")
+                {
+                    // Execute REST API command
+                    var result = await ExecuteRestCommandAsync(payloadJson, ct);
+                    success = result.Success;
+                    message = result.Message;
+                    response = result.Response;
+                    httpStatusCode = result.StatusCode;
+                }
+                else if (commandType == "Telnet")
+                {
+                    // Execute Telnet command (future implementation)
+                    message = "Telnet commands not yet implemented";
+                    _logger.LogWarning("Telnet command execution not yet implemented");
+                }
+                else
+                {
+                    message = $"Unknown command type: {commandType}";
                     _logger.LogWarning(message);
-                    break;
+                }
+            }
+            else
+            {
+                // Legacy command format - execute as before
+                switch (command.Verb?.ToUpperInvariant())
+                {
+                    case "PING":
+                        await ExecutePingCommand(command, ct);
+                        success = true;
+                        message = "Ping command executed successfully";
+                        break;
+                    
+                    case "STATUS":
+                        await ExecuteStatusCommand(command, ct);
+                        success = true;
+                        message = "Status command executed successfully";
+                        break;
+                        
+                    default:
+                        message = $"Unknown or unauthorized command: {command.Verb}";
+                        _logger.LogWarning(message);
+                        break;
+                }
             }
         }
         catch (Exception ex)
@@ -162,59 +182,112 @@ public class CommandService : ICommandService
             _logger.LogError(ex, "Error executing command {CommandId} - {Verb}", command.CommandId, command.Verb);
         }
 
-        var durationMs = (int)(DateTime.UtcNow - startTime).TotalMilliseconds;
+        var durationMs = (DateTime.UtcNow - startTime).TotalMilliseconds;
         
-        // Complete the command in SQL (authoritative record)
-        await CompleteCommandAsync(command.CommandId, success, message, durationMs, ct);
-        
-        // If command came from queue (has MessageId), acknowledge it to delete from queue
-        if (success && !string.IsNullOrEmpty(command.MessageId) && !string.IsNullOrEmpty(command.PopReceipt))
-        {
-            await AcknowledgeCommandAsync(command.MessageId, command.PopReceipt, ct);
-        }
+        // Record execution in CommandHistory table (Table Storage)
+        await RecordCommandHistoryAsync(command.CommandId, command.DeviceId, success, message, response, httpStatusCode, durationMs, ct);
     }
 
-    public async Task CompleteCommandAsync(Guid commandId, bool success, string? message, int? durationMs, CancellationToken ct)
+    private async Task<RestCommandResult> ExecuteRestCommandAsync(JsonElement payload, CancellationToken ct)
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(_api.CommandCompleteEndpoint))
-                return;
+            var commandData = payload.GetProperty("commandData").GetString();
+            var httpMethod = payload.GetProperty("httpMethod").GetString() ?? "GET";
+            var deviceIp = payload.GetProperty("deviceIp").GetString();
+            var devicePort = payload.TryGetProperty("devicePort", out var portProp) && portProp.ValueKind != JsonValueKind.Null 
+                ? portProp.GetInt32() : 80;
+            
+            var requestBody = payload.TryGetProperty("requestBody", out var bodyProp) && bodyProp.ValueKind != JsonValueKind.Null
+                ? bodyProp.GetString() : null;
+            
+            var requestHeaders = payload.TryGetProperty("requestHeaders", out var headersProp) && headersProp.ValueKind != JsonValueKind.Null
+                ? headersProp.GetString() : null;
 
-            // Get valid JWT token
-            var token = await _jwtAuth.GetValidTokenAsync(ct);
-            if (string.IsNullOrEmpty(token))
+            // Build the full URL
+            var baseUri = new Uri($"http://{deviceIp}:{devicePort}");
+            var path = commandData?.TrimStart('/') ?? "";
+            var fullUri = new Uri(baseUri, path);
+
+            _logger.LogInformation("Executing REST command: {Method} {Uri}", httpMethod, fullUri);
+
+            using var request = new HttpRequestMessage(new HttpMethod(httpMethod), fullUri);
+
+            // Add custom headers if provided
+            if (!string.IsNullOrEmpty(requestHeaders))
             {
-                _logger.LogWarning("Failed to obtain valid JWT token for command completion");
-                return;
+                try
+                {
+                    var headers = JsonSerializer.Deserialize<Dictionary<string, string>>(requestHeaders, s_jsonOptions);
+                    if (headers != null)
+                    {
+                        foreach (var (key, value) in headers)
+                        {
+                            request.Headers.TryAddWithoutValidation(key, value);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to parse request headers, continuing without them");
+                }
             }
 
-            var request = new CommandCompleteRequest
+            // Add request body if provided
+            if (!string.IsNullOrEmpty(requestBody) && (httpMethod == "POST" || httpMethod == "PUT" || httpMethod == "PATCH"))
             {
-                CommandId = commandId,
-                Success = success,
-                Message = message,
-                DurationMs = durationMs
-            };
+                request.Content = new StringContent(requestBody, System.Text.Encoding.UTF8, "application/json");
+            }
 
-            using var req = new HttpRequestMessage(HttpMethod.Post, _api.CommandCompleteEndpoint)
-            {
-                Content = JsonContent.Create(request, options: s_jsonOptions)
-            };
-            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-
-            using var res = await _http.SendAsync(req, ct);
-            res.EnsureSuccessStatusCode();
+            using var deviceClient = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            using var httpResponse = await deviceClient.SendAsync(request, ct);
             
-            _logger.LogInformation("Command {CommandId} completed: {Success}", commandId, success);
+            var responseBody = await httpResponse.Content.ReadAsStringAsync(ct);
+            var statusCode = (int)httpResponse.StatusCode;
+            
+            _logger.LogInformation("REST command completed: Status={StatusCode}, Response={Response}", 
+                statusCode, responseBody?.Substring(0, Math.Min(100, responseBody?.Length ?? 0)));
+
+            return new RestCommandResult
+            {
+                Success = httpResponse.IsSuccessStatusCode,
+                Message = httpResponse.IsSuccessStatusCode ? "REST command executed successfully" : $"Device returned status {statusCode}",
+                Response = responseBody,
+                StatusCode = statusCode
+            };
+        }
+        catch (TaskCanceledException)
+        {
+            return new RestCommandResult
+            {
+                Success = false,
+                Message = "Request timed out after 5 seconds",
+                Response = null,
+                StatusCode = null
+            };
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to report command completion for {CommandId}", commandId);
+            _logger.LogError(ex, "Error executing REST command");
+            return new RestCommandResult
+            {
+                Success = false,
+                Message = $"Error: {ex.Message}",
+                Response = null,
+                StatusCode = null
+            };
         }
     }
-    
-    private async Task AcknowledgeCommandAsync(string messageId, string popReceipt, CancellationToken ct)
+
+    private async Task RecordCommandHistoryAsync(
+        Guid commandId, 
+        Guid deviceId, 
+        bool success, 
+        string message, 
+        string? response,
+        int? httpStatusCode,
+        double executionTimeMs, 
+        CancellationToken ct)
     {
         try
         {
@@ -222,30 +295,47 @@ public class CommandService : ICommandService
             var token = await _jwtAuth.GetValidTokenAsync(ct);
             if (string.IsNullOrEmpty(token))
             {
-                _logger.LogWarning("Failed to obtain valid JWT token for command acknowledgment");
+                _logger.LogWarning("Failed to obtain valid JWT token for recording command history");
                 return;
             }
 
-            var endpoint = _api.CommandsEndpoint?.Replace("/commands/next", "/commands/acknowledge") 
-                ?? "/api/agents/commands/acknowledge";
-            
-            var request = new { messageId, popReceipt };
+            var historyRequest = new
+            {
+                commandId,
+                deviceId,
+                commandName = "REST Command", // Will be populated from payload in future
+                success,
+                errorMessage = success ? null : message,
+                response = response?.Length > 2000 ? response.Substring(0, 2000) : response,
+                httpStatusCode,
+                executionTimeMs
+            };
 
+            var endpoint = "/api/agents/commands/history";
+            
             using var req = new HttpRequestMessage(HttpMethod.Post, endpoint)
             {
-                Content = JsonContent.Create(request, options: s_jsonOptions)
+                Content = JsonContent.Create(historyRequest, options: s_jsonOptions)
             };
             req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
             using var res = await _http.SendAsync(req, ct);
             res.EnsureSuccessStatusCode();
             
-            _logger.LogInformation("Command message {MessageId} acknowledged and deleted from queue", messageId);
+            _logger.LogInformation("Command history recorded for {CommandId}, Success={Success}", commandId, success);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to acknowledge command message {MessageId}", messageId);
+            _logger.LogWarning(ex, "Failed to record command history for {CommandId}", commandId);
         }
+    }
+
+    private class RestCommandResult
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = "";
+        public string? Response { get; set; }
+        public int? StatusCode { get; set; }
     }
 
     private async Task ExecutePingCommand(CommandEnvelope command, CancellationToken ct)
