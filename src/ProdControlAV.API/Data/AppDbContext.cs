@@ -19,6 +19,7 @@ public class AppDbContext : DbContext
     public virtual DbSet<Agent> Agents => Set<Agent>();
     public DbSet<AgentCommand> AgentCommands => Set<AgentCommand>();
     public DbSet<OutboxEntry> OutboxEntries => Set<OutboxEntry>();
+    public DbSet<CommandTemplate> CommandTemplates => Set<CommandTemplate>();
 // Ensure you already have: Devices, DeviceStatusHistory
 
 
@@ -49,7 +50,19 @@ public class AppDbContext : DbContext
             e.Property(x => x.Operation).HasMaxLength(50).IsRequired();
             e.HasIndex(x => new { x.ProcessedUtc, x.CreatedUtc });
         });
-
+        
+        b.Entity<CommandTemplate>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Category).HasMaxLength(100).IsRequired();
+            e.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Description).HasMaxLength(500);
+            e.Property(x => x.HttpMethod).HasMaxLength(10).IsRequired();
+            e.Property(x => x.Endpoint).HasMaxLength(500).IsRequired();
+            e.Property(x => x.DeviceType).HasMaxLength(100).IsRequired();
+            e.HasIndex(x => new { x.DeviceType, x.Category, x.DisplayOrder });
+            e.HasIndex(x => x.IsActive);
+        });
 
         // Use the instance property instead of capturing a local
         b.Entity<Device>()
