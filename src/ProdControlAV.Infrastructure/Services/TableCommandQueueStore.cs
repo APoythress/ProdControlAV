@@ -43,51 +43,50 @@ namespace ProdControlAV.Infrastructure.Services
             await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
         }
 
+        // Replacements for the query methods using OData filter strings
         public async IAsyncEnumerable<CommandQueueDto> GetPendingForDeviceAsync(
-            Guid tenantId, 
-            Guid deviceId, 
+            Guid tenantId,
+            Guid deviceId,
             [EnumeratorCancellation] CancellationToken ct)
         {
             var partitionKey = tenantId.ToString().ToLowerInvariant();
             var deviceIdStr = deviceId.ToString();
-            
-            var query = _table.QueryAsync<TableEntity>(
-                e => e.PartitionKey == partitionKey && e["DeviceId"].ToString() == deviceIdStr && e["Status"].ToString() == "Pending",
-                cancellationToken: ct);
-
+        
+            var filter = $"PartitionKey eq '{partitionKey}' and DeviceId eq '{deviceIdStr}' and Status eq 'Pending'";
+        
+            var query = _table.QueryAsync<TableEntity>(filter, cancellationToken: ct);
+        
             await foreach (var e in query)
             {
                 yield return MapToDto(e);
             }
         }
-
+        
         public async IAsyncEnumerable<CommandQueueDto> GetPendingForTenantAsync(
-            Guid tenantId, 
+            Guid tenantId,
             [EnumeratorCancellation] CancellationToken ct)
         {
             var partitionKey = tenantId.ToString().ToLowerInvariant();
-            
-            var query = _table.QueryAsync<TableEntity>(
-                e => e.PartitionKey == partitionKey && e["Status"].ToString() == "Pending",
-                cancellationToken: ct);
-
+        
+            var filter = $"PartitionKey eq '{partitionKey}' and Status eq 'Pending'";
+        
+            var query = _table.QueryAsync<TableEntity>(filter, cancellationToken: ct);
+        
             await foreach (var e in query)
             {
                 yield return MapToDto(e);
             }
         }
-
+        
         public async Task MarkAsProcessingAsync(Guid tenantId, Guid commandId, CancellationToken ct)
         {
             var partitionKey = tenantId.ToString().ToLowerInvariant();
             var commandIdStr = commandId.ToString();
-            
-            // Find the entity first
-            var query = _table.QueryAsync<TableEntity>(
-                e => e.PartitionKey == partitionKey && e["CommandId"].ToString() == commandIdStr,
-                maxPerPage: 1,
-                cancellationToken: ct);
-
+        
+            var filter = $"PartitionKey eq '{partitionKey}' and CommandId eq '{commandIdStr}'";
+        
+            var query = _table.QueryAsync<TableEntity>(filter, maxPerPage: 1, cancellationToken: ct);
+        
             await foreach (var entity in query)
             {
                 entity["Status"] = "Processing";
@@ -96,18 +95,16 @@ namespace ProdControlAV.Infrastructure.Services
                 return;
             }
         }
-
+        
         public async Task DequeueAsync(Guid tenantId, Guid commandId, CancellationToken ct)
         {
             var partitionKey = tenantId.ToString().ToLowerInvariant();
             var commandIdStr = commandId.ToString();
-            
-            // Find and delete the entity
-            var query = _table.QueryAsync<TableEntity>(
-                e => e.PartitionKey == partitionKey && e["CommandId"].ToString() == commandIdStr,
-                maxPerPage: 1,
-                cancellationToken: ct);
-
+        
+            var filter = $"PartitionKey eq '{partitionKey}' and CommandId eq '{commandIdStr}'";
+        
+            var query = _table.QueryAsync<TableEntity>(filter, maxPerPage: 1, cancellationToken: ct);
+        
             await foreach (var entity in query)
             {
                 try
@@ -121,7 +118,7 @@ namespace ProdControlAV.Infrastructure.Services
                 return;
             }
         }
-
+        
         private static CommandQueueDto MapToDto(TableEntity e)
         {
             return new CommandQueueDto(
