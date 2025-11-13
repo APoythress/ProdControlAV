@@ -511,12 +511,11 @@ public sealed class AgentsController : ControllerBase
     [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme, Policy = "JwtAgent")]
     public async Task<IActionResult> PollCommandQueue(CancellationToken ct)
     {
-        var agentIdClaim = User.FindFirst("sub")?.Value ?? User.FindFirst("agentId")?.Value;
         var tenantIdClaim = User.FindFirst("tenantId")?.Value;
 
-        if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
+        if (!Guid.TryParse(tenantIdClaim, out var tenantId))
         {
-            _logger.LogWarning("[COMMANDS/POLL] Invalid token claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
+            _logger.LogWarning("[COMMANDS/POLL] Invalid token claims: tenantId={TenantId}", tenantIdClaim);
             return Unauthorized(new { error = "invalid_token_claims" });
         }
 
