@@ -43,12 +43,14 @@ public sealed class TableAgentAuthStore : IAgentAuthStore
         {
             // Lookup agent ID from hash index table
             // PartitionKey = first 4 chars of hash for distribution, RowKey = full hash
-            var partitionKey = agentKeyHash.Length >= 4 ? agentKeyHash[..4] : agentKeyHash;
+            // Normalize hash to a consistent casing to avoid duplicate index rows (DB may store different case)
+            var normalizedHash = (agentKeyHash ?? string.Empty).ToUpperInvariant();
+            var partitionKey = normalizedHash.Length >= 4 ? normalizedHash[..4] : normalizedHash;
             
             TableEntity? indexEntity;
             try
             {
-                indexEntity = await _agentKeyHashIndex.GetEntityAsync<TableEntity>(partitionKey, agentKeyHash, cancellationToken: ct);
+                indexEntity = await _agentKeyHashIndex.GetEntityAsync<TableEntity>(partitionKey, normalizedHash, cancellationToken: ct);
             }
             catch (Azure.RequestFailedException ex) when (ex.Status == 404)
             {
@@ -61,7 +63,7 @@ public sealed class TableAgentAuthStore : IAgentAuthStore
             {
                 var presentKeys = indexEntity.Keys != null ? string.Join(", ", indexEntity.Keys) : "(none)";
                 _logger.LogDebug("Index entity for hash {Hash} missing required properties; present properties: {PresentKeys}", 
-                    agentKeyHash, presentKeys);
+                    normalizedHash, presentKeys);
                 _logger.LogWarning("Invalid index entry for hash: {Hash}", agentKeyHash);
                 return null;
             }
@@ -145,7 +147,8 @@ public sealed class TableAgentAuthStore : IAgentAuthStore
             var agentEntity = new TableEntity(partitionKey, rowKey)
             {
                 ["Name"] = agent.Name,
-                ["AgentKeyHash"] = agent.AgentKeyHash,
+                // Store normalized hash to keep table storage consistent (normalize to upper-case)
+                ["AgentKeyHash"] = (agent.AgentKeyHash ?? string.Empty).ToUpperInvariant(),
                 ["LastHostname"] = agent.LastHostname,
                 ["LastIp"] = agent.LastIp,
                 ["LastSeenUtc"] = agent.LastSeenUtc,
@@ -155,12 +158,13 @@ public sealed class TableAgentAuthStore : IAgentAuthStore
             await _agentsTable.UpsertEntityAsync(agentEntity, TableUpdateMode.Merge, ct);
 
             // Upsert hash index entry for fast lookups
-            var hashPartitionKey = agent.AgentKeyHash.Length >= 4 ? agent.AgentKeyHash[..4] : agent.AgentKeyHash;
-            var indexEntity = new TableEntity(hashPartitionKey, agent.AgentKeyHash)
-            {
-                ["AgentId"] = agent.AgentId.ToString(),
-                ["TenantId"] = agent.TenantId.ToString()
-            };
+            var normalizedHash = (agent.AgentKeyHash ?? string.Empty).ToUpperInvariant();
+            var hashPartitionKey = normalizedHash.Length >= 4 ? normalizedHash[..4] : normalizedHash;
+            var indexEntity = new TableEntity(hashPartitionKey, normalizedHash)
+             {
+                 ["AgentId"] = agent.AgentId.ToString(),
+                 ["TenantId"] = agent.TenantId.ToString()
+             };
 
             await _agentKeyHashIndex.UpsertEntityAsync(indexEntity, TableUpdateMode.Replace, ct);
 
@@ -199,11 +203,12 @@ public sealed class TableAgentAuthStore : IAgentAuthStore
             if (agentEntity.TryGetValue("AgentKeyHash", out var hashObj))
             {
                 var hash = hashObj.ToString()!;
-                var hashPartitionKey = hash.Length >= 4 ? hash[..4] : hash;
-                await _agentKeyHashIndex.DeleteEntityAsync(hashPartitionKey, hash, cancellationToken: ct);
-            }
+                var normalizedHash = hash.ToUpperInvariant();
+                var hashPartitionKey = normalizedHash.Length >= 4 ? normalizedHash[..4] : normalizedHash;
+                await _agentKeyHashIndex.DeleteEntityAsync(hashPartitionKey, normalizedHash, cancellationToken: ct);
+             }
 
-            _logger.LogInformation("Deleted agent auth record: AgentId={AgentId}, TenantId={TenantId}", agentId, tenantId);
+             _logger.LogInformation("Deleted agent auth record: AgentId={AgentId}, TenantId={TenantId}", agentId, tenantId);
         }
         catch (Exception ex)
         {
@@ -211,4 +216,4 @@ public sealed class TableAgentAuthStore : IAgentAuthStore
             throw;
         }
     }
-}
+ }
