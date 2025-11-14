@@ -114,15 +114,36 @@ public class AgentAuthTests
         var tenantId = Guid.NewGuid();
         var testAgentKey = "test-key";
         
-        // Table store returns null (agent not found)
-        mockAuthStore
-            .Setup(x => x.ValidateAgentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((AgentAuthDto?)null);
-        
-        // Create agent in database
         var agentAuth = new AgentAuth(mockAuthStore.Object, dbContext, mockLogger.Object);
         var hash = agentAuth.HashAgentKey(testAgentKey);
         
+        // Setup: First lookup returns null, verification lookup returns the agent (after sync)
+        var lookupCount = 0;
+        mockAuthStore
+            .Setup(x => x.ValidateAgentAsync(hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                lookupCount++;
+                if (lookupCount == 1) return null; // Initial lookup fails
+                // Verification lookup succeeds
+                return new AgentAuthDto(
+                    AgentId: agentId,
+                    TenantId: tenantId,
+                    Name: "Test Agent",
+                    AgentKeyHash: hash,
+                    LastHostname: "test-host",
+                    LastIp: "192.168.1.1",
+                    LastSeenUtc: DateTimeOffset.UtcNow,
+                    Version: "1.0.0"
+                );
+            });
+        
+        // Setup: UpsertAgentAsync succeeds
+        mockAuthStore
+            .Setup(x => x.UpsertAgentAsync(It.IsAny<AgentAuthDto>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        
+        // Create agent in database
         var dbAgent = new AgentModel
         {
             Id = agentId,
@@ -159,12 +180,18 @@ public class AgentAuthTests
             Times.Once,
             "Agent should be synced to table store after database lookup");
         
+        // Verify that ValidateAgentAsync was called twice (initial + verification)
+        mockAuthStore.Verify(
+            x => x.ValidateAgentAsync(hash, It.IsAny<CancellationToken>()),
+            Times.Exactly(2),
+            "Should lookup twice: initial + verification after sync");
+        
         // Verify appropriate logs
         mockLogger.Verify(
             x => x.Log(
                 LogLevel.Information,
                 It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Agent not found in table store")),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Agent not found in Table Store")),
                 It.IsAny<Exception>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
@@ -173,7 +200,7 @@ public class AgentAuthTests
             x => x.Log(
                 LogLevel.Information,
                 It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Agent found in database")),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Agent found in SQL database")),
                 It.IsAny<Exception>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
@@ -217,6 +244,338 @@ public class AgentAuthTests
                 It.IsAny<Exception>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ReturnsFatalError_WhenTableStoreSyncFails()
+    {
+        // Arrange
+        var mockAuthStore = new Mock<IAgentAuthStore>();
+        var mockLogger = new Mock<ILogger<AgentAuth>>();
+        var dbContext = CreateInMemoryDbContext();
+        
+        var agentId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var testAgentKey = "test-key-sync-fail";
+        
+        var agentAuth = new AgentAuth(mockAuthStore.Object, dbContext, mockLogger.Object);
+        var hash = agentAuth.HashAgentKey(testAgentKey);
+        
+        // Setup: Table store returns null initially (agent not in table store)
+        mockAuthStore
+            .Setup(x => x.ValidateAgentAsync(hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AgentAuthDto?)null);
+        
+        // Setup: UpsertAgentAsync fails with exception
+        mockAuthStore
+            .Setup(x => x.UpsertAgentAsync(It.IsAny<AgentAuthDto>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("Table Storage unavailable"));
+        
+        // Create agent in database
+        var dbAgent = new AgentModel
+        {
+            Id = agentId,
+            TenantId = tenantId,
+            Name = "Test Agent",
+            AgentKeyHash = hash,
+            LastHostname = "test-host",
+            LastIp = "192.168.1.1",
+            LastSeenUtc = DateTime.UtcNow,
+            Version = "1.0.0"
+        };
+        
+        dbContext.Agents.Add(dbAgent);
+        await dbContext.SaveChangesAsync();
+        
+        // Act
+        var (agent, error) = await agentAuth.ValidateAsync(testAgentKey, CancellationToken.None);
+        
+        // Assert
+        Assert.Null(agent);
+        Assert.Equal("agent_store_sync_failure", error);
+        
+        // Verify that UpsertAgentAsync was called 3 times (with retries)
+        mockAuthStore.Verify(
+            x => x.UpsertAgentAsync(It.IsAny<AgentAuthDto>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(3),
+            "Sync should be retried 3 times");
+        
+        // Verify critical error logging
+        mockLogger.Verify(
+            x => x.Log(
+                LogLevel.Error,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("CRITICAL") && v.ToString()!.Contains("Failed to sync agent")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once,
+            "Should log critical error when sync fails");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ReturnsFatalError_WhenTableStoreVerificationFailsAfterSync()
+    {
+        // Arrange
+        var mockAuthStore = new Mock<IAgentAuthStore>();
+        var mockLogger = new Mock<ILogger<AgentAuth>>();
+        var dbContext = CreateInMemoryDbContext();
+        
+        var agentId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var testAgentKey = "test-key-verify-fail";
+        
+        var agentAuth = new AgentAuth(mockAuthStore.Object, dbContext, mockLogger.Object);
+        var hash = agentAuth.HashAgentKey(testAgentKey);
+        
+        // Setup: First lookup returns null, verification lookup also returns null
+        var lookupCount = 0;
+        mockAuthStore
+            .Setup(x => x.ValidateAgentAsync(hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                lookupCount++;
+                return null; // Both initial and verification lookups fail
+            });
+        
+        // Setup: UpsertAgentAsync succeeds
+        mockAuthStore
+            .Setup(x => x.UpsertAgentAsync(It.IsAny<AgentAuthDto>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        
+        // Create agent in database
+        var dbAgent = new AgentModel
+        {
+            Id = agentId,
+            TenantId = tenantId,
+            Name = "Test Agent",
+            AgentKeyHash = hash,
+            LastHostname = "test-host",
+            LastIp = "192.168.1.1",
+            LastSeenUtc = DateTime.UtcNow,
+            Version = "1.0.0"
+        };
+        
+        dbContext.Agents.Add(dbAgent);
+        await dbContext.SaveChangesAsync();
+        
+        // Act
+        var (agent, error) = await agentAuth.ValidateAsync(testAgentKey, CancellationToken.None);
+        
+        // Assert
+        Assert.Null(agent);
+        Assert.Equal("agent_store_sync_failure", error);
+        
+        // Verify that ValidateAgentAsync was called twice (initial + verification)
+        mockAuthStore.Verify(
+            x => x.ValidateAgentAsync(hash, It.IsAny<CancellationToken>()),
+            Times.Exactly(2),
+            "Should lookup twice: initial + verification after sync");
+        
+        // Verify critical error logging for verification failure
+        mockLogger.Verify(
+            x => x.Log(
+                LogLevel.Error,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("CRITICAL") && v.ToString()!.Contains("subsequent lookup FAILED")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once,
+            "Should log critical error when verification fails");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_PreventsRepeatedDBHits_WhenAgentInCooldown()
+    {
+        // Arrange
+        var mockAuthStore = new Mock<IAgentAuthStore>();
+        var mockLogger = new Mock<ILogger<AgentAuth>>();
+        var dbContext = CreateInMemoryDbContext();
+        
+        var agentId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var testAgentKey = "test-key-cooldown";
+        
+        var agentAuth = new AgentAuth(mockAuthStore.Object, dbContext, mockLogger.Object);
+        var hash = agentAuth.HashAgentKey(testAgentKey);
+        
+        // Setup: Table store returns null
+        mockAuthStore
+            .Setup(x => x.ValidateAgentAsync(hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AgentAuthDto?)null);
+        
+        // Setup: UpsertAgentAsync fails
+        mockAuthStore
+            .Setup(x => x.UpsertAgentAsync(It.IsAny<AgentAuthDto>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("Table Storage unavailable"));
+        
+        // Create agent in database
+        var dbAgent = new AgentModel
+        {
+            Id = agentId,
+            TenantId = tenantId,
+            Name = "Test Agent",
+            AgentKeyHash = hash,
+            LastHostname = "test-host",
+            LastIp = "192.168.1.1",
+            LastSeenUtc = DateTime.UtcNow,
+            Version = "1.0.0"
+        };
+        
+        dbContext.Agents.Add(dbAgent);
+        await dbContext.SaveChangesAsync();
+        
+        // Act - First attempt: sync fails, agent gets added to cooldown
+        var (agent1, error1) = await agentAuth.ValidateAsync(testAgentKey, CancellationToken.None);
+        
+        // Assert first attempt
+        Assert.Null(agent1);
+        Assert.Equal("agent_store_sync_failure", error1);
+        
+        // Act - Second attempt: should fail immediately due to cooldown
+        var (agent2, error2) = await agentAuth.ValidateAsync(testAgentKey, CancellationToken.None);
+        
+        // Assert second attempt
+        Assert.Null(agent2);
+        Assert.Equal("agent_store_sync_failure", error2);
+        
+        // Verify UpsertAgentAsync was only called 3 times (from first attempt, not second)
+        mockAuthStore.Verify(
+            x => x.UpsertAgentAsync(It.IsAny<AgentAuthDto>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(3),
+            "Sync should only be attempted on first call, not during cooldown");
+        
+        // Verify cooldown warning was logged
+        mockLogger.Verify(
+            x => x.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("cooldown period")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once,
+            "Should log cooldown warning on second attempt");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_SucceedsAfterSync_WhenVerificationPasses()
+    {
+        // Arrange
+        var mockAuthStore = new Mock<IAgentAuthStore>();
+        var mockLogger = new Mock<ILogger<AgentAuth>>();
+        var dbContext = CreateInMemoryDbContext();
+        
+        var agentId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var testAgentKey = "test-key-success";
+        
+        var agentAuth = new AgentAuth(mockAuthStore.Object, dbContext, mockLogger.Object);
+        var hash = agentAuth.HashAgentKey(testAgentKey);
+        
+        // Setup: First lookup returns null, verification lookup returns the agent
+        var lookupCount = 0;
+        mockAuthStore
+            .Setup(x => x.ValidateAgentAsync(hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                lookupCount++;
+                if (lookupCount == 1) return null; // Initial lookup fails
+                // Verification lookup succeeds
+                return new AgentAuthDto(
+                    AgentId: agentId,
+                    TenantId: tenantId,
+                    Name: "Test Agent",
+                    AgentKeyHash: hash,
+                    LastHostname: "test-host",
+                    LastIp: "192.168.1.1",
+                    LastSeenUtc: DateTimeOffset.UtcNow,
+                    Version: "1.0.0"
+                );
+            });
+        
+        // Setup: UpsertAgentAsync succeeds
+        mockAuthStore
+            .Setup(x => x.UpsertAgentAsync(It.IsAny<AgentAuthDto>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        
+        // Create agent in database
+        var dbAgent = new AgentModel
+        {
+            Id = agentId,
+            TenantId = tenantId,
+            Name = "Test Agent",
+            AgentKeyHash = hash,
+            LastHostname = "test-host",
+            LastIp = "192.168.1.1",
+            LastSeenUtc = DateTime.UtcNow,
+            Version = "1.0.0"
+        };
+        
+        dbContext.Agents.Add(dbAgent);
+        await dbContext.SaveChangesAsync();
+        
+        // Act
+        var (agent, error) = await agentAuth.ValidateAsync(testAgentKey, CancellationToken.None);
+        
+        // Assert
+        Assert.NotNull(agent);
+        Assert.Null(error);
+        Assert.Equal(agentId, agent.Id);
+        Assert.Equal(tenantId, agent.TenantId);
+        
+        // Verify that ValidateAgentAsync was called twice (initial + verification)
+        mockAuthStore.Verify(
+            x => x.ValidateAgentAsync(hash, It.IsAny<CancellationToken>()),
+            Times.Exactly(2),
+            "Should lookup twice: initial + verification after sync");
+        
+        // Verify sync was successful
+        mockAuthStore.Verify(
+            x => x.UpsertAgentAsync(It.IsAny<AgentAuthDto>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        
+        // Verify verification success log
+        mockLogger.Verify(
+            x => x.Log(
+                LogLevel.Information,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Table Store sync verification successful")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_LogsEnhancedDetails_ForTableStoreLookupFailure()
+    {
+        // Arrange
+        var mockAuthStore = new Mock<IAgentAuthStore>();
+        var mockLogger = new Mock<ILogger<AgentAuth>>();
+        var dbContext = CreateInMemoryDbContext();
+        
+        var testAgentKey = "test-key-logging";
+        
+        // Table store returns null
+        mockAuthStore
+            .Setup(x => x.ValidateAgentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AgentAuthDto?)null);
+        
+        var agentAuth = new AgentAuth(mockAuthStore.Object, dbContext, mockLogger.Object);
+        
+        // Act
+        await agentAuth.ValidateAsync(testAgentKey, CancellationToken.None);
+        
+        // Assert - Verify enhanced logging
+        mockLogger.Verify(
+            x => x.Log(
+                LogLevel.Information,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => 
+                    v.ToString()!.Contains("Agent not found in Table Store") &&
+                    v.ToString()!.Contains("Falling back to SQL database")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once,
+            "Should log enhanced details when Table Store lookup fails");
     }
 
     private static AppDbContext CreateInMemoryDbContext()

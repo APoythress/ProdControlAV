@@ -27,7 +27,6 @@ public sealed class StatusUploadRequest
 
 public sealed class HeartbeatRequest
 {
-    public string AgentKey { get; set; }
     public string? Hostname { get; set; }
     public string? IpAddress { get; set; }
     public string? Version { get; set; }
@@ -106,18 +105,26 @@ public sealed class StatusPublisher : IStatusPublisher
         if (string.IsNullOrWhiteSpace(_api.HeartbeatEndpoint)) return;
         try
         {
+            // Get JWT token for authentication (reuses existing token if still valid)
+            var token = await _jwtAuth.GetValidTokenAsync(ct);
+            if (string.IsNullOrEmpty(token))
+            {
+                _logger.LogWarning("Failed to obtain valid JWT token for heartbeat");
+                return;
+            }
+            
             var request = new HeartbeatRequest
             {
-                AgentKey = _api.ApiKey ?? "",
                 Hostname = Environment.MachineName,
                 IpAddress = null,
                 Version = "1.0.001"
             };
             using var req = new HttpRequestMessage(HttpMethod.Post, _api.HeartbeatEndpoint);
             req.Content = JsonContent.Create(request, options: _json);
+            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
             var res = await _http.SendAsync(req, ct);
             res.EnsureSuccessStatusCode();
-            _logger.LogDebug("Heartbeat sent successfully");
+            _logger.LogDebug("Heartbeat sent successfully with JWT authentication");
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
