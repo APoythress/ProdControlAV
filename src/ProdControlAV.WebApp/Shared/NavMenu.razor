@@ -130,7 +130,7 @@
         displayName = "Signing out...";
         StateHasChanged();
         await Http.PostAsync("/api/auth/logout", content: null);
-        await JSRuntime.InvokeVoidAsync("window.location.replace", "/signin");
+        await JSRuntime.InvokeVoidAsync("window.location.replace", "/");
     }
 
     private class UserInfoResponse
