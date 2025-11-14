@@ -412,7 +412,7 @@
         {
             HttpResponseMessage response;
             
-            if (editingCommand?.CommandId != Guid.Empty)
+            if (editingCommand != null && editingCommand.CommandId != Guid.Empty)
             {
                 // Update existing command
                 var updateDto = new
