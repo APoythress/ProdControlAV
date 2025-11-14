@@ -578,6 +578,167 @@ public class AgentAuthTests
             "Should log enhanced details when Table Store lookup fails");
     }
 
+    [Fact]
+    public async Task ValidateAsync_ClearsCooldown_WhenTableStoreRecoversAndAgentFoundDirectly()
+    {
+        // Arrange
+        var mockAuthStore = new Mock<IAgentAuthStore>();
+        var mockLogger = new Mock<ILogger<AgentAuth>>();
+        var dbContext = CreateInMemoryDbContext();
+        
+        var agentId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var testAgentKey = "test-key-recovery";
+        
+        var agentAuth = new AgentAuth(mockAuthStore.Object, dbContext, mockLogger.Object);
+        var hash = agentAuth.HashAgentKey(testAgentKey);
+        
+        // Setup: First call - Table store returns null, sync fails
+        var lookupCount = 0;
+        mockAuthStore
+            .Setup(x => x.ValidateAgentAsync(hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                lookupCount++;
+                if (lookupCount <= 1)
+                {
+                    // First lookup: agent not in table store
+                    return null;
+                }
+                else
+                {
+                    // Second lookup: Table Storage recovered, agent is now available
+                    return new AgentAuthDto(
+                        AgentId: agentId,
+                        TenantId: tenantId,
+                        Name: "Test Agent",
+                        AgentKeyHash: hash,
+                        LastHostname: "test-host",
+                        LastIp: "192.168.1.1",
+                        LastSeenUtc: DateTimeOffset.UtcNow,
+                        Version: "1.0.0"
+                    );
+                }
+            });
+        
+        // Setup: UpsertAgentAsync fails (Table Storage unavailable)
+        mockAuthStore
+            .Setup(x => x.UpsertAgentAsync(It.IsAny<AgentAuthDto>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("Table Storage unavailable"));
+        
+        // Create agent in database
+        var dbAgent = new AgentModel
+        {
+            Id = agentId,
+            TenantId = tenantId,
+            Name = "Test Agent",
+            AgentKeyHash = hash,
+            LastHostname = "test-host",
+            LastIp = "192.168.1.1",
+            LastSeenUtc = DateTime.UtcNow,
+            Version = "1.0.0"
+        };
+        
+        dbContext.Agents.Add(dbAgent);
+        await dbContext.SaveChangesAsync();
+        
+        // Act - First attempt: sync fails, agent gets added to cooldown
+        var (agent1, error1) = await agentAuth.ValidateAsync(testAgentKey, CancellationToken.None);
+        
+        // Assert first attempt
+        Assert.Null(agent1);
+        Assert.Equal("agent_store_sync_failure", error1);
+        
+        // Act - Second attempt: Table Storage has recovered, agent should authenticate successfully
+        // This simulates the scenario where Table Storage was down, then came back up with the agent data
+        var (agent2, error2) = await agentAuth.ValidateAsync(testAgentKey, CancellationToken.None);
+        
+        // Assert second attempt - should succeed and clear cooldown
+        Assert.NotNull(agent2);
+        Assert.Null(error2);
+        Assert.Equal(agentId, agent2.Id);
+        Assert.Equal(tenantId, agent2.TenantId);
+        
+        // Verify that ValidateAgentAsync was called twice (once for each attempt)
+        mockAuthStore.Verify(
+            x => x.ValidateAgentAsync(hash, It.IsAny<CancellationToken>()),
+            Times.Exactly(2),
+            "Should lookup Table Store on both attempts");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_AllowsRetry_AfterCooldownExpires()
+    {
+        // Arrange
+        var mockAuthStore = new Mock<IAgentAuthStore>();
+        var mockLogger = new Mock<ILogger<AgentAuth>>();
+        var dbContext = CreateInMemoryDbContext();
+        
+        var agentId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var testAgentKey = "test-key-cooldown-expire";
+        
+        var agentAuth = new AgentAuth(mockAuthStore.Object, dbContext, mockLogger.Object);
+        var hash = agentAuth.HashAgentKey(testAgentKey);
+        
+        // Setup: Table store always returns null initially (agent not in table store)
+        mockAuthStore
+            .Setup(x => x.ValidateAgentAsync(hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AgentAuthDto?)null);
+        
+        // Setup: Upsert always fails (Table Storage unavailable)
+        mockAuthStore
+            .Setup(x => x.UpsertAgentAsync(It.IsAny<AgentAuthDto>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("Table Storage unavailable"));
+        
+        // Create agent in database
+        var dbAgent = new AgentModel
+        {
+            Id = agentId,
+            TenantId = tenantId,
+            Name = "Test Agent",
+            AgentKeyHash = hash,
+            LastHostname = "test-host",
+            LastIp = "192.168.1.1",
+            LastSeenUtc = DateTime.UtcNow,
+            Version = "1.0.0"
+        };
+        
+        dbContext.Agents.Add(dbAgent);
+        await dbContext.SaveChangesAsync();
+        
+        // Act - First attempt: sync fails, agent gets added to cooldown
+        var (agent1, error1) = await agentAuth.ValidateAsync(testAgentKey, CancellationToken.None);
+        
+        // Assert first attempt
+        Assert.Null(agent1);
+        Assert.Equal("agent_store_sync_failure", error1);
+        
+        // Act - Second attempt: agent is in cooldown, should be rejected without hitting DB
+        var (agent2, error2) = await agentAuth.ValidateAsync(testAgentKey, CancellationToken.None);
+        
+        // Assert second attempt - should still fail due to cooldown
+        Assert.Null(agent2);
+        Assert.Equal("agent_store_sync_failure", error2);
+        
+        // Verify UpsertAgentAsync was only called 3 times (from first attempt, not second)
+        mockAuthStore.Verify(
+            x => x.UpsertAgentAsync(It.IsAny<AgentAuthDto>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(3),
+            "Sync should only be attempted on first call, not during cooldown");
+        
+        // Verify cooldown warning was logged on second attempt
+        mockLogger.Verify(
+            x => x.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("cooldown period")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once,
+            "Should log cooldown warning on second attempt");
+    }
+
     private static AppDbContext CreateInMemoryDbContext()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()

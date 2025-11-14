@@ -56,7 +56,31 @@ public sealed class AgentAuth : IAgentAuth
         var hash = HashAgentKey(agentKey);
         _logger.LogDebug("Computed agent key hash for incoming agent: {AgentKeyHash}", hash);
         
-        // Check if this agent is in the failed list and still in cooldown period
+        // Always try Table Store lookup first (cheap operation, even during cooldown)
+        var agentDto = await _authStore.ValidateAgentAsync(hash, ct);
+        
+        // If found in table store, clear from failed list (Table Storage may have recovered) and return success
+        if (agentDto is not null)
+        {
+            _failedAgentKeys.TryRemove(hash, out _);
+            
+            // Convert DTO to Agent model for backward compatibility
+            var agent = new Agent
+            {
+                Id = agentDto.AgentId,
+                TenantId = agentDto.TenantId,
+                Name = agentDto.Name,
+                AgentKeyHash = agentDto.AgentKeyHash,
+                LastHostname = agentDto.LastHostname,
+                LastIp = agentDto.LastIp,
+                LastSeenUtc = agentDto.LastSeenUtc?.UtcDateTime,
+                Version = agentDto.Version
+            };
+
+            return (agent, null);
+        }
+        
+        // Agent not in Table Store - check if in cooldown before hitting SQL DB
         if (_failedAgentKeys.TryGetValue(hash, out var failedTime))
         {
             if (DateTimeOffset.UtcNow - failedTime < _failedAgentCooldown)
@@ -74,83 +98,76 @@ public sealed class AgentAuth : IAgentAuth
             }
         }
         
-        var agentDto = await _authStore.ValidateAgentAsync(hash, ct);
+        // Not found in table store and not in cooldown, check database and sync to table store
+        _logger.LogInformation("Agent not found in Table Store for hash {Hash}. Reason: Either agent doesn't exist in Table Store or hash index lookup failed. Falling back to SQL database.", hash);
         
-        // If not found in table store, check database and sync to table store
-        if (agentDto is null)
+        // Query database for agent with matching hash (database is source of truth)
+        var dbAgent = await _db.Agents
+            .FirstOrDefaultAsync(a => a.AgentKeyHash == hash, ct);
+        
+        if (dbAgent is null)
         {
-            _logger.LogInformation("Agent not found in Table Store for hash {Hash}. Reason: Either agent doesn't exist in Table Store or hash index lookup failed. Falling back to SQL database.", hash);
-            
-            // Query database for agent with matching hash (database is source of truth)
-            var dbAgent = await _db.Agents
-                .FirstOrDefaultAsync(a => a.AgentKeyHash == hash, ct);
-            
-            if (dbAgent is null)
-            {
-                _logger.LogWarning("Agent key hash not found in database: {Hash}. This agent does not exist in the system.", hash);
-                return (null, "invalid_agent_key");
-            }
-            
-            _logger.LogInformation("Agent found in SQL database: AgentId={AgentId}, TenantId={TenantId}, Name={Name}. Attempting to sync to Table Store.", 
-                dbAgent.Id, dbAgent.TenantId, dbAgent.Name);
-            
-            // Sync agent from database to table store for future fast lookups with retry logic
-            var agentAuthDto = new AgentAuthDto(
-                AgentId: dbAgent.Id,
-                TenantId: dbAgent.TenantId,
-                Name: dbAgent.Name,
-                AgentKeyHash: dbAgent.AgentKeyHash,
-                LastHostname: dbAgent.LastHostname,
-                LastIp: dbAgent.LastIp,
-                LastSeenUtc: dbAgent.LastSeenUtc.HasValue ? new DateTimeOffset(dbAgent.LastSeenUtc.Value) : null,
-                Version: dbAgent.Version
-            );
-            
-            var syncSuccess = await TrySyncAgentToTableStoreAsync(agentAuthDto, ct);
-            if (!syncSuccess)
-            {
-                _logger.LogError("CRITICAL: Failed to sync agent {AgentId} to Table Storage after all retry attempts. Marking agent as failed to prevent repeated SQL hits.", dbAgent.Id);
-                
-                // Track this failed agent to prevent repeated DB hits
-                _failedAgentKeys[hash] = DateTimeOffset.UtcNow;
-                
-                return (null, "agent_store_sync_failure");
-            }
-            
-            _logger.LogInformation("Successfully synced agent {AgentId} to Table Store. Verifying sync by retrying Table Store lookup.", dbAgent.Id);
-            
-            // Verify the sync worked by retrying Table Store lookup
-            var verifyDto = await _authStore.ValidateAgentAsync(hash, ct);
-            if (verifyDto is null)
-            {
-                _logger.LogError("CRITICAL: Table Store sync reported success for agent {AgentId}, but subsequent lookup FAILED. Table Store may be inconsistent. Marking agent as failed.", dbAgent.Id);
-                
-                // Track this failed agent to prevent repeated DB hits
-                _failedAgentKeys[hash] = DateTimeOffset.UtcNow;
-                
-                return (null, "agent_store_sync_failure");
-            }
-            
-            _logger.LogInformation("Table Store sync verification successful for agent {AgentId}. Agent can now authenticate via Table Store.", dbAgent.Id);
-            
-            // Use the verified DTO from Table Store
-            agentDto = verifyDto;
+            _logger.LogWarning("Agent key hash not found in database: {Hash}. This agent does not exist in the system.", hash);
+            return (null, "invalid_agent_key");
         }
-
-        // Convert DTO to Agent model for backward compatibility
-        var agent = new Agent
+        
+        _logger.LogInformation("Agent found in SQL database: AgentId={AgentId}, TenantId={TenantId}, Name={Name}. Attempting to sync to Table Store.", 
+            dbAgent.Id, dbAgent.TenantId, dbAgent.Name);
+        
+        // Sync agent from database to table store for future fast lookups with retry logic
+        var agentAuthDto = new AgentAuthDto(
+            AgentId: dbAgent.Id,
+            TenantId: dbAgent.TenantId,
+            Name: dbAgent.Name,
+            AgentKeyHash: dbAgent.AgentKeyHash,
+            LastHostname: dbAgent.LastHostname,
+            LastIp: dbAgent.LastIp,
+            LastSeenUtc: dbAgent.LastSeenUtc.HasValue ? new DateTimeOffset(dbAgent.LastSeenUtc.Value) : null,
+            Version: dbAgent.Version
+        );
+        
+        var syncSuccess = await TrySyncAgentToTableStoreAsync(agentAuthDto, ct);
+        if (!syncSuccess)
         {
-            Id = agentDto.AgentId,
-            TenantId = agentDto.TenantId,
-            Name = agentDto.Name,
-            AgentKeyHash = agentDto.AgentKeyHash,
-            LastHostname = agentDto.LastHostname,
-            LastIp = agentDto.LastIp,
-            LastSeenUtc = agentDto.LastSeenUtc?.UtcDateTime,
-            Version = agentDto.Version
-        };
-
-        return (agent, null);
+            _logger.LogError("CRITICAL: Failed to sync agent {AgentId} to Table Storage after all retry attempts. Marking agent as failed to prevent repeated SQL hits.", dbAgent.Id);
+            
+            // Track this failed agent to prevent repeated DB hits
+            _failedAgentKeys[hash] = DateTimeOffset.UtcNow;
+            
+            return (null, "agent_store_sync_failure");
+        }
+        
+        _logger.LogInformation("Successfully synced agent {AgentId} to Table Store. Verifying sync by retrying Table Store lookup.", dbAgent.Id);
+        
+        // Verify the sync worked by retrying Table Store lookup
+        var verifyDto = await _authStore.ValidateAgentAsync(hash, ct);
+        if (verifyDto is null)
+        {
+            _logger.LogError("CRITICAL: Table Store sync reported success for agent {AgentId}, but subsequent lookup FAILED. Table Store may be inconsistent. Marking agent as failed.", dbAgent.Id);
+            
+            // Track this failed agent to prevent repeated DB hits
+            _failedAgentKeys[hash] = DateTimeOffset.UtcNow;
+            
+            return (null, "agent_store_sync_failure");
+        }
+        
+        _logger.LogInformation("Table Store sync verification successful for agent {AgentId}. Agent can now authenticate via Table Store.", dbAgent.Id);
+        
+        // Clear from failed agents list since sync succeeded
+        _failedAgentKeys.TryRemove(hash, out _);
+        
+        // Convert verified DTO to Agent model
+        return (new Agent
+        {
+            Id = verifyDto.AgentId,
+            TenantId = verifyDto.TenantId,
+            Name = verifyDto.Name,
+            AgentKeyHash = verifyDto.AgentKeyHash,
+            LastHostname = verifyDto.LastHostname,
+            LastIp = verifyDto.LastIp,
+            LastSeenUtc = verifyDto.LastSeenUtc?.UtcDateTime,
+            Version = verifyDto.Version
+        }, null);
     }
     
     /// <summary>
