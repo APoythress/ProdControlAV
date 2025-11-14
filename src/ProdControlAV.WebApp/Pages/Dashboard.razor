@@ -1,36 +1,36 @@
 @page "/Dashboard"
-@using System.Diagnostics
 @using System.Net.Http
 @using System.Net.Http.Json
 @using System.Threading
-@using ProdControlAV.Core.Models
 
 @implements IAsyncDisposable
 
 @inject HttpClient Http
-@inject DeviceApiClient deviceApiClient
-@inject IJSRuntime JSRuntime
+@inject IJSRuntime JsRuntime
 
 <div class="container mt-5 text-white">
     <h3 class="text-center mb-4"><u>Device Status</u></h3>
     
     <div class="row g-3 justify-content-center">
-        @foreach (var device in Devices)
-        {
-            <div class="col-12 col-sm-6 col-md-4 col-lg-3">
-                <div class="card text-center bg-dark border-light text-white" style="cursor: pointer;"
-                     @onclick="@(() => OpenDeviceModal(device))">
-                    <div class="card-body">
-                        <h5 class="card-title">@device.Name</h5>
-                        <br/>
-                        <p class="card-text">
-                            Status:
-                            <span class="badge @GetStatusClass(device)">@(device.Status ? "online" : "offline")</span>
-                        </p>
-                    </div>
+        @{
+            if (_devices != null)
+                foreach (var device in _devices)
+                {
+                    <div class="col-12 col-sm-6 col-md-4 col-lg-3">
+                        <div class="card text-center bg-dark border-light text-white" style="cursor: pointer;"
+                             @onclick="@(() => OpenDeviceModal(device))">
+                            <div class="card-body">
+                                <h5 class="card-title">@device.Name</h5>
+                                <br/>
+                                <p class="card-text">
+                                    Status:
+                                    <span class="badge @GetStatusClass(device)">@(device.Status ? "online" : "offline")</span>
+                                </p>
+                            </div>
 
-                </div>
-            </div>
+                        </div>
+                    </div>
+                }
         }
     </div>
 
@@ -39,11 +39,11 @@
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content bg-dark text-white">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="deviceModalLabel">Device: @(selectedDevice?.Name ?? "")</h5>
+                    <h5 class="modal-title" id="deviceModalLabel">Device: @(_selectedDevice?.Name ?? "")</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    @if (selectedDevice != null)
+                    @if (_selectedDevice != null)
                     {
                         <!-- Device Details Section -->
                         <div class="row mb-4">
@@ -53,27 +53,27 @@
                             
                             <div class="col-md-6 mb-3">
                                 <label for="deviceName" class="form-label">Name</label>
-                                <input type="text" class="form-control" id="deviceName" @bind="deviceForm.Name">
+                                <input type="text" class="form-control" id="deviceName" @bind="_deviceForm.Name">
                             </div>
                             
                             <div class="col-md-6 mb-3">
                                 <label for="deviceIp" class="form-label">IP Address</label>
-                                <input type="text" class="form-control" id="deviceIp" @bind="deviceForm.Ip">
+                                <input type="text" class="form-control" id="deviceIp" @bind="_deviceForm.Ip">
                             </div>
                             
                             <div class="col-md-6 mb-3">
                                 <label for="deviceModel" class="form-label">Model</label>
-                                <input type="text" class="form-control" id="deviceModel" @bind="deviceForm.Model" readonly>
+                                <input type="text" class="form-control" id="deviceModel" @bind="_deviceForm.Model" readonly>
                             </div>
                             
                             <div class="col-md-6 mb-3">
                                 <label for="deviceStatus" class="form-label">Status</label>
-                                <input type="text" class="form-control" id="deviceStatus" value="@(selectedDevice.Status ? "Online" : "Offline")" readonly>
+                                <input type="text" class="form-control" id="deviceStatus" value="@(_selectedDevice.Status ? "Online" : "Offline")" readonly>
                             </div>
                             
                             <div class="col-12 mb-3">
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="allowTelnet" @bind="deviceForm.AllowTelNet">
+                                    <input class="form-check-input" type="checkbox" id="allowTelnet" @bind="_deviceForm.AllowTelNet">
                                     <label class="form-check-label" for="allowTelnet">
                                         Allow Telnet
                                     </label>
@@ -82,7 +82,7 @@
                             
                             <div class="col-12 mb-3">
                                 <label for="deviceLocation" class="form-label">Location</label>
-                                <input type="text" class="form-control" id="deviceLocation" @bind="deviceForm.Location" placeholder="Enter device location (optional)">
+                                <input type="text" class="form-control" id="deviceLocation" @bind="_deviceForm.Location" placeholder="Enter device location (optional)">
                             </div>
                         </div>
 
@@ -90,7 +90,7 @@
                         <div class="row">
                             <div class="col-12">
                                 <h6 class="mb-3"><u>Device Actions</u></h6>
-                                @if (deviceActions.Any())
+                                @if (_deviceCommands.Any())
                                 {
                                     <div class="table-responsive">
                                         <table class="table table-dark table-striped">
@@ -101,15 +101,15 @@
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                @foreach (var action in deviceActions)
+                                                @foreach (var action in _deviceCommands)
                                                 {
                                                     <tr>
-                                                        <td>@action.ActionName</td>
+                                                        <td>@action.CommandName</td>
                                                         <td>
                                                             <button class="btn btn-sm btn-outline-light" 
-                                                                    @onclick="@(() => ExecuteDeviceCommandAsync(action.ActionId))"
-                                                                    disabled="@isExecutingCommand">
-                                                                @if (isExecutingCommand)
+                                                                    @onclick="@(() => ExecuteDeviceCommandAsync(action.CommandId))"
+                                                                    disabled="@_isExecutingCommand">
+                                                                @if (_isExecutingCommand)
                                                                 {
                                                                     <span class="spinner-border spinner-border-sm" role="status"></span>
                                                                 }
@@ -133,16 +133,16 @@
                         </div>
                     }
                     
-                    @if (!string.IsNullOrEmpty(modalMessage))
+                    @if (!string.IsNullOrEmpty(_modalMessage))
                     {
-                        <div class="alert @modalMessageCss mt-3" role="alert">
-                            @modalMessage
+                        <div class="alert @_modalMessageCss mt-3" role="alert">
+                            @_modalMessage
                         </div>
                     }
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-success" @onclick="SaveDeviceChanges" disabled="@isSaving">
-                        @if (isSaving)
+                    <button type="button" class="btn btn-success" @onclick="SaveDeviceChanges" disabled="@_isSaving">
+                        @if (_isSaving)
                         {
                             <span class="spinner-border spinner-border-sm" role="status"></span>
                             <text> Saving...</text>
@@ -152,8 +152,8 @@
                             <text>Save Changes</text>
                         }
                     </button>
-                    <button type="button" class="btn btn-danger" @onclick="ShowDeleteConfirmation" disabled="@(isSaving || isDeleting)">
-                        @if (isDeleting)
+                    <button type="button" class="btn btn-danger" @onclick="ShowDeleteConfirmation" disabled="@(_isSaving || _isDeleting)">
+                        @if (_isDeleting)
                         {
                             <span class="spinner-border spinner-border-sm" role="status"></span>
                             <text> Deleting...</text>
@@ -179,12 +179,12 @@
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <p>Are you sure you want to delete the device "<strong>@(selectedDevice?.Name ?? "")</strong>"?</p>
+                    <p>Are you sure you want to delete the device "<strong>@(_selectedDevice?.Name ?? "")</strong>"?</p>
                     <p class="text-warning"><i class="fas fa-exclamation-triangle"></i> This action cannot be undone.</p>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-danger" @onclick="ConfirmDeleteDevice" disabled="@isDeleting">
-                        @if (isDeleting)
+                    <button type="button" class="btn btn-danger" @onclick="ConfirmDeleteDevice" disabled="@_isDeleting">
+                        @if (_isDeleting)
                         {
                             <span class="spinner-border spinner-border-sm" role="status"></span>
                             <text> Deleting...</text>
@@ -203,105 +203,89 @@
     <h4 class="text-center mt-5"><u>Actions</u></h4>
 
     <div class="d-flex justify-content-center flex-wrap gap-3 mt-3">
-        @foreach (var action in Actions)
-        {
-            <button class="btn btn-outline-light"
-                    @onclick="@(() => ExecuteDeviceCommandAsync(action.ActionId))">
-                @action.ActionName
-            </button>
+        @{
+            if (_commands != null)
+                foreach (var command in _commands)
+                {
+                    <button class="btn btn-outline-light"
+                            @onclick="@(() => ExecuteDeviceCommandAsync(command.CommandId))">
+                        @command.CommandName
+                    </button>
+                }
         }
     </div>
     
     <div class="d-flex justify-content-center flex-wrap gap-3 mt-3">
-        <p class="text-info">Devices loaded: @Devices?.Count()</p>
-        <p class="text-info">Actions loaded: @Actions?.Count()</p>
+        <p class="text-info">Devices loaded: @_devices?.Count()</p>
+        <p class="text-info">Commands loaded: @_commands?.Count()</p>
     </div>
     
     <!-- Bind a toast element per action sent as a status notification -->
-    @foreach (var actionStatus in Actions)
-    {
-        <div class="toast" role="alert" aria-live="assertive" aria-atomic="true">
-            <div class="toast-header">
-                <img src="..." class="rounded me-2" alt="...">
-                <strong class="me-auto">Bootstrap</strong>
-                <small class="text-body-secondary">11 mins ago</small>
-                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
-            </div>
-            <div class="toast-body">
-                Hello, world! This is a toast message.
-            </div>
-        </div>
-    }
-    
-
+    <!-- TODO - Determine what this was for I cannot remember -->
+    @* @{ *@
+    @*     if (_commands != null) *@
+    @*         foreach (var actionStatus in _commands) *@
+    @*         { *@
+    @*             <div class="toast" role="alert" aria-live="assertive" aria-atomic="true"> *@
+    @*                 <div class="toast-header"> *@
+    @*                     <img src="..." class="rounded me-2" alt="..."> *@
+    @*                     <strong class="me-auto">Bootstrap</strong> *@
+    @*                     <small class="text-body-secondary">11 mins ago</small> *@
+    @*                     <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button> *@
+    @*                 </div> *@
+    @*                 <div class="toast-body"> *@
+    @*                     Hello, world! This is a toast message. *@
+    @*                 </div> *@
+    @*             </div> *@
+    @*         } *@
+    @* } *@
 </div>
 
 @code {
-    private List<DashboardDeviceActionDto> Actions = new();   // now using DashboardDeviceActionDto from API
-    private List<DashboardDeviceDto> Devices = new();         // now using DashboardDeviceDto from API
-    private bool _loading = true;
-    private bool loaded;
-    private string? loadError;
-    private string? _error;
+    private List<DashboardDeviceCommandDto>? _commands = new();   // now using DashboardDeviceActionDto from API
+    private List<DashboardDeviceDto>? _devices = new();         // now using DashboardDeviceDto from API
     private CancellationTokenSource? _refreshCts;
     private Task? _refreshTask;
+    public string? ExecMessage;
+    public string ExecCss = "alert-info";
     
-    private Task<List<DashboardDeviceDto>> GetDevicesAsync() =>
+    private Task<List<DashboardDeviceDto>?> GetDevicesAsync() =>
         Http.GetFromJsonAsync<List<DashboardDeviceDto>>("api/devices/devices"); // <-- reads from Table Storage
 
-    private Task<List<DashboardDeviceActionDto>> GetActionsAcync() =>
-        Http.GetFromJsonAsync<List<DashboardDeviceActionDto>>("api/devices/actions"); // <-- reads from Table Storage
+    private Task<List<DashboardDeviceCommandDto>?> GetCommandsAcync() =>
+        Http.GetFromJsonAsync<List<DashboardDeviceCommandDto>>("api/commands"); // <-- reads from Table Storage
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            Devices = await GetDevicesAsync() ?? new();
-            Actions = await GetActionsAcync() ?? new();
-        }
-        catch (Exception ex)
-        {
-            loadError = ex.Message;
+            _devices = await GetDevicesAsync() ?? new();
+            _commands = await GetCommandsAcync() ?? new();
         }
         finally
         {
-            loaded = true;
             StateHasChanged();
         }
     }
-
-    private sealed class DeviceDto
-    {
-        public Guid Id { get; set; }
-        public string Name { get; set; } = "";
-        public string Ip { get; set; } = "";
-        public int? Port { get; set; }
-    }
-    
-    Guid selectedCommandId = Guid.Empty;
-
-    string? ExecMessage = String.Empty;
-    string ExecCss = "alert-info";
 
     private async Task ExecuteDeviceCommandAsync(Guid commandId)
     {
         ExecMessage = null;
         ExecCss = "alert-info";
-
         try
         {
             var resp = await Http.PostAsync($"api/commands/execute/{commandId}", content: null);
             var payload = await resp.Content.ReadFromJsonAsync<CommandExecResponse>();
 
-            if (resp.IsSuccessStatusCode && payload is { success: true })
+            if (resp.IsSuccessStatusCode && payload is { Success: true })
             {
                 ExecCss = "alert-success";
-                ExecMessage = $"✅ {payload.message} (HTTP {(payload.statusCode ?? 200)})";
+                ExecMessage = $"✅ {payload.Message} (HTTP {(payload.StatusCode ?? 200)})";
             }
             else
             {
                 ExecCss = "alert-danger";
-                ExecMessage = $"❌ {payload?.message ?? "Failed"} (HTTP {(payload?.statusCode?.ToString() ?? resp.StatusCode.ToString())})";
+                ExecMessage = $"❌ {payload?.Message ?? "Failed"} (HTTP {(payload?.StatusCode?.ToString() ?? resp.StatusCode.ToString())})";
             }
         }
         catch (Exception ex)
@@ -324,15 +308,15 @@
     
     private sealed class CommandExecResponse
     {
-        public bool success { get; set; }
-        public string? message { get; set; }
-        public int? statusCode { get; set; }
-        public string? response { get; set; }
+        public bool Success { get; set; }
+        public string? Message { get; set; }
+        public int? StatusCode { get; set; }
+        public string? Response { get; set; }
     }
 
     private async Task RefreshLoopAsync(CancellationToken ct)
     {
-        var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
         try
         {
             while (await timer.WaitForNextTickAsync(ct))
@@ -340,16 +324,15 @@
                 try
                 {
                     var updatedDevices = await GetDevicesAsync() ?? [];
-                    var updatedActions = await GetActionsAcync() ?? [];
+                    var updatedActions = await GetCommandsAcync() ?? [];
                     
-                    Devices = updatedDevices.ToList();
-                    Actions = updatedActions.ToList();
+                    _devices = updatedDevices.ToList();
+                    _commands = updatedActions.ToList();
 
                     await InvokeAsync(StateHasChanged);
                 }
                 catch (Exception ex)
                 {
-                    _error = ex.Message;
                     await InvokeAsync(StateHasChanged);
                 }
             }
@@ -379,14 +362,14 @@
     }
 
     // Modal-related fields and methods
-    private DashboardDeviceDto? selectedDevice;
-    private DeviceForm deviceForm = new();
-    private List<DashboardDeviceActionDto> deviceActions = new();
-    private bool isSaving = false;
-    private bool isDeleting = false;
-    private bool isExecutingCommand = false;
-    private string? modalMessage;
-    private string modalMessageCss = "alert-info";
+    private DashboardDeviceDto? _selectedDevice;
+    private DeviceForm _deviceForm = new();
+    private List<DashboardDeviceCommandDto> _deviceCommands = new();
+    private bool _isSaving;
+    private bool _isDeleting;
+    private bool _isExecutingCommand = false;
+    private string? _modalMessage;
+    private string _modalMessageCss = "alert-info";
 
     private class DeviceForm
     {
@@ -399,10 +382,10 @@
 
     private async Task OpenDeviceModal(DashboardDeviceDto device)
     {
-        selectedDevice = device;
+        _selectedDevice = device;
         
         // Initialize form with device data
-        deviceForm = new DeviceForm
+        _deviceForm = new DeviceForm
         {
             Name = device.Name,
             Model = device.Model,
@@ -414,18 +397,18 @@
         // Get actions for this device
         try
         {
-            var allActions = await GetActionsAcync() ?? [];
-            deviceActions = allActions.Where(a => a.DeviceId == device.Id).ToList();
+            var allActions = await GetCommandsAcync() ?? [];
+            _deviceCommands = allActions.Where(a => a.DeviceId == device.Id).ToList();
         }
         catch (Exception ex)
         {
-            deviceActions = [];
-            modalMessage = $"Error loading actions: {ex.Message}";
-            modalMessageCss = "alert-danger";
+            _deviceCommands = [];
+            _modalMessage = $"Error loading actions: {ex.Message}";
+            _modalMessageCss = "alert-danger";
         }
         
         // Clear previous messages
-        modalMessage = null;
+        _modalMessage = null;
         StateHasChanged();
         
         // Show modal using JavaScript interop
@@ -434,10 +417,10 @@
 
     private async Task SaveDeviceChanges()
     {
-        if (selectedDevice == null) return;
+        if (_selectedDevice == null) return;
 
-        isSaving = true;
-        modalMessage = null;
+        _isSaving = true;
+        _modalMessage = null;
         StateHasChanged();
 
         try
@@ -445,54 +428,54 @@
             // Create UpsertDevice DTO for the API call
             var updateDto = new
             {
-                Id = selectedDevice.Id,
-                Name = deviceForm.Name,
-                Model = deviceForm.Model,
-                Brand = selectedDevice.Brand,
-                Type = selectedDevice.Type,
-                AllowTelNet = deviceForm.AllowTelNet,
-                Ip = deviceForm.Ip,
-                Port = selectedDevice.Port,
-                Location = deviceForm.Location
+                Id = _selectedDevice.Id,
+                Name = _deviceForm.Name,
+                Model = _deviceForm.Model,
+                Brand = _selectedDevice.Brand,
+                Type = _selectedDevice.Type,
+                AllowTelNet = _deviceForm.AllowTelNet,
+                Ip = _deviceForm.Ip,
+                Port = _selectedDevice.Port,
+                Location = _deviceForm.Location
             };
 
-            var response = await Http.PutAsJsonAsync($"api/devices/{selectedDevice.Id}", updateDto);
+            var response = await Http.PutAsJsonAsync($"api/devices/{_selectedDevice.Id}", updateDto);
             
             if (response.IsSuccessStatusCode)
             {
                 // Update the device in our local list
-                var deviceIndex = Devices.FindIndex(d => d.Id == selectedDevice.Id);
+                var deviceIndex = _devices.FindIndex(d => d.Id == _selectedDevice.Id);
                 if (deviceIndex >= 0)
                 {
-                    Devices[deviceIndex].Name = deviceForm.Name;
-                    Devices[deviceIndex].Ip = deviceForm.Ip;
-                    Devices[deviceIndex].AllowTelNet = deviceForm.AllowTelNet;
-                    Devices[deviceIndex].Location = deviceForm.Location;
+                    _devices[deviceIndex].Name = _deviceForm.Name;
+                    _devices[deviceIndex].Ip = _deviceForm.Ip;
+                    _devices[deviceIndex].AllowTelNet = _deviceForm.AllowTelNet;
+                    _devices[deviceIndex].Location = _deviceForm.Location;
                 }
 
                 // Update selected device
-                selectedDevice.Name = deviceForm.Name;
-                selectedDevice.Ip = deviceForm.Ip;
-                selectedDevice.AllowTelNet = deviceForm.AllowTelNet;
-                selectedDevice.Location = deviceForm.Location;
+                _selectedDevice.Name = _deviceForm.Name;
+                _selectedDevice.Ip = _deviceForm.Ip;
+                _selectedDevice.AllowTelNet = _deviceForm.AllowTelNet;
+                _selectedDevice.Location = _deviceForm.Location;
 
-                modalMessage = "Device updated successfully!";
-                modalMessageCss = "alert-success";
+                _modalMessage = "Device updated successfully!";
+                _modalMessageCss = "alert-success";
             }
             else
             {
-                modalMessage = $"Failed to update device: {response.ReasonPhrase}";
-                modalMessageCss = "alert-danger";
+                _modalMessage = $"Failed to update device: {response.ReasonPhrase}";
+                _modalMessageCss = "alert-danger";
             }
         }
         catch (Exception ex)
         {
-            modalMessage = $"Error updating device: {ex.Message}";
-            modalMessageCss = "alert-danger";
+            _modalMessage = $"Error updating device: {ex.Message}";
+            _modalMessageCss = "alert-danger";
         }
         finally
         {
-            isSaving = false;
+            _isSaving = false;
             StateHasChanged();
         }
     }
@@ -502,7 +485,7 @@
         // Use JavaScript to show the Bootstrap modal
         try
         {
-            await JSRuntime.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('deviceModal')).show()");
+            await JsRuntime.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('deviceModal')).show()");
         }
         catch (Exception)
         {
@@ -514,7 +497,7 @@
     {
         try
         {
-            await JSRuntime.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('deleteConfirmationModal')).show()");
+            await JsRuntime.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('deleteConfirmationModal')).show()");
         }
         catch (Exception)
         {
@@ -524,46 +507,46 @@
 
     private async Task ConfirmDeleteDevice()
     {
-        if (selectedDevice == null) return;
+        if (_selectedDevice == null) return;
 
-        isDeleting = true;
+        _isDeleting = true;
         StateHasChanged();
 
         try
         {
-            var response = await Http.DeleteAsync($"api/devices/{selectedDevice.Id}");
+            var response = await Http.DeleteAsync($"api/devices/{_selectedDevice.Id}");
             
             if (response.IsSuccessStatusCode)
             {
-                // Remove device from local list
-                Devices.RemoveAll(d => d.Id == selectedDevice.Id);
+                // Remove device from a local list
+                _devices.RemoveAll(d => d.Id == _selectedDevice.Id);
                 
                 // Close both modals
-                await JSRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deleteConfirmationModal')).hide()");
-                await JSRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deviceModal')).hide()");
+                await JsRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deleteConfirmationModal')).hide()");
+                await JsRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deviceModal')).hide()");
                 
                 // Reset selected device
-                selectedDevice = null;
+                _selectedDevice = null;
                 StateHasChanged();
             }
             else
             {
-                modalMessage = $"Failed to delete device: {response.ReasonPhrase}";
-                modalMessageCss = "alert-danger";
+                _modalMessage = $"Failed to delete device: {response.ReasonPhrase}";
+                _modalMessageCss = "alert-danger";
                 
                 // Close confirmation modal but keep device modal open to show the error
-                await JSRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deleteConfirmationModal')).hide()");
+                await JsRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deleteConfirmationModal')).hide()");
             }
         }
         catch (Exception ex)
         {
-            modalMessage = $"Error deleting device: {ex.Message}";
-            modalMessageCss = "alert-danger";
+            _modalMessage = $"Error deleting device: {ex.Message}";
+            _modalMessageCss = "alert-danger";
             
             // Close confirmation modal but keep device modal open to show the error
             try
             {
-                await JSRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deleteConfirmationModal')).hide()");
+                await JsRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deleteConfirmationModal')).hide()");
             }
             catch (Exception)
             {
@@ -572,7 +555,7 @@
         }
         finally
         {
-            isDeleting = false;
+            _isDeleting = false;
             StateHasChanged();
         }
     }
@@ -583,24 +566,33 @@
     // DTO matching API response
     public class DashboardDeviceDto
     {
-        public Guid Id { get; set; }
+        public Guid Id { get; }
         public string Name { get; set; } = "";
-        public string Model { get; set; } = "";
-        public string Brand { get; set; } = "";
-        public string Type { get; set; } = "";
+        public string Model { get; } = "";
+        public string Brand { get; } = "";
+        public string Type { get; } = "";
         public bool AllowTelNet { get; set; }
         public string Ip { get; set; } = "";
-        public int Port { get; set; }
+        public int Port { get; }
         public string? Location { get; set; }
         public Guid TenantId { get; set; }
-        public bool Status { get; set; }
+        public bool Status { get; }
     }
     
-    public class DashboardDeviceActionDto
+    public class DashboardDeviceCommandDto
     {
-        public Guid ActionId { get; set; }
-        public Guid DeviceId { get; set; }
-        public string ActionName { get; set; } = "";
+        public Guid CommandId { get; }
         public Guid TenantId { get; set; }
+        public Guid DeviceId { get; }
+        public string CommandName { get; set; } = "";
+        public string? Description { get; set; }
+        public string CommandType { get; set; } = "";
+        public string? CommandData { get; set; }
+        public string? HttpMethod { get; set; }
+        public string? RequestBody { get; set; }
+        public string? RequestHeaders { get; set; }
+        public DateTimeOffset? CreatedUtc { get; set; }
+        public DateTimeOffset? UpdatedUtc { get; set; }
+        public bool RequireDeviceOnline { get; set; }
     }
 }
