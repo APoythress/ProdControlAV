@@ -274,7 +274,7 @@
         ExecCss = "alert-info";
         try
         {
-            var resp = await Http.PostAsync($"api/commands/execute/{commandId}", content: null);
+            var resp = await Http.PostAsync($"api/commands/{commandId}/trigger", content: null);
             var payload = await resp.Content.ReadFromJsonAsync<CommandExecResponse>();
 
             if (resp.IsSuccessStatusCode && payload is { Success: true })
@@ -316,7 +316,7 @@
 
     private async Task RefreshLoopAsync(CancellationToken ct)
     {
-        var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        var timer = new PeriodicTimer(TimeSpan.FromSeconds(15));
         try
         {
             while (await timer.WaitForNextTickAsync(ct))
