@@ -70,7 +70,6 @@ public sealed class AgentsController : ControllerBase
 
     public sealed class HeartbeatRequest
     {
-        public string AgentKey { get; set; } = string.Empty;
         public string Hostname { get; set; } = string.Empty;
         public string? IpAddress { get; set; }
         public string? Version { get; set; }
@@ -111,41 +110,34 @@ public sealed class AgentsController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// Agent heartbeat endpoint - uses JWT authentication to avoid repeated agent key validation.
+    /// Agents should authenticate once per 8 hours to get a JWT token, then use that token for all subsequent API calls.
+    /// </summary>
     [HttpPost("heartbeat")]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public async Task<IActionResult> Heartbeat([FromBody] HeartbeatRequest req, CancellationToken ct)
     {
-        _logger.LogInformation("[HEARTBEAT] Received heartbeat: AgentKey={AgentKey}, Hostname={Hostname}, IpAddress={IpAddress}, Version={Version}", req.AgentKey, req.Hostname, req.IpAddress, req.Version);
-        var (agent, err) = await _auth.ValidateAsync(req.AgentKey, ct);
-        if (agent is null) {
-            _logger.LogWarning("[HEARTBEAT] Agent key validation failed: {Error}", err);
-            return Unauthorized(new { error = err });
+        // Extract agent ID and tenant ID from JWT claims (already authenticated)
+        var agentIdClaim = GetAgentIdFromClaims();
+        var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenantId" || c.Type.EndsWith("/tenantId"))?.Value;
+        
+        if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
+        {
+            _logger.LogWarning("[HEARTBEAT] Invalid token claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
+            return Unauthorized(new { error = "invalid_token_claims" });
         }
+        
+        _logger.LogInformation("[HEARTBEAT] Received heartbeat from authenticated agent: AgentId={AgentId}, Hostname={Hostname}, IpAddress={IpAddress}, Version={Version}", 
+            agentId, req.Hostname, req.IpAddress, req.Version);
         
         // Record agent activity in Table Storage (for idle monitoring)
-        await _activityMonitor.RecordAgentActivityAsync(agent.Id.ToString(), agent.TenantId.ToString(), ct);
+        await _activityMonitor.RecordAgentActivityAsync(agentId.ToString(), tenantId.ToString(), ct);
         
-        // Check if metadata has changed - only update SQL and Table Storage if something changed
-        var metadataChanged = agent.LastHostname != req.Hostname ||
-                             agent.LastIp != req.IpAddress ||
-                             agent.Version != req.Version;
-        
-        if (metadataChanged)
-        {
-            // Update SQL for audit trail when metadata changes
-            agent.LastHostname = req.Hostname;
-            agent.LastIp = req.IpAddress;
-            agent.Version = req.Version;
-            agent.LastSeenUtc = DateTime.UtcNow;
-            await _db.SaveChangesAsync(ct);
-            _logger.LogInformation("[HEARTBEAT] Agent metadata changed - updated SQL: AgentId={AgentId}, LastIp={LastIp}, Version={Version}", agent.Id, agent.LastIp, agent.Version);
-            
-            // Also update Table Storage metadata for subsequent auth lookups
-            await _agentAuthStore.UpdateAgentMetadataAsync(agent.Id, agent.TenantId, req.Hostname, req.IpAddress, req.Version, ct);
-        }
-        else
-        {
-            _logger.LogDebug("[HEARTBEAT] Agent metadata unchanged - SQL update skipped: AgentId={AgentId}", agent.Id);
-        }
+        // Update agent metadata in Table Storage (no SQL hit needed - we trust the JWT)
+        // This keeps the Table Store metadata fresh for auth lookups
+        await _agentAuthStore.UpdateAgentMetadataAsync(agentId, tenantId, req.Hostname, req.IpAddress, req.Version, ct);
+        _logger.LogDebug("[HEARTBEAT] Agent metadata updated in Table Storage: AgentId={AgentId}", agentId);
         
         return Ok(new { ok = true });
     }
