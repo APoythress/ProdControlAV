@@ -34,8 +34,13 @@
                         </div>
 
                         <div class="d-flex justify-content-center">
-                            <button type="submit" class="btn btn-primary text-center">Sign in</button>
+                            <button type="submit" class="btn btn-primary text-center" disabled="@isSubmitting">Sign in</button>
                         </div>
+                        
+                        @if (isSubmitting)
+                        {
+                            <p class="text-center mt-3">@statusMessage</p>
+                        }
                         
                         @if (!string.IsNullOrEmpty(errorMessage))
                         {
@@ -57,10 +62,60 @@
 @code {
     private SignInRequest Model = new();
     private string errorMessage = String.Empty;
+    private bool isSubmitting = false;
+    private string statusMessage = String.Empty;
+    private System.Threading.CancellationTokenSource? _cts;
 
     private async Task SubmitAsync()
     {
-        var resp = await Http.PostAsJsonAsync("/api/auth/login", Model);
+        isSubmitting = true;
+        errorMessage = String.Empty;
+        statusMessage = "signing you in";
+        _cts = new System.Threading.CancellationTokenSource();
+        
+        // Start a timer to change the message after 5 seconds
+        var timer = Task.Delay(5000, _cts.Token);
+        
+        try
+        {
+            var loginTask = Http.PostAsJsonAsync("/api/auth/login", Model);
+            
+            // Wait for either the login to complete or the timer to expire
+            var completedTask = await Task.WhenAny(loginTask, timer);
+            
+            if (completedTask == timer && !_cts.Token.IsCancellationRequested)
+            {
+                // Timer expired first, update the message
+                statusMessage = "waking up the computer overlords... hang tight";
+                StateHasChanged();
+                
+                // Now wait for the login to complete
+                var resp = await loginTask;
+                await HandleLoginResponse(resp);
+            }
+            else
+            {
+                // Login completed before timer
+                var resp = await loginTask;
+                await HandleLoginResponse(resp);
+            }
+        }
+        catch (Exception)
+        {
+            errorMessage = "An error occurred. Please try again.";
+        }
+        finally
+        {
+            _cts?.Cancel();
+            _cts?.Dispose();
+            isSubmitting = false;
+            statusMessage = String.Empty;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleLoginResponse(HttpResponseMessage resp)
+    {
         if (resp.IsSuccessStatusCode)
         {
             Nav.NavigateTo("/dashboard");
@@ -68,7 +123,6 @@
         else
         {
             errorMessage = "invalid username or password";
-            StateHasChanged();
         }
     }
 
