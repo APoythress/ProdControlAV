@@ -43,7 +43,9 @@ jobs:
           fi
           
       - name: Create tag
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.check_tag.outputs.exists == 'true'
+        run: echo "Tag ${{ steps.extract_version.outputs.version }} already exists"
+        else:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
