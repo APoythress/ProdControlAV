@@ -1,12 +1,9 @@
 @page "/devicemanager"
 @using System.Net.Http
 @using System.Net.Http.Json
-@using System.Threading
 @using Microsoft.AspNetCore.Components.Forms
-@using ProdControlAV.Server.Controllers
 @using ProdControlAV.Core.Models
 @inject HttpClient Http
-@inject DeviceApiClient deviceApiClient
 
 <div class="container-sm mt-5 text-white">
     <EditForm Model="@_device" OnValidSubmit="@HandleSubmit">
@@ -53,55 +50,45 @@
             </div>
         </div>
 
-        <button type="submit" class="btn btn-primary mt-3" disabled="@isSubmitting">
-            @(isSubmitting ? "Adding..." : "Add Device")
+        <button type="submit" class="btn btn-primary mt-3" disabled="@_isSubmitting">
+            @(_isSubmitting ? "Adding..." : "Add Device")
         </button>
 
-        @if (!string.IsNullOrEmpty(statusMessage))
+        @if (!string.IsNullOrEmpty(_statusMessage))
         {
-            <div class="mt-3">@statusMessage</div>
+            <div class="mt-3">@_statusMessage</div>
         }
     </EditForm>
 </div>
 
 @code {
     private Device _device = new();
-    private bool isSubmitting;
-    private string? statusMessage;
-
-    protected override async Task OnInitializedAsync()
-    {
-        
-    }
+    private bool _isSubmitting;
+    private string? _statusMessage;
 
     private async Task HandleSubmit()
     {
-        isSubmitting = true;
+        _isSubmitting = true;
         try
         {
             var response = await Http.PostAsJsonAsync("api/devices", _device);
             if (response.IsSuccessStatusCode)
             {
-                statusMessage = "Device added successfully!";
+                _statusMessage = "Device added successfully!";
                 _device = new Device(); // Reset the form
             }
             else
             {
-                statusMessage = $"Error: {response.ReasonPhrase}";
+                _statusMessage = $"Error: {response.ReasonPhrase}";
             }
         }
         catch (Exception ex)
         {
-            statusMessage = $"Error: {ex.Message}";
+            _statusMessage = $"Error: {ex.Message}";
         }
         finally
         {
-            isSubmitting = false;
+            _isSubmitting = false;
         }
-    }
-
-    private class TokenResponse
-    {
-        public string Token { get; set; }
     }
 }
