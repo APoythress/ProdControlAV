@@ -2,6 +2,8 @@
 @using System.Net.Http
 @using System.Net.Http.Json
 @using System.Threading
+@using ProdControlAV.Core.Models
+@using ProdControlAV.WebApp.Components
 
 @implements IAsyncDisposable
 
@@ -207,31 +209,22 @@
     <!-- Commands Header -->
     <h4 class="text-center mt-5"><u>Commands</u></h4>
     
-    @if (!string.IsNullOrEmpty(_triggerMessage))
-    {
-        <div class="alert @_triggerMessageCss mt-3" role="alert">
-            @_triggerMessage
-        </div>
-    }
-    
-    <!-- Commands Table -->
-    <div class="d-flex justify-content-center flex-wrap gap-3 mt-3">
-        @{
-            if (_commands != null)
-                foreach (var command in _commands)
-                {
-                    <button class="btn btn-outline-light"
-                            @onclick="@(() => TriggerCommand(command.CommandId))">
-                        @command.CommandName
-                    </button>
-                }
-        }
+    <!-- Commands Grid -->
+    <div class="mt-3">
+        <CommandsGrid 
+            Commands="@_commandsList"
+            Devices="@_devicesList"
+            ShowFilters="true"
+            ShowTriggerAction="true"
+            ShowEditAction="false"
+            ShowDeleteAction="false"
+            OnCommandTriggered="@OnCommandTriggered" />
     </div>
     
     <!-- Device / Command Totals -->
     <div class="d-flex justify-content-center flex-wrap gap-3 mt-3">
         <p class="text-info">Devices loaded: @_devices?.Count()</p>
-        <p class="text-info">Commands loaded: @_commands?.Count()</p>
+        <p class="text-info">Commands loaded: @_commandsList?.Count()</p>
     </div>
 
 </div>
@@ -244,6 +237,7 @@
         {
             _devices = await GetDevicesAsync() ?? new();
             _commands = await GetCommandsAcync() ?? new();
+            UpdateCommandsAndDevicesLists();
         }
         finally
         {
@@ -479,8 +473,8 @@
         // Fields and Properties
         private List<DashboardDeviceCommandDto> _deviceCommands = new();
         private List<DashboardDeviceCommandDto>? _commands = new();   // now using DashboardDeviceActionDto from API
-        private string? _triggerMessage;
-        private string _triggerMessageCss = "alert-info";
+        private List<Command> _commandsList = new();   // For the CommandsGrid component
+        private List<CommandsGrid.DeviceDto> _devicesList = new();  // For the CommandsGrid component
         
         private bool _isSaving;
         private bool _isDeleting;
@@ -505,7 +499,7 @@
             public DateTimeOffset? UpdatedUtc { get; set; }
             public bool RequireDeviceOnline { get; set; }
         }
-    
+        
         private class TriggerResponse
         {
             public bool success { get; set; }
@@ -518,10 +512,11 @@
         private Task<List<DashboardDeviceCommandDto>?> GetCommandsAcync() =>
             Http.GetFromJsonAsync<List<DashboardDeviceCommandDto>>("api/commands"); // <-- reads from Table Storage
         
-        // Trigger Command
+        // Trigger Command (used in device modal)
         private async Task TriggerCommand(Guid commandId)
         {
-            _triggerMessage = null;
+            _isExecutingCommand = true;
+            _modalMessage = null;
             StateHasChanged();
 
             try
@@ -531,24 +526,63 @@
 
                 if (response.IsSuccessStatusCode && result?.success == true)
                 {
-                    _triggerMessage = result.message ?? "Command queued successfully";
-                    _triggerMessageCss = "alert-success";
+                    _modalMessage = result.message ?? "Command queued successfully";
+                    _modalMessageCss = "alert-success";
                 }
                 else
                 {
-                    _triggerMessage = result?.message ?? $"Failed: {response.ReasonPhrase}";
-                    _triggerMessageCss = "alert-danger";
+                    _modalMessage = result?.message ?? $"Failed: {response.ReasonPhrase}";
+                    _modalMessageCss = "alert-danger";
                 }
             }
             catch (Exception ex)
             {
-                _triggerMessage = $"Error: {ex.Message}";
-                _triggerMessageCss = "alert-danger";
+                _modalMessage = $"Error: {ex.Message}";
+                _modalMessageCss = "alert-danger";
             }
             finally
             {
+                _isExecutingCommand = false;
                 StateHasChanged();
             }
+        }
+        
+        // Convert DTOs for CommandsGrid component
+        private void UpdateCommandsAndDevicesLists()
+        {
+            // Convert commands
+            _commandsList = _commands?.Select(c => new Command
+            {
+                CommandId = c.CommandId,
+                TenantId = c.TenantId,
+                DeviceId = c.DeviceId,
+                CommandName = c.CommandName,
+                Description = c.Description,
+                CommandType = c.CommandType,
+                CommandData = c.CommandData,
+                HttpMethod = c.HttpMethod,
+                RequestBody = c.RequestBody,
+                RequestHeaders = c.RequestHeaders,
+                CreatedUtc = c.CreatedUtc ?? DateTimeOffset.UtcNow,
+                UpdatedUtc = c.UpdatedUtc,
+                RequireDeviceOnline = c.RequireDeviceOnline
+            }).ToList() ?? new();
+            
+            // Convert devices
+            _devicesList = _devices?.Select(d => new CommandsGrid.DeviceDto
+            {
+                Id = d.Id,
+                Name = d.Name,
+                Ip = d.Ip,
+                Port = d.Port
+            }).ToList() ?? new();
+        }
+        
+        // Callback for when a command is triggered
+        private Task OnCommandTriggered()
+        {
+            // Refresh data or perform any needed updates
+            return Task.CompletedTask;
         }
     
     #endregion
@@ -574,6 +608,7 @@
                         
                         _devices = updatedDevices.ToList();
                         _commands = updatedActions.ToList();
+                        UpdateCommandsAndDevicesLists();
 
                         await InvokeAsync(StateHasChanged);
                     }
