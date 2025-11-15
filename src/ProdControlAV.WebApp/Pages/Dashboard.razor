@@ -344,6 +344,7 @@
         {
             _devices = await GetDevicesAsync() ?? new();
             _commands = await GetCommandsAcync() ?? new();
+            if (_commands != null) _loading = false;
             UpdateCommandsAndDevicesLists();
         }
         finally
@@ -786,6 +787,12 @@
                         
                         _devices = updatedDevices.ToList();
                         _commands = updatedActions.ToList();
+                        
+                        if (_commands == null) 
+                            _loading = true;
+                        else 
+                            _loading = false;
+                        
                         UpdateCommandsAndDevicesLists();
 
                         await InvokeAsync(StateHasChanged);
