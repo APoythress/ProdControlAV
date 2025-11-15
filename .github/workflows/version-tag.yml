@@ -34,25 +34,25 @@ jobs:
       - name: Check if tag exists
         id: check_tag
         run: |
-          if git rev-parse "${{ steps.extract_version.outputs.version }}" >/dev/null 2>&1; then
+          git fetch --tags
+          TAG="${{ steps.extract_version.outputs.version }}"
+          if git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1; then
             echo "exists=true" >> $GITHUB_OUTPUT
-            echo "Tag ${{ steps.extract_version.outputs.version }} already exists"
+            echo "Tag $TAG already exists"
           else
             echo "exists=false" >> $GITHUB_OUTPUT
-            echo "Tag ${{ steps.extract_version.outputs.version }} does not exist"
+            echo "Tag $TAG does not exist"
           fi
           
       - name: Create tag
-        if: steps.check_tag.outputs.exists == 'true'
-        run: echo "Tag ${{ steps.extract_version.outputs.version }} already exists"
-        else:
+        if: steps.check_tag.outputs.exists == 'false'
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git tag -a "${{ steps.extract_version.outputs.version }}" -m "Release ${{ steps.extract_version.outputs.version }}"
           git push origin "${{ steps.extract_version.outputs.version }}"
           echo "Created and pushed tag: ${{ steps.extract_version.outputs.version }}"
-          
+
       - name: Create GitHub Release
         if: steps.check_tag.outputs.exists == 'false'
         env:
@@ -60,8 +60,9 @@ jobs:
         run: |
           gh release create "${{ steps.extract_version.outputs.version }}" \
             --title "Release ${{ steps.extract_version.outputs.version }}" \
-            --notes "## Changes in ${{ steps.extract_version.outputs.version }}
-            
+            --notes "Automated release created from main branch." \
+            --prerelease
+          
             Automated release created from main branch.
             
             ### Features
