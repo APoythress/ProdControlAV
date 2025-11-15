@@ -16,11 +16,10 @@
     {
         <div class="row mb-3">
             <div class="col-md-4 mb-2">
-                <input type="text" 
-                       class="form-control" 
-                       placeholder="Filter by Command Name..." 
-                       value="@commandNameFilter"
-                       @oninput="OnCommandNameFilterChanged" />
+                <InputText class="form-control" placeholder="Filter by Command Name..."
+                           Value="@commandNameFilter"
+                           ValueChanged="@( (string v) => { commandNameFilter = v ?? ""; ApplyFiltersAndSort(); } )"
+                           ValueExpression="@(() => commandNameFilter)" />
             </div>
             <div class="col-md-4 mb-2">
                 <select class="form-select" @bind="deviceFilter" @onchange="ApplyFilters">
@@ -173,12 +172,6 @@
     protected override void OnParametersSet()
     {
         allDevices = Devices;
-        ApplyFiltersAndSort();
-    }
-    
-    private void OnCommandNameFilterChanged(ChangeEventArgs e)
-    {
-        commandNameFilter = e.Value?.ToString() ?? "";
         ApplyFiltersAndSort();
     }
     
