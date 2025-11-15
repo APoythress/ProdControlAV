@@ -5,7 +5,7 @@
 @using ProdControlAV.Core.Models
 
 @inject HttpClient Http
-@inject IJSRuntime JSRuntime
+@inject IJSRuntime JsRuntime
 
 <div class="container mt-5 text-white">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -550,7 +550,7 @@
     {
         try
         {
-            await JSRuntime.InvokeVoidAsync("eval", $"new bootstrap.Modal(document.getElementById('{modalId}')).show()");
+            await JsRuntime.InvokeVoidAsync("eval", $"new bootstrap.Modal(document.getElementById('{modalId}')).show()");
         }
         catch (Exception) { }
     }
@@ -559,7 +559,7 @@
     {
         try
         {
-            await JSRuntime.InvokeVoidAsync("eval", $"bootstrap.Modal.getInstance(document.getElementById('{modalId}')).hide()");
+            await JsRuntime.InvokeVoidAsync("eval", $"bootstrap.Modal.getInstance(document.getElementById('{modalId}')).hide()");
         }
         catch (Exception) { }
     }

@@ -9,8 +9,11 @@
 @inject IJSRuntime JsRuntime
 
 <div class="container mt-5 text-white">
+    <!-- =============== Devices =============== -->
+    <!-- Device Header -->
     <h3 class="text-center mb-4"><u>Device Status</u></h3>
-    
+
+    <!-- Device Cards -->
     <div class="row g-3 justify-content-center">
         @{
             if (_devices != null)
@@ -50,27 +53,27 @@
                             <div class="col-12">
                                 <h6 class="mb-3"><u>Device Details</u></h6>
                             </div>
-                            
+
                             <div class="col-md-6 mb-3">
                                 <label for="deviceName" class="form-label">Name</label>
                                 <input type="text" class="form-control" id="deviceName" @bind="_deviceForm.Name">
                             </div>
-                            
+
                             <div class="col-md-6 mb-3">
                                 <label for="deviceIp" class="form-label">IP Address</label>
                                 <input type="text" class="form-control" id="deviceIp" @bind="_deviceForm.Ip">
                             </div>
-                            
+
                             <div class="col-md-6 mb-3">
                                 <label for="deviceModel" class="form-label">Model</label>
                                 <input type="text" class="form-control" id="deviceModel" @bind="_deviceForm.Model" readonly>
                             </div>
-                            
+
                             <div class="col-md-6 mb-3">
                                 <label for="deviceStatus" class="form-label">Status</label>
                                 <input type="text" class="form-control" id="deviceStatus" value="@(_selectedDevice.Status ? "Online" : "Offline")" readonly>
                             </div>
-                            
+
                             <div class="col-12 mb-3">
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" id="allowTelnet" @bind="_deviceForm.AllowTelNet">
@@ -79,7 +82,7 @@
                                     </label>
                                 </div>
                             </div>
-                            
+
                             <div class="col-12 mb-3">
                                 <label for="deviceLocation" class="form-label">Location</label>
                                 <input type="text" class="form-control" id="deviceLocation" @bind="_deviceForm.Location" placeholder="Enter device location (optional)">
@@ -95,32 +98,32 @@
                                     <div class="table-responsive">
                                         <table class="table table-dark table-striped">
                                             <thead>
-                                                <tr>
-                                                    <th>Action Name</th>
-                                                    <th>Execute</th>
-                                                </tr>
+                                            <tr>
+                                                <th>Action Name</th>
+                                                <th>Execute</th>
+                                            </tr>
                                             </thead>
                                             <tbody>
-                                                @foreach (var action in _deviceCommands)
-                                                {
-                                                    <tr>
-                                                        <td>@action.CommandName</td>
-                                                        <td>
-                                                            <button class="btn btn-sm btn-outline-light" 
-                                                                    @onclick="@(() => ExecuteDeviceCommandAsync(action.CommandId))"
-                                                                    disabled="@_isExecutingCommand">
-                                                                @if (_isExecutingCommand)
-                                                                {
-                                                                    <span class="spinner-border spinner-border-sm" role="status"></span>
-                                                                }
-                                                                else
-                                                                {
-                                                                    <text>Execute</text>
-                                                                }
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                }
+                                            @foreach (var command in _deviceCommands)
+                                            {
+                                                <tr>
+                                                    <td>@command.CommandName</td>
+                                                    <td>
+                                                        <button class="btn btn-sm btn-outline-light"
+                                                                @onclick="@(() => TriggerCommand(command.CommandId))"
+                                                                disabled="@_isExecutingCommand">
+                                                            @if (_isExecutingCommand)
+                                                            {
+                                                                <span class="spinner-border spinner-border-sm" role="status"></span>
+                                                            }
+                                                            else
+                                                            {
+                                                                <text>Execute</text>
+                                                            }
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            }
                                             </tbody>
                                         </table>
                                     </div>
@@ -132,7 +135,7 @@
                             </div>
                         </div>
                     }
-                    
+
                     @if (!string.IsNullOrEmpty(_modalMessage))
                     {
                         <div class="alert @_modalMessageCss mt-3" role="alert">
@@ -170,7 +173,7 @@
         </div>
     </div>
 
-    <!-- Delete Confirmation Modal -->
+    <!-- Delete Device Confirmation Modal -->
     <div class="modal fade" id="deleteConfirmationModal" tabindex="-1" aria-labelledby="deleteConfirmationModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content bg-dark text-white">
@@ -199,62 +202,42 @@
             </div>
         </div>
     </div>
-
-    <h4 class="text-center mt-5"><u>Actions</u></h4>
-
+    
+    <!-- =============== Commands =============== -->
+    <!-- Commands Header -->
+    <h4 class="text-center mt-5"><u>Commands</u></h4>
+    
+    @if (!string.IsNullOrEmpty(_triggerMessage))
+    {
+        <div class="alert @_triggerMessageCss mt-3" role="alert">
+            @_triggerMessage
+        </div>
+    }
+    
+    <!-- Commands Table -->
     <div class="d-flex justify-content-center flex-wrap gap-3 mt-3">
         @{
             if (_commands != null)
                 foreach (var command in _commands)
                 {
                     <button class="btn btn-outline-light"
-                            @onclick="@(() => ExecuteDeviceCommandAsync(command.CommandId))">
+                            @onclick="@(() => TriggerCommand(command.CommandId))">
                         @command.CommandName
                     </button>
                 }
         }
     </div>
     
+    <!-- Device / Command Totals -->
     <div class="d-flex justify-content-center flex-wrap gap-3 mt-3">
         <p class="text-info">Devices loaded: @_devices?.Count()</p>
         <p class="text-info">Commands loaded: @_commands?.Count()</p>
     </div>
-    
-    <!-- Bind a toast element per action sent as a status notification -->
-    <!-- TODO - Determine what this was for I cannot remember -->
-    @* @{ *@
-    @*     if (_commands != null) *@
-    @*         foreach (var actionStatus in _commands) *@
-    @*         { *@
-    @*             <div class="toast" role="alert" aria-live="assertive" aria-atomic="true"> *@
-    @*                 <div class="toast-header"> *@
-    @*                     <img src="..." class="rounded me-2" alt="..."> *@
-    @*                     <strong class="me-auto">Bootstrap</strong> *@
-    @*                     <small class="text-body-secondary">11 mins ago</small> *@
-    @*                     <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button> *@
-    @*                 </div> *@
-    @*                 <div class="toast-body"> *@
-    @*                     Hello, world! This is a toast message. *@
-    @*                 </div> *@
-    @*             </div> *@
-    @*         } *@
-    @* } *@
+
 </div>
 
 @code {
-    private List<DashboardDeviceCommandDto>? _commands = new();   // now using DashboardDeviceActionDto from API
-    private List<DashboardDeviceDto>? _devices = new();         // now using DashboardDeviceDto from API
-    private CancellationTokenSource? _refreshCts;
-    private Task? _refreshTask;
-    public string? ExecMessage;
-    public string ExecCss = "alert-info";
-    
-    private Task<List<DashboardDeviceDto>?> GetDevicesAsync() =>
-        Http.GetFromJsonAsync<List<DashboardDeviceDto>>("api/devices/devices"); // <-- reads from Table Storage
-
-    private Task<List<DashboardDeviceCommandDto>?> GetCommandsAcync() =>
-        Http.GetFromJsonAsync<List<DashboardDeviceCommandDto>>("api/commands"); // <-- reads from Table Storage
-
+    // ========== Page Load ==========
     protected override async Task OnInitializedAsync()
     {
         try
@@ -267,246 +250,175 @@
             StateHasChanged();
         }
     }
-
-    private async Task ExecuteDeviceCommandAsync(Guid commandId)
-    {
-        ExecMessage = null;
-        ExecCss = "alert-info";
-        try
-        {
-            var resp = await Http.PostAsync($"api/commands/{commandId}/trigger", content: null);
-            var payload = await resp.Content.ReadFromJsonAsync<CommandExecResponse>();
-
-            if (resp.IsSuccessStatusCode && payload is { Success: true })
-            {
-                ExecCss = "alert-success";
-                ExecMessage = $"✅ {payload.Message} (HTTP {(payload.StatusCode ?? 200)})";
-            }
-            else
-            {
-                ExecCss = "alert-danger";
-                ExecMessage = $"❌ {payload?.Message ?? "Failed"} (HTTP {(payload?.StatusCode?.ToString() ?? resp.StatusCode.ToString())})";
-            }
-        }
-        catch (Exception ex)
-        {
-            ExecCss = "alert-danger";
-            ExecMessage = $"❌ Error: {ex.Message}";
-        }
-    }
-
-    protected override Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            _refreshCts = new CancellationTokenSource();
-            _refreshTask = RefreshLoopAsync(_refreshCts.Token); // fire-and-forget loop
-        }
-
-        return Task.CompletedTask;
-    }
     
-    private sealed class CommandExecResponse
-    {
-        public bool Success { get; set; }
-        public string? Message { get; set; }
-        public int? StatusCode { get; set; }
-        public string? Response { get; set; }
-    }
-
-    private async Task RefreshLoopAsync(CancellationToken ct)
-    {
-        var timer = new PeriodicTimer(TimeSpan.FromSeconds(15));
-        try
-        {
-            while (await timer.WaitForNextTickAsync(ct))
-            {
-                try
-                {
-                    var updatedDevices = await GetDevicesAsync() ?? [];
-                    var updatedActions = await GetCommandsAcync() ?? [];
-                    
-                    _devices = updatedDevices.ToList();
-                    _commands = updatedActions.ToList();
-
-                    await InvokeAsync(StateHasChanged);
-                }
-                catch (Exception ex)
-                {
-                    await InvokeAsync(StateHasChanged);
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        finally
-        {
-            timer.Dispose();
-        }
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        if (_refreshCts is not null)
-        {
-            _refreshCts.Cancel();
-            _refreshCts.Dispose();
-        }
-
-        if (_refreshTask is not null)
-        {
-            try { await _refreshTask; }
-            catch (OperationCanceledException) { }
-        }
-    }
-
-    // Modal-related fields and methods
-    private DashboardDeviceDto? _selectedDevice;
-    private DeviceForm _deviceForm = new();
-    private List<DashboardDeviceCommandDto> _deviceCommands = new();
-    private bool _isSaving;
-    private bool _isDeleting;
-    private bool _isExecutingCommand = false;
-    private string? _modalMessage;
-    private string _modalMessageCss = "alert-info";
-
-    private class DeviceForm
-    {
-        public string Name { get; set; } = "";
-        public string Model { get; set; } = "";
-        public string Ip { get; set; } = "";
-        public bool AllowTelNet { get; set; }
-        public string Location { get; set; } = "";
-    }
-
-    private async Task OpenDeviceModal(DashboardDeviceDto device)
-    {
-        _selectedDevice = device;
+    // ========== Devices ==========
+    #region Devices
+        // Fields and Properties
+        private List<DashboardDeviceDto>? _devices = new();
+        private DeviceForm _deviceForm = new();
+        private DashboardDeviceDto? _selectedDevice;
         
-        // Initialize form with device data
-        _deviceForm = new DeviceForm
+        // Classes
+        private class DeviceForm
         {
-            Name = device.Name,
-            Model = device.Model,
-            Ip = device.Ip,
-            AllowTelNet = device.AllowTelNet,
-            Location = device.Location ?? ""
-        };
-        
-        // Get actions for this device
-        try
-        {
-            var allActions = await GetCommandsAcync() ?? [];
-            _deviceCommands = allActions.Where(a => a.DeviceId == device.Id).ToList();
-        }
-        catch (Exception ex)
-        {
-            _deviceCommands = [];
-            _modalMessage = $"Error loading actions: {ex.Message}";
-            _modalMessageCss = "alert-danger";
+            public string Name { get; set; } = "";
+            public string Model { get; set; } = "";
+            public string Ip { get; set; } = "";
+            public bool AllowTelNet { get; set; }
+            public string Location { get; set; } = "";
         }
         
-        // Clear previous messages
-        _modalMessage = null;
-        StateHasChanged();
+        // Get logic
+        private Task<List<DashboardDeviceDto>?> GetDevicesAsync() =>
+            Http.GetFromJsonAsync<List<DashboardDeviceDto>>("api/devices/devices");
         
-        // Show modal using JavaScript interop
-        await ShowModal();
-    }
+        private static string GetStatusClass(DashboardDeviceDto d) =>
+            Equals(d?.Status, true) ? "bg-success" : "bg-danger";
 
-    private async Task SaveDeviceChanges()
-    {
-        if (_selectedDevice == null) return;
-
-        _isSaving = true;
-        _modalMessage = null;
-        StateHasChanged();
-
-        try
+        // Modal logic
+        private async Task OpenDeviceModal(DashboardDeviceDto device)
         {
-            // Create UpsertDevice DTO for the API call
-            var updateDto = new
-            {
-                Id = _selectedDevice.Id,
-                Name = _deviceForm.Name,
-                Model = _deviceForm.Model,
-                Brand = _selectedDevice.Brand,
-                Type = _selectedDevice.Type,
-                AllowTelNet = _deviceForm.AllowTelNet,
-                Ip = _deviceForm.Ip,
-                Port = _selectedDevice.Port,
-                Location = _deviceForm.Location
-            };
-
-            var response = await Http.PutAsJsonAsync($"api/devices/{_selectedDevice.Id}", updateDto);
+            _selectedDevice = device;
             
-            if (response.IsSuccessStatusCode)
+            // Initialize form with device data
+            _deviceForm = new DeviceForm
             {
-                // Update the device in our local list
-                var deviceIndex = _devices.FindIndex(d => d.Id == _selectedDevice.Id);
-                if (deviceIndex >= 0)
-                {
-                    _devices[deviceIndex].Name = _deviceForm.Name;
-                    _devices[deviceIndex].Ip = _deviceForm.Ip;
-                    _devices[deviceIndex].AllowTelNet = _deviceForm.AllowTelNet;
-                    _devices[deviceIndex].Location = _deviceForm.Location;
-                }
-
-                // Update selected device
-                _selectedDevice.Name = _deviceForm.Name;
-                _selectedDevice.Ip = _deviceForm.Ip;
-                _selectedDevice.AllowTelNet = _deviceForm.AllowTelNet;
-                _selectedDevice.Location = _deviceForm.Location;
-
-                _modalMessage = "Device updated successfully!";
-                _modalMessageCss = "alert-success";
+                Name = device.Name,
+                Model = device.Model,
+                Ip = device.Ip,
+                AllowTelNet = device.AllowTelNet,
+                Location = device.Location ?? ""
+            };
+            
+            // Get actions for this device
+            try
+            {
+                var allActions = await GetCommandsAcync() ?? [];
+                _deviceCommands = allActions.Where(a => a.DeviceId == device.Id).ToList();
             }
-            else
+            catch (Exception ex)
             {
-                _modalMessage = $"Failed to update device: {response.ReasonPhrase}";
+                _deviceCommands = [];
+                _modalMessage = $"Error loading actions: {ex.Message}";
                 _modalMessageCss = "alert-danger";
             }
-        }
-        catch (Exception ex)
-        {
-            _modalMessage = $"Error updating device: {ex.Message}";
-            _modalMessageCss = "alert-danger";
-        }
-        finally
-        {
-            _isSaving = false;
+            
+            // Clear previous messages
+            _modalMessage = null;
             StateHasChanged();
+            
+            // Show modal using JavaScript interop
+            await ShowModal();
         }
-    }
 
-    private async Task ShowModal()
-    {
-        // Use JavaScript to show the Bootstrap modal
-        try
+        // DTO matching API response
+        public class DashboardDeviceDto
         {
-            await JsRuntime.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('deviceModal')).show()");
+            public Guid Id { get; }
+            public string Name { get; set; } = "";
+            public string Model { get; } = "";
+            public string Brand { get; } = "";
+            public string Type { get; } = "";
+            public bool AllowTelNet { get; set; }
+            public string Ip { get; set; } = "";
+            public int Port { get; }
+            public string? Location { get; set; }
+            public Guid TenantId { get; set; }
+            public bool Status { get; }
         }
-        catch (Exception)
-        {
-            // Modal should still work with Bootstrap's built-in functionality if JS fails
-        }
-    }
 
-    private async Task ShowDeleteConfirmation()
-    {
-        try
+        private async Task SaveDeviceChanges()
         {
-            await JsRuntime.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('deleteConfirmationModal')).show()");
-        }
-        catch (Exception)
-        {
-            // Modal should still work with Bootstrap's built-in functionality if JS fails
-        }
-    }
+            if (_selectedDevice == null) return;
 
-    private async Task ConfirmDeleteDevice()
-    {
+            _isSaving = true;
+            _modalMessage = null;
+            StateHasChanged();
+
+            try
+            {
+                // Create UpsertDevice DTO for the API call
+                var updateDto = new
+                {
+                    Id = _selectedDevice.Id,
+                    Name = _deviceForm.Name,
+                    Model = _deviceForm.Model,
+                    Brand = _selectedDevice.Brand,
+                    Type = _selectedDevice.Type,
+                    AllowTelNet = _deviceForm.AllowTelNet,
+                    Ip = _deviceForm.Ip,
+                    Port = _selectedDevice.Port,
+                    Location = _deviceForm.Location
+                };
+
+                var response = await Http.PutAsJsonAsync($"api/devices/{_selectedDevice.Id}", updateDto);
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    // Update the device in our local list
+                    var deviceIndex = _devices.FindIndex(d => d.Id == _selectedDevice.Id);
+                    if (deviceIndex >= 0)
+                    {
+                        _devices[deviceIndex].Name = _deviceForm.Name;
+                        _devices[deviceIndex].Ip = _deviceForm.Ip;
+                        _devices[deviceIndex].AllowTelNet = _deviceForm.AllowTelNet;
+                        _devices[deviceIndex].Location = _deviceForm.Location;
+                    }
+
+                    // Update selected device
+                    _selectedDevice.Name = _deviceForm.Name;
+                    _selectedDevice.Ip = _deviceForm.Ip;
+                    _selectedDevice.AllowTelNet = _deviceForm.AllowTelNet;
+                    _selectedDevice.Location = _deviceForm.Location;
+
+                    _modalMessage = "Device updated successfully!";
+                    _modalMessageCss = "alert-success";
+                }
+                else
+                {
+                    _modalMessage = $"Failed to update device: {response.ReasonPhrase}";
+                    _modalMessageCss = "alert-danger";
+                }
+            }
+            catch (Exception ex)
+            {
+                _modalMessage = $"Error updating device: {ex.Message}";
+                _modalMessageCss = "alert-danger";
+            }
+            finally
+            {
+                _isSaving = false;
+                StateHasChanged();
+            }
+        }
+        
+        private async Task ShowModal()
+        {
+            // Use JavaScript to show the Bootstrap modal
+            try
+            {
+                await JsRuntime.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('deviceModal')).show()");
+            }
+            catch (Exception)
+            {
+                // Modal should still work with Bootstrap's built-in functionality if JS fails
+            }
+        }
+
+        private async Task ShowDeleteConfirmation()
+        {
+            try
+            {
+                await JsRuntime.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('deleteConfirmationModal')).show()");
+            }
+            catch (Exception)
+            {
+                // Modal should still work with Bootstrap's built-in functionality if JS fails
+            }
+        }
+
+        private async Task ConfirmDeleteDevice()
+        {
         if (_selectedDevice == null) return;
 
         _isDeleting = true;
@@ -514,85 +426,196 @@
 
         try
         {
-            var response = await Http.DeleteAsync($"api/devices/{_selectedDevice.Id}");
-            
-            if (response.IsSuccessStatusCode)
-            {
-                // Remove device from a local list
-                _devices.RemoveAll(d => d.Id == _selectedDevice.Id);
-                
-                // Close both modals
-                await JsRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deleteConfirmationModal')).hide()");
-                await JsRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deviceModal')).hide()");
-                
-                // Reset selected device
-                _selectedDevice = null;
-                StateHasChanged();
-            }
-            else
-            {
-                _modalMessage = $"Failed to delete device: {response.ReasonPhrase}";
-                _modalMessageCss = "alert-danger";
-                
-                // Close confirmation modal but keep device modal open to show the error
-                await JsRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deleteConfirmationModal')).hide()");
-            }
+        var response = await Http.DeleteAsync($"api/devices/{_selectedDevice.Id}");
+
+        if (response.IsSuccessStatusCode)
+        {
+        // Remove device from a local list
+        _devices.RemoveAll(d => d.Id == _selectedDevice.Id);
+
+        // Close both modals
+        await JsRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deleteConfirmationModal')).hide()");
+        await JsRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deviceModal')).hide()");
+
+        // Reset selected device
+        _selectedDevice = null;
+        StateHasChanged();
+        }
+        else
+        {
+        _modalMessage = $"Failed to delete device: {response.ReasonPhrase}";
+        _modalMessageCss = "alert-danger";
+
+        // Close confirmation modal but keep device modal open to show the error
+        await JsRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deleteConfirmationModal')).hide()");
+        }
         }
         catch (Exception ex)
         {
-            _modalMessage = $"Error deleting device: {ex.Message}";
-            _modalMessageCss = "alert-danger";
-            
-            // Close confirmation modal but keep device modal open to show the error
-            try
-            {
-                await JsRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deleteConfirmationModal')).hide()");
-            }
-            catch (Exception)
-            {
-                // Ignore JS errors
-            }
+        _modalMessage = $"Error deleting device: {ex.Message}";
+        _modalMessageCss = "alert-danger";
+
+        // Close confirmation modal but keep device modal open to show the error
+        try
+        {
+        await JsRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('deleteConfirmationModal')).hide()");
+        }
+        catch (Exception)
+        {
+        // Ignore JS errors
+        }
         }
         finally
         {
-            _isDeleting = false;
-            StateHasChanged();
+        _isDeleting = false;
+        StateHasChanged();
         }
-    }
+        }
+    
+    #endregion
+    
+    // ========== Commands ==========
+    #region Commands
+        // Fields and Properties
+        private List<DashboardDeviceCommandDto> _deviceCommands = new();
+        private List<DashboardDeviceCommandDto>? _commands = new();   // now using DashboardDeviceActionDto from API
+        private string? _triggerMessage;
+        private string _triggerMessageCss = "alert-info";
+        
+        private bool _isSaving;
+        private bool _isDeleting;
+        private bool _isExecutingCommand = false;
+        private string? _modalMessage;
+        private string _modalMessageCss = "alert-info";
+        
+        // Classes and DTO's
+        public class DashboardDeviceCommandDto
+        {
+            public Guid CommandId { get; }
+            public Guid TenantId { get; set; }
+            public Guid DeviceId { get; }
+            public string CommandName { get; set; } = "";
+            public string? Description { get; set; }
+            public string CommandType { get; set; } = "";
+            public string? CommandData { get; set; }
+            public string? HttpMethod { get; set; }
+            public string? RequestBody { get; set; }
+            public string? RequestHeaders { get; set; }
+            public DateTimeOffset? CreatedUtc { get; set; }
+            public DateTimeOffset? UpdatedUtc { get; set; }
+            public bool RequireDeviceOnline { get; set; }
+        }
+    
+        private class TriggerResponse
+        {
+            public bool success { get; set; }
+            public string? message { get; set; }
+            public Guid commandId { get; set; }
+            public string? deviceName { get; set; }
+        }
+        
+        // Get logic
+        private Task<List<DashboardDeviceCommandDto>?> GetCommandsAcync() =>
+            Http.GetFromJsonAsync<List<DashboardDeviceCommandDto>>("api/commands"); // <-- reads from Table Storage
+        
+        // Trigger Command
+        private async Task TriggerCommand(Guid commandId)
+        {
+            _triggerMessage = null;
+            StateHasChanged();
 
-    private static string GetStatusClass(DashboardDeviceDto d) =>
-        Equals(d?.Status, true) ? "bg-success" : "bg-danger";
+            try
+            {
+                var response = await Http.PostAsync($"api/commands/{commandId}/trigger", null);
+                var result = await response.Content.ReadFromJsonAsync<TriggerResponse>();
+
+                if (response.IsSuccessStatusCode && result?.success == true)
+                {
+                    _triggerMessage = result.message ?? "Command queued successfully";
+                    _triggerMessageCss = "alert-success";
+                }
+                else
+                {
+                    _triggerMessage = result?.message ?? $"Failed: {response.ReasonPhrase}";
+                    _triggerMessageCss = "alert-danger";
+                }
+            }
+            catch (Exception ex)
+            {
+                _triggerMessage = $"Error: {ex.Message}";
+                _triggerMessageCss = "alert-danger";
+            }
+            finally
+            {
+                StateHasChanged();
+            }
+        }
     
-    // DTO matching API response
-    public class DashboardDeviceDto
-    {
-        public Guid Id { get; }
-        public string Name { get; set; } = "";
-        public string Model { get; } = "";
-        public string Brand { get; } = "";
-        public string Type { get; } = "";
-        public bool AllowTelNet { get; set; }
-        public string Ip { get; set; } = "";
-        public int Port { get; }
-        public string? Location { get; set; }
-        public Guid TenantId { get; set; }
-        public bool Status { get; }
-    }
+    #endregion
     
-    public class DashboardDeviceCommandDto
-    {
-        public Guid CommandId { get; }
-        public Guid TenantId { get; set; }
-        public Guid DeviceId { get; }
-        public string CommandName { get; set; } = "";
-        public string? Description { get; set; }
-        public string CommandType { get; set; } = "";
-        public string? CommandData { get; set; }
-        public string? HttpMethod { get; set; }
-        public string? RequestBody { get; set; }
-        public string? RequestHeaders { get; set; }
-        public DateTimeOffset? CreatedUtc { get; set; }
-        public DateTimeOffset? UpdatedUtc { get; set; }
-        public bool RequireDeviceOnline { get; set; }
-    }
+    // ========== Page Refresh Loop ==========
+    #region Page Loop
+        // Fields and Properties
+        private CancellationTokenSource? _refreshCts;
+        private Task? _refreshTask;
+        
+        // Refresh loop
+        private async Task RefreshLoopAsync(CancellationToken ct)
+        {
+            var timer = new PeriodicTimer(TimeSpan.FromSeconds(15));
+            try
+            {
+                while (await timer.WaitForNextTickAsync(ct))
+                {
+                    try
+                    {
+                        var updatedDevices = await GetDevicesAsync() ?? [];
+                        var updatedActions = await GetCommandsAcync() ?? [];
+                        
+                        _devices = updatedDevices.ToList();
+                        _commands = updatedActions.ToList();
+
+                        await InvokeAsync(StateHasChanged);
+                    }
+                    catch (Exception ex)
+                    {
+                        await InvokeAsync(StateHasChanged);
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            finally
+            {
+                timer.Dispose();
+            }
+        }
+        
+        protected override Task OnAfterRenderAsync(bool firstRender)
+        {
+            if (firstRender)
+            {
+                _refreshCts = new CancellationTokenSource();
+                _refreshTask = RefreshLoopAsync(_refreshCts.Token); // fire-and-forget loop
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (_refreshCts is not null)
+            {
+                _refreshCts.Cancel();
+                _refreshCts.Dispose();
+            }
+
+            if (_refreshTask is not null)
+            {
+                try { await _refreshTask; }
+                catch (OperationCanceledException) { }
+            }
+        }
+    #endregion
 }
