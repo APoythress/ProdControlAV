@@ -5,6 +5,9 @@ on:
     branches: [ "main" ]
     paths:
       - "src/ProdControlAV.API/**"
+      - "src/ProdControlAV.Core/**"
+      - "src/ProdControlAV.WebApp/**"
+      - "src/ProdControlAV.Infrastructure/**"
       - ".github/workflows/pcav-app-AutoDeployTrigger-be41a6aa-1b02-4412-89cc-41d3c29728ab.yml"
   workflow_dispatch:
 
