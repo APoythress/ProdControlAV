@@ -210,17 +210,124 @@
     <h4 class="text-center mt-5"><u>Commands</u></h4>
     
     <!-- Commands Grid -->
-    <div class="mt-3">
-        <CommandsGrid 
-            Commands="@_commandsList"
-            Devices="@_devicesList"
-            ShowFilters="true"
-            ShowTriggerAction="true"
-            ShowEditAction="false"
-            ShowDeleteAction="false"
-            OnCommandTriggered="@OnCommandTriggered" />
+    <div class="container mt-5 text-white">
+        @if (_loading)
+        {
+            <div class="text-center">
+                <div class="spinner-border text-light" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        }
+        else if (!_commands.Any())
+        {
+            <div class="alert alert-info">
+                No commands found. Click "Create Command" to add your first command.
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-dark table-striped table-hover">
+                    <thead>
+                        <tr>
+                            <th>Command Name</th>
+                            <th>Device</th>
+                            <th>Type</th>
+                            <th>Description</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var cmd in _commands)
+                        {
+                            <tr>
+                                <td>@cmd.CommandName</td>
+                                <td>@GetDeviceName(cmd.DeviceId)</td>
+                                <td>
+                                    <span class="badge @GetCommandTypeBadgeClass(cmd.CommandType)">
+                                        @cmd.CommandType
+                                    </span>
+                                </td>
+                                <td>@(cmd.Description ?? "-")</td>
+                                <td>
+                                    <button class="btn btn-sm btn-success me-1" 
+                                            @onclick="@(() => ShowTriggerModal(cmd))"
+                                            title="Trigger Command">
+                                        <i class="fas fa-play"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <!-- Trigger Command Modal -->
+        <div class="modal fade" id="triggerModal" tabindex="-1" aria-labelledby="triggerModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content bg-dark text-white">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="triggerModalLabel">Trigger Command</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        @if (_selectedCommand != null)
+                        {
+                            <p><strong>Command:</strong> @_selectedCommand.CommandName</p>
+                            <p><strong>Device:</strong> @GetDeviceName(_selectedCommand.DeviceId)</p>
+                            <p><strong>Type:</strong> @_selectedCommand.CommandType</p>
+                            @if (!string.IsNullOrEmpty(_selectedCommand.Description))
+                            {
+                                <p><strong>Description:</strong> @_selectedCommand.Description</p>
+                            }
+                            
+                            @if (_selectedCommand.RequireDeviceOnline)
+                            {
+                                var deviceStatus = GetDeviceStatus(_selectedCommand.DeviceId);
+                                <p>
+                                    <strong>Device Status:</strong> 
+                                    <span class="badge @(deviceStatus ? "bg-success" : "bg-danger")">
+                                        @(deviceStatus ? "Online" : "Offline")
+                                    </span>
+                                </p>
+                                
+                                @if (!deviceStatus)
+                                {
+                                    <div class="alert alert-warning">
+                                        <i class="fas fa-exclamation-triangle"></i> This command requires the device to be online, but it is currently offline.
+                                    </div>
+                                }
+                            }
+                        }
+
+                        @if (!string.IsNullOrEmpty(_triggerMessage))
+                        {
+                            <div class="alert @_triggerMessageCss mt-3" role="alert">
+                                @_triggerMessage
+                            </div>
+                        }
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-success" @onclick="TriggerCommand" disabled="@_isTriggering">
+                            @if (_isTriggering)
+                            {
+                                <span class="spinner-border spinner-border-sm" role="status"></span>
+                                <text> Running...</text>
+                            }
+                            else
+                            {
+                                <text>Run</text>
+                            }
+                        </button>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-    
+
     <!-- Device / Command Totals -->
     <div class="d-flex justify-content-center flex-wrap gap-3 mt-3">
         <p class="text-info">Devices loaded: @_devices?.Count()</p>
@@ -474,13 +581,17 @@
         private List<DashboardDeviceCommandDto> _deviceCommands = new();
         private List<DashboardDeviceCommandDto>? _commands = new();   // now using DashboardDeviceActionDto from API
         private List<Command> _commandsList = new();   // For the CommandsGrid component
-        private List<CommandsGrid.DeviceDto> _devicesList = new();  // For the CommandsGrid component
+        private DashboardDeviceCommandDto? _selectedCommand;
         
         private bool _isSaving;
+        private bool _isTriggering;
         private bool _isDeleting;
         private bool _isExecutingCommand = false;
         private string? _modalMessage;
         private string _modalMessageCss = "alert-info";
+        private string? _triggerMessage;
+        private string _triggerMessageCss = "alert-info";
+        private bool _loading = true;
         
         // Classes and DTO's
         public class DashboardDeviceCommandDto
@@ -502,10 +613,10 @@
         
         private class TriggerResponse
         {
-            public bool success { get; set; }
-            public string? message { get; set; }
-            public Guid commandId { get; set; }
-            public string? deviceName { get; set; }
+            public bool Success { get; set; }
+            public string? Message { get; set; }
+            public Guid CommandId { get; set; }
+            public string? DeviceName { get; set; }
         }
         
         // Get logic
@@ -524,14 +635,14 @@
                 var response = await Http.PostAsync($"api/commands/{commandId}/trigger", null);
                 var result = await response.Content.ReadFromJsonAsync<TriggerResponse>();
 
-                if (response.IsSuccessStatusCode && result?.success == true)
+                if (response.IsSuccessStatusCode && result?.Success == true)
                 {
-                    _modalMessage = result.message ?? "Command queued successfully";
+                    _modalMessage = result.Message ?? "Command queued successfully";
                     _modalMessageCss = "alert-success";
                 }
                 else
                 {
-                    _modalMessage = result?.message ?? $"Failed: {response.ReasonPhrase}";
+                    _modalMessage = result?.Message ?? $"Failed: {response.ReasonPhrase}";
                     _modalMessageCss = "alert-danger";
                 }
             }
@@ -567,24 +678,91 @@
                 UpdatedUtc = c.UpdatedUtc,
                 RequireDeviceOnline = c.RequireDeviceOnline
             }).ToList() ?? new();
-            
-            // Convert devices
-            _devicesList = _devices?.Select(d => new CommandsGrid.DeviceDto
-            {
-                Id = d.Id,
-                Name = d.Name,
-                Ip = d.Ip,
-                Port = d.Port
-            }).ToList() ?? new();
         }
         
-        // Callback for when a command is triggered
-        private Task OnCommandTriggered()
+        // Grid logic
+        private async Task ShowTriggerModal(DashboardDeviceCommandDto cmd)
         {
-            // Refresh data or perform any needed updates
-            return Task.CompletedTask;
+            _selectedCommand = cmd;
+            _triggerMessage = null;
+            await ShowModal("triggerModal");
         }
-    
+
+        private async Task TriggerCommand()
+        {
+            if (_selectedCommand == null) return;
+
+            _isTriggering = true;
+            _triggerMessage = null;
+            StateHasChanged();
+
+            try
+            {
+                var response = await Http.PostAsync($"api/commands/{_selectedCommand.CommandId}/trigger", null);
+                var result = await response.Content.ReadFromJsonAsync<TriggerResponse>();
+
+                if (response.IsSuccessStatusCode && result?.Success == true)
+                {
+                    _triggerMessage = result.Message ?? "Command queued successfully";
+                    _triggerMessageCss = "alert-success";
+                }
+                else
+                {
+                    _triggerMessage = result?.Message ?? $"Failed: {response.ReasonPhrase}";
+                    _triggerMessageCss = "alert-danger";
+                }
+            }
+            catch (Exception ex)
+            {
+                _triggerMessage = $"Error: {ex.Message}";
+                _triggerMessageCss = "alert-danger";
+            }
+            finally
+            {
+                _isTriggering = false;
+                StateHasChanged();
+            }
+        }
+
+        private async Task ShowModal(string modalId)
+        {
+            try
+            {
+                await JsRuntime.InvokeVoidAsync("eval", $"new bootstrap.Modal(document.getElementById('{modalId}')).show()");
+            }
+            catch (Exception) { }
+        }
+
+        private async Task HideModal(string modalId)
+        {
+            try
+            {
+                await JsRuntime.InvokeVoidAsync("eval", $"bootstrap.Modal.getInstance(document.getElementById('{modalId}')).hide()");
+            }
+            catch (Exception) { }
+        }
+
+        private string GetDeviceName(Guid deviceId)
+        {
+            var device = _devices?.FirstOrDefault(d => d.Id == deviceId);
+            return device?.Name ?? "Unknown Device";
+        }
+
+        private bool GetDeviceStatus(Guid deviceId)
+        {
+            var status = _devices?.FirstOrDefault(s => s.Id == deviceId);
+            return status.Status;
+        }
+
+        private string GetCommandTypeBadgeClass(string type)
+        {
+            return type switch
+            {
+                "REST" => "bg-primary",
+                "Telnet" => "bg-info",
+                _ => "bg-secondary"
+            };
+        }
     #endregion
     
     // ========== Page Refresh Loop ==========
