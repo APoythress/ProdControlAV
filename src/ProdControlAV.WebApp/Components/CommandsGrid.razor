@@ -1,0 +1,369 @@
+@using System.Net.Http
+@using System.Net.Http.Json
+@using ProdControlAV.Core.Models
+
+@inject HttpClient Http
+
+<div class="commands-grid">
+    @if (!string.IsNullOrEmpty(FilterMessage))
+    {
+        <div class="alert @FilterMessageCss mb-3" role="alert">
+            @FilterMessage
+        </div>
+    }
+    
+    @if (ShowFilters)
+    {
+        <div class="row mb-3">
+            <div class="col-md-4 mb-2">
+                <input type="text" 
+                       class="form-control" 
+                       placeholder="Filter by Command Name..." 
+                       @bind="commandNameFilter" 
+                       @bind:event="oninput"
+                       @onkeyup="ApplyFilters" />
+            </div>
+            <div class="col-md-4 mb-2">
+                <select class="form-select" @bind="deviceFilter" @onchange="ApplyFilters">
+                    <option value="">All Devices</option>
+                    @foreach (var device in allDevices)
+                    {
+                        <option value="@device.Id">@device.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-4 mb-2">
+                <button class="btn btn-secondary w-100" @onclick="ClearFilters">Clear Filters</button>
+            </div>
+        </div>
+    }
+
+    @if (loading)
+    {
+        <div class="text-center">
+            <div class="spinner-border text-light" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger">@errorMessage</div>
+    }
+    else if (!filteredCommands.Any())
+    {
+        <div class="alert alert-info">
+            @(string.IsNullOrEmpty(commandNameFilter) && string.IsNullOrEmpty(deviceFilter) 
+                ? "No commands found." 
+                : "No commands match the current filters.")
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-dark table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th style="cursor: pointer;" @onclick="@(() => SortBy("CommandName"))">
+                            Command Name 
+                            @if (sortColumn == "CommandName")
+                            {
+                                <i class="fas fa-sort-@(sortAscending ? "up" : "down")"></i>
+                            }
+                        </th>
+                        <th style="cursor: pointer;" @onclick="@(() => SortBy("Device"))">
+                            Device 
+                            @if (sortColumn == "Device")
+                            {
+                                <i class="fas fa-sort-@(sortAscending ? "up" : "down")"></i>
+                            }
+                        </th>
+                        <th>Type</th>
+                        <th>Description</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var cmd in filteredCommands)
+                    {
+                        <tr>
+                            <td>@cmd.CommandName</td>
+                            <td>@GetDeviceName(cmd.DeviceId)</td>
+                            <td>
+                                <span class="badge @GetCommandTypeBadgeClass(cmd.CommandType)">
+                                    @cmd.CommandType
+                                </span>
+                            </td>
+                            <td>@(cmd.Description ?? "-")</td>
+                            <td>
+                                @if (ShowTriggerAction)
+                                {
+                                    var state = GetTriggerState(cmd.CommandId);
+                                    <span class="badge @GetTriggerBadgeClass(state) trigger-pill" 
+                                          style="cursor: pointer; padding: 0.5rem 1rem; font-size: 0.875rem;"
+                                          title="@GetTriggerTooltip(state)"
+                                          @onclick="@(() => TriggerCommand(cmd))">
+                                        @if (state == TriggerState.Loading)
+                                        {
+                                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                        }
+                                        <span>@GetTriggerText(state)</span>
+                                    </span>
+                                }
+                                @if (ShowEditAction && OnEdit.HasDelegate)
+                                {
+                                    <button class="btn btn-sm btn-warning me-1" 
+                                            @onclick="@(() => OnEdit.InvokeAsync(cmd))"
+                                            title="Edit Command">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                }
+                                @if (ShowDeleteAction && OnDelete.HasDelegate)
+                                {
+                                    <button class="btn btn-sm btn-danger" 
+                                            @onclick="@(() => OnDelete.InvokeAsync(cmd))"
+                                            title="Delete Command">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public List<Command> Commands { get; set; } = new();
+    [Parameter] public List<DeviceDto> Devices { get; set; } = new();
+    [Parameter] public bool ShowFilters { get; set; } = false;
+    [Parameter] public bool ShowTriggerAction { get; set; } = true;
+    [Parameter] public bool ShowEditAction { get; set; } = true;
+    [Parameter] public bool ShowDeleteAction { get; set; } = true;
+    [Parameter] public EventCallback<Command> OnEdit { get; set; }
+    [Parameter] public EventCallback<Command> OnDelete { get; set; }
+    [Parameter] public EventCallback OnCommandTriggered { get; set; }
+    
+    private bool loading = false;
+    private string? errorMessage = null;
+    private string? commandNameFilter = "";
+    private string deviceFilter = "";
+    private List<Command> filteredCommands = new();
+    private List<DeviceDto> allDevices = new();
+    
+    private string sortColumn = "CommandName";
+    private bool sortAscending = true;
+    
+    // Trigger state management
+    private Dictionary<Guid, TriggerState> triggerStates = new();
+    private Dictionary<Guid, string?> triggerMessages = new();
+    
+    private string? FilterMessage;
+    private string FilterMessageCss = "alert-info";
+    
+    public enum TriggerState
+    {
+        Ready,
+        Loading,
+        Success,
+        Failure
+    }
+    
+    protected override void OnParametersSet()
+    {
+        allDevices = Devices;
+        ApplyFiltersAndSort();
+    }
+    
+    private void ApplyFilters()
+    {
+        ApplyFiltersAndSort();
+    }
+    
+    private void ClearFilters()
+    {
+        commandNameFilter = "";
+        deviceFilter = "";
+        ApplyFiltersAndSort();
+    }
+    
+    private void ApplyFiltersAndSort()
+    {
+        // Start with all commands
+        var result = Commands.AsEnumerable();
+        
+        // Apply command name filter
+        if (!string.IsNullOrWhiteSpace(commandNameFilter))
+        {
+            result = result.Where(c => c.CommandName.Contains(commandNameFilter, StringComparison.OrdinalIgnoreCase));
+        }
+        
+        // Apply device filter
+        if (!string.IsNullOrWhiteSpace(deviceFilter) && Guid.TryParse(deviceFilter, out var deviceId))
+        {
+            result = result.Where(c => c.DeviceId == deviceId);
+        }
+        
+        // Apply sorting
+        result = sortColumn switch
+        {
+            "CommandName" => sortAscending 
+                ? result.OrderBy(c => c.CommandName) 
+                : result.OrderByDescending(c => c.CommandName),
+            "Device" => sortAscending 
+                ? result.OrderBy(c => GetDeviceName(c.DeviceId)) 
+                : result.OrderByDescending(c => GetDeviceName(c.DeviceId)),
+            _ => result.OrderBy(c => c.CommandName)
+        };
+        
+        filteredCommands = result.ToList();
+        StateHasChanged();
+    }
+    
+    private void SortBy(string column)
+    {
+        if (sortColumn == column)
+        {
+            sortAscending = !sortAscending;
+        }
+        else
+        {
+            sortColumn = column;
+            sortAscending = true;
+        }
+        ApplyFiltersAndSort();
+    }
+    
+    private async Task TriggerCommand(Command cmd)
+    {
+        var currentState = GetTriggerState(cmd.CommandId);
+        
+        // Only allow triggering if in Ready, Success, or Failure state
+        if (currentState == TriggerState.Loading)
+            return;
+        
+        // Set to loading
+        triggerStates[cmd.CommandId] = TriggerState.Loading;
+        triggerMessages[cmd.CommandId] = null;
+        FilterMessage = null;
+        StateHasChanged();
+        
+        try
+        {
+            var response = await Http.PostAsync($"api/commands/{cmd.CommandId}/trigger", null);
+            var result = await response.Content.ReadFromJsonAsync<TriggerResponse>();
+            
+            if (response.IsSuccessStatusCode && result?.success == true)
+            {
+                triggerStates[cmd.CommandId] = TriggerState.Success;
+                triggerMessages[cmd.CommandId] = result.message ?? "Command queued successfully";
+                FilterMessage = $"{cmd.CommandName}: {result.message ?? "Command queued successfully"}";
+                FilterMessageCss = "alert-success";
+                
+                // Reset to Ready after 3 seconds
+                _ = Task.Delay(3000).ContinueWith(_ => 
+                {
+                    triggerStates[cmd.CommandId] = TriggerState.Ready;
+                    InvokeAsync(StateHasChanged);
+                });
+            }
+            else
+            {
+                triggerStates[cmd.CommandId] = TriggerState.Failure;
+                triggerMessages[cmd.CommandId] = result?.message ?? $"Failed: {response.ReasonPhrase}";
+                FilterMessage = $"{cmd.CommandName}: {result?.message ?? response.ReasonPhrase}";
+                FilterMessageCss = "alert-danger";
+            }
+            
+            // Notify parent that command was triggered
+            if (OnCommandTriggered.HasDelegate)
+            {
+                await OnCommandTriggered.InvokeAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            triggerStates[cmd.CommandId] = TriggerState.Failure;
+            triggerMessages[cmd.CommandId] = $"Error: {ex.Message}";
+            FilterMessage = $"{cmd.CommandName}: Error: {ex.Message}";
+            FilterMessageCss = "alert-danger";
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+    
+    private TriggerState GetTriggerState(Guid commandId)
+    {
+        return triggerStates.TryGetValue(commandId, out var state) ? state : TriggerState.Ready;
+    }
+    
+    private string GetTriggerBadgeClass(TriggerState state)
+    {
+        return state switch
+        {
+            TriggerState.Loading => "bg-secondary",
+            TriggerState.Success => "bg-success",
+            TriggerState.Failure => "bg-danger",
+            _ => "bg-primary"
+        };
+    }
+    
+    private string GetTriggerText(TriggerState state)
+    {
+        return state switch
+        {
+            TriggerState.Loading => "Running...",
+            TriggerState.Success => "Success!",
+            TriggerState.Failure => "Retry",
+            _ => "Trigger"
+        };
+    }
+    
+    private string GetTriggerTooltip(TriggerState state)
+    {
+        return state switch
+        {
+            TriggerState.Loading => "Command is running...",
+            TriggerState.Success => "Command executed successfully",
+            TriggerState.Failure => "Click to retry command",
+            _ => "Click to execute this command"
+        };
+    }
+    
+    private string GetDeviceName(Guid deviceId)
+    {
+        var device = allDevices.FirstOrDefault(d => d.Id == deviceId);
+        return device?.Name ?? "Unknown Device";
+    }
+    
+    private string GetCommandTypeBadgeClass(string type)
+    {
+        return type switch
+        {
+            "REST" => "bg-primary",
+            "Telnet" => "bg-info",
+            _ => "bg-secondary"
+        };
+    }
+    
+    // DTOs
+    public class DeviceDto
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = "";
+        public string Ip { get; set; } = "";
+        public int Port { get; set; }
+    }
+    
+    private class TriggerResponse
+    {
+        public bool success { get; set; }
+        public string? message { get; set; }
+        public Guid commandId { get; set; }
+        public string? deviceName { get; set; }
+    }
+}
