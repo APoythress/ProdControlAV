@@ -416,7 +416,7 @@
         // DTO matching API response
         public class DashboardDeviceDto
         {
-            public Guid Id { get; }
+            public Guid Id { get; set; }
             public string Name { get; set; } = "";
             public string Model { get; } = "";
             public string Brand { get; } = "";
@@ -597,9 +597,9 @@
         // Classes and DTO's
         public class DashboardDeviceCommandDto
         {
-            public Guid CommandId { get; }
+            public Guid CommandId { get; set; }
             public Guid TenantId { get; set; }
-            public Guid DeviceId { get; }
+            public Guid DeviceId { get; set; }
             public string CommandName { get; set; } = "";
             public string? Description { get; set; }
             public string CommandType { get; set; } = "";
@@ -839,3 +839,4 @@
         }
     #endregion
 }
+
