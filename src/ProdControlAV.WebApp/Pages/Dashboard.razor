@@ -31,6 +31,14 @@
                                     Status:
                                     <span class="badge @GetStatusClass(device)">@(device.Status ? "online" : "offline")</span>
                                 </p>
+                                @if (device.Type == "Video" && device.RecordingStatus.HasValue)
+                                {
+                                    <p class="card-text">
+                                        <span class="badge @(device.RecordingStatus.Value ? "bg-danger" : "bg-secondary")">
+                                            @(device.RecordingStatus.Value ? "Recording" : "Idle")
+                                        </span>
+                                    </p>
+                                }
                             </div>
 
                         </div>
@@ -427,6 +435,7 @@
             public string? Location { get; set; }
             public Guid TenantId { get; set; }
             public bool Status { get; set; }
+            public bool? RecordingStatus { get; set; }
         }
 
         private async Task SaveDeviceChanges()

@@ -61,4 +61,20 @@ public class Command
     /// If true, command can only be executed when device is online
     /// </summary>
     public bool RequireDeviceOnline { get; set; } = true;
+    
+    /// <summary>
+    /// For Video devices: if true, monitor recording status after command execution
+    /// </summary>
+    public bool MonitorRecordingStatus { get; set; } = false;
+    
+    /// <summary>
+    /// For Video devices: endpoint URL to check recording status (if MonitorRecordingStatus is true)
+    /// </summary>
+    [MaxLength(500)]
+    public string? StatusEndpoint { get; set; }
+    
+    /// <summary>
+    /// Polling interval in seconds for recording status monitoring (default: 60 seconds)
+    /// </summary>
+    public int StatusPollingIntervalSeconds { get; set; } = 60;
 }

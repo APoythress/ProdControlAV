@@ -31,8 +31,15 @@
             </div>
             <div class="col-9 col-sm-6">
                 <label class="form-label">Device Type</label>
-                <InputText class="form-control" @bind-Value="_device.Type" />
-                <div class="form-text">Audio, Video, Lighting, Network or Other?</div>
+                <InputSelect class="form-select" @bind-Value="_device.Type">
+                    <option value="">-- Select Type --</option>
+                    <option value="Audio">Audio</option>
+                    <option value="Video">Video</option>
+                    <option value="Lighting">Lighting</option>
+                    <option value="Network">Network</option>
+                    <option value="Other">Other</option>
+                </InputSelect>
+                <div class="form-text">Select the device type</div>
             </div>
         </div>
 

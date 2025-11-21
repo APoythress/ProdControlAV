@@ -179,6 +179,37 @@
                         </div>
                     </div>
 
+                    @if (GetSelectedDeviceType() == "Video")
+                    {
+                        <div class="row mb-3">
+                            <div class="col-12">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="monitorRecordingStatus" @bind="commandForm.MonitorRecordingStatus">
+                                    <label class="form-check-label" for="monitorRecordingStatus">
+                                        Monitor recording status?
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        @if (commandForm.MonitorRecordingStatus)
+                        {
+                            <div class="row mb-3">
+                                <div class="col-md-8">
+                                    <label for="statusEndpoint" class="form-label">Status Check Endpoint</label>
+                                    <input type="text" class="form-control" id="statusEndpoint" @bind="commandForm.StatusEndpoint" 
+                                           placeholder="/api/recording/status">
+                                    <div class="form-text">Endpoint to check recording status</div>
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="pollingInterval" class="form-label">Polling Interval (seconds)</label>
+                                    <input type="number" class="form-control" id="pollingInterval" @bind="commandForm.StatusPollingIntervalSeconds" min="10" max="3600">
+                                    <div class="form-text">Default: 60 seconds</div>
+                                </div>
+                            </div>
+                        }
+                    }
+
                     @if (!string.IsNullOrEmpty(modalMessage))
                     {
                         <div class="alert @modalMessageCss mt-3" role="alert">
@@ -346,7 +377,8 @@
                 Id = d.Id,
                 Name = d.Name,
                 Ip = d.Ip,
-                Port = d.Port
+                Port = d.Port,
+                Type = d.Type
             }).ToList();
             
             deviceStatuses = statusTask.Result?.Items?.ToList() ?? new();
@@ -382,7 +414,10 @@
             HttpMethod = cmd.HttpMethod ?? "POST",
             RequestBody = cmd.RequestBody,
             RequestHeaders = cmd.RequestHeaders,
-            RequireDeviceOnline = cmd.RequireDeviceOnline
+            RequireDeviceOnline = cmd.RequireDeviceOnline,
+            MonitorRecordingStatus = cmd.MonitorRecordingStatus,
+            StatusEndpoint = cmd.StatusEndpoint,
+            StatusPollingIntervalSeconds = cmd.StatusPollingIntervalSeconds
         };
         modalMessage = null;
         await ShowModal("commandModal");
@@ -424,7 +459,10 @@
                     HttpMethod = commandForm.HttpMethod,
                     RequestBody = commandForm.RequestBody,
                     RequestHeaders = commandForm.RequestHeaders,
-                    RequireDeviceOnline = commandForm.RequireDeviceOnline
+                    RequireDeviceOnline = commandForm.RequireDeviceOnline,
+                    MonitorRecordingStatus = commandForm.MonitorRecordingStatus,
+                    StatusEndpoint = commandForm.StatusEndpoint,
+                    StatusPollingIntervalSeconds = commandForm.StatusPollingIntervalSeconds
                 };
                 response = await Http.PutAsJsonAsync($"api/commands/{editingCommand.CommandId}", updateDto);
             }
@@ -441,7 +479,10 @@
                     HttpMethod = commandForm.HttpMethod,
                     RequestBody = commandForm.RequestBody,
                     RequestHeaders = commandForm.RequestHeaders,
-                    RequireDeviceOnline = commandForm.RequireDeviceOnline
+                    RequireDeviceOnline = commandForm.RequireDeviceOnline,
+                    MonitorRecordingStatus = commandForm.MonitorRecordingStatus,
+                    StatusEndpoint = commandForm.StatusEndpoint,
+                    StatusPollingIntervalSeconds = commandForm.StatusPollingIntervalSeconds
                 };
                 response = await Http.PostAsJsonAsync("api/commands", createDto);
             }
@@ -586,6 +627,13 @@
         };
     }
 
+    private string GetSelectedDeviceType()
+    {
+        if (commandForm.DeviceId == Guid.Empty) return "";
+        var device = devices.FirstOrDefault(d => d.Id == commandForm.DeviceId);
+        return device?.Type ?? "";
+    }
+
     // DTOs
     private class CommandForm
     {
@@ -598,6 +646,9 @@
         public string? RequestBody { get; set; }
         public string? RequestHeaders { get; set; }
         public bool RequireDeviceOnline { get; set; } = true;
+        public bool MonitorRecordingStatus { get; set; } = false;
+        public string? StatusEndpoint { get; set; }
+        public int StatusPollingIntervalSeconds { get; set; } = 60;
     }
 
     private class DashboardDeviceDto
@@ -606,6 +657,7 @@
         public string Name { get; set; } = "";
         public string Ip { get; set; } = "";
         public int Port { get; set; }
+        public string Type { get; set; } = "";
     }
 
     private class DeviceDto
@@ -614,6 +666,7 @@
         public string Name { get; set; } = "";
         public string Ip { get; set; } = "";
         public int Port { get; set; }
+        public string Type { get; set; } = "";
     }
 
     private class DeviceStatusDto
