@@ -418,15 +418,15 @@
         {
             public Guid Id { get; set; }
             public string Name { get; set; } = "";
-            public string Model { get; } = "";
-            public string Brand { get; } = "";
-            public string Type { get; } = "";
+            public string Model { get; set; } = "";
+            public string Brand { get; set; } = "";
+            public string Type { get; set; } = "";
             public bool AllowTelNet { get; set; }
             public string Ip { get; set; } = "";
-            public int Port { get; }
+            public int Port { get; set; }
             public string? Location { get; set; }
             public Guid TenantId { get; set; }
-            public bool Status { get; }
+            public bool Status { get; set; }
         }
 
         private async Task SaveDeviceChanges()
