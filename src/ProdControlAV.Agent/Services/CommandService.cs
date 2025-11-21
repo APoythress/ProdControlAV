@@ -48,6 +48,9 @@ public class CommandService : ICommandService
     {
         TypeInfoResolver = new DefaultJsonTypeInfoResolver()
     };
+    
+    // Shared HttpClient for device communication to avoid socket exhaustion
+    private static readonly HttpClient s_deviceHttpClient = new() { Timeout = TimeSpan.FromSeconds(5) };
 
     public CommandService(HttpClient http, ILogger<CommandService> logger, IOptions<ApiOptions> api, IJwtAuthService jwtAuth)
     {
@@ -268,8 +271,7 @@ public class CommandService : ICommandService
                 request.Content = new StringContent(requestBody, System.Text.Encoding.UTF8, "application/json");
             }
 
-            using var deviceClient = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-            using var httpResponse = await deviceClient.SendAsync(request, ct);
+            using var httpResponse = await s_deviceHttpClient.SendAsync(request, ct);
             
             var responseBody = await httpResponse.Content.ReadAsStringAsync(ct);
             var statusCode = (int)httpResponse.StatusCode;
@@ -389,12 +391,13 @@ public class CommandService : ICommandService
                 deviceId, statusEndpoint);
             
             // Build the full URL for the status check
-            var baseUri = new Uri($"http://{deviceIp}:{devicePort}");
+            // Support both HTTP and HTTPS - prefer HTTPS if port 443 is specified
+            var protocol = devicePort == 443 ? "https" : "http";
+            var baseUri = new Uri($"{protocol}://{deviceIp}:{devicePort}");
             var path = statusEndpoint?.TrimStart('/') ?? "";
             var fullUri = new Uri(baseUri, path);
             
-            using var deviceClient = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-            using var statusResponse = await deviceClient.GetAsync(fullUri, ct);
+            using var statusResponse = await s_deviceHttpClient.GetAsync(fullUri, ct);
             
             if (statusResponse.IsSuccessStatusCode)
             {

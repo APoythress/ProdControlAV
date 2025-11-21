@@ -125,6 +125,12 @@ namespace ProdControlAV.Infrastructure.Services
         
         private static CommandQueueDto MapToDto(TableEntity e)
         {
+            bool monitorRecordingStatus = false;
+            if (e.TryGetValue("MonitorRecordingStatus", out var monitor) && monitor != null)
+            {
+                try { monitorRecordingStatus = Convert.ToBoolean(monitor); } catch { }
+            }
+            
             return new CommandQueueDto(
                 Guid.Parse(e["CommandId"].ToString()!),
                 Guid.Parse(e.PartitionKey),
@@ -140,7 +146,7 @@ namespace ProdControlAV.Infrastructure.Services
                 e.TryGetValue("DeviceIp", out var ip) ? ip?.ToString() : null,
                 e.TryGetValue("DevicePort", out var port) && port != null ? Convert.ToInt32(port) : null,
                 e.TryGetValue("DeviceType", out var dtype) ? dtype?.ToString() : null,
-                e.TryGetValue("MonitorRecordingStatus", out var monitor) && monitor != null && bool.TryParse(monitor.ToString(), out var m) && m,
+                monitorRecordingStatus,
                 e.TryGetValue("StatusEndpoint", out var endpoint) ? endpoint?.ToString() : null,
                 e.TryGetValue("StatusPollingIntervalSeconds", out var interval) && interval != null ? Convert.ToInt32(interval) : 60,
                 e.TryGetValue("Status", out var status) ? status?.ToString() ?? "Pending" : "Pending"

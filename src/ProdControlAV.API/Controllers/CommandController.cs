@@ -113,6 +113,9 @@ public class CommandController : ControllerBase
             RequestBody = dto.RequestBody?.Trim(),
             RequestHeaders = dto.RequestHeaders?.Trim(),
             RequireDeviceOnline = dto.RequireDeviceOnline ?? true,
+            MonitorRecordingStatus = dto.MonitorRecordingStatus ?? false,
+            StatusEndpoint = dto.StatusEndpoint?.Trim(),
+            StatusPollingIntervalSeconds = dto.StatusPollingIntervalSeconds ?? 60,
             CreatedUtc = DateTimeOffset.UtcNow
         };
 
@@ -155,6 +158,15 @@ public class CommandController : ControllerBase
         
         if (dto.RequireDeviceOnline.HasValue)
             command.RequireDeviceOnline = dto.RequireDeviceOnline.Value;
+        
+        if (dto.MonitorRecordingStatus.HasValue)
+            command.MonitorRecordingStatus = dto.MonitorRecordingStatus.Value;
+        
+        if (dto.StatusEndpoint is not null)
+            command.StatusEndpoint = dto.StatusEndpoint.Trim();
+        
+        if (dto.StatusPollingIntervalSeconds.HasValue)
+            command.StatusPollingIntervalSeconds = dto.StatusPollingIntervalSeconds.Value;
 
         command.UpdatedUtc = DateTimeOffset.UtcNow;
 
@@ -263,7 +275,10 @@ public class CommandController : ControllerBase
         string? HttpMethod,
         string? RequestBody,
         string? RequestHeaders,
-        bool? RequireDeviceOnline);
+        bool? RequireDeviceOnline,
+        bool? MonitorRecordingStatus,
+        string? StatusEndpoint,
+        int? StatusPollingIntervalSeconds);
 
     public record UpdateCommandDto(
         string? CommandName,
@@ -273,7 +288,10 @@ public class CommandController : ControllerBase
         string? HttpMethod,
         string? RequestBody,
         string? RequestHeaders,
-        bool? RequireDeviceOnline);
+        bool? RequireDeviceOnline,
+        bool? MonitorRecordingStatus,
+        string? StatusEndpoint,
+        int? StatusPollingIntervalSeconds);
 
     // Legacy DeviceAction endpoints for backward compatibility
     [HttpGet("getqueue/{deviceId}")]
