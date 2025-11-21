@@ -87,10 +87,13 @@ public sealed class UpdateService : BackgroundService
                         {
                             _logger.LogInformation("Auto-install is enabled. Downloading update...");
                             
-                            // Download and install update
-                            // Note: This is a simplified approach. In production, you may want to
-                            // implement more sophisticated download/install logic with the full
-                            // NetSparkle event system once the correct API is determined.
+                            // Note: NetSparkle's CheckForUpdatesQuietly() only checks for updates.
+                            // In headless mode without UI, actual download and installation
+                            // requires additional implementation or using the full event-driven API.
+                            // For now, we log the availability and rely on manual update or
+                            // future enhancement to implement download/install logic.
+                            // The user should monitor logs and apply updates manually or
+                            // wait for future enhancement of this service.
                             _logger.LogInformation("Update will be applied on next agent restart.");
                             _logger.LogInformation("Please configure systemd with Restart=always to auto-restart after update.");
                         }
@@ -125,13 +128,6 @@ public sealed class UpdateService : BackgroundService
         {
             _logger.LogError(ex, "Failed to initialize update system");
         }
-    }
-
-    private static string GetAgentVersion()
-    {
-        var assembly = typeof(UpdateService).Assembly;
-        var version = assembly.GetName().Version;
-        return version?.ToString() ?? "0.0.0";
     }
 
     public override void Dispose()

@@ -29,6 +29,7 @@ env:
   DOTNET_VERSION: '8.0.x'
   PROJECT_PATH: 'src/ProdControlAV.Agent/ProdControlAV.Agent.csproj'
   PUBLISH_OUTPUT: 'publish/agent'
+  # Azure Storage container name - can be customized for different environments
   AZURE_STORAGE_CONTAINER: 'updates'
   
 jobs:
