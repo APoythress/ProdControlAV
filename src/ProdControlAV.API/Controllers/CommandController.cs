@@ -236,6 +236,10 @@ public class CommandController : ControllerBase
             QueuedByUserId: userId,
             DeviceIp: device.Ip,
             DevicePort: device.Port,
+            DeviceType: device.Type,
+            MonitorRecordingStatus: command.MonitorRecordingStatus,
+            StatusEndpoint: command.StatusEndpoint,
+            StatusPollingIntervalSeconds: command.StatusPollingIntervalSeconds,
             Status: "Pending"
         );
 

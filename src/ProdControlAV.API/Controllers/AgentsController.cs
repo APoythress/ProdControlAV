@@ -544,7 +544,11 @@ public sealed class AgentsController : ControllerBase
                         requestBody = firstCmd.RequestBody,
                         requestHeaders = firstCmd.RequestHeaders,
                         deviceIp = firstCmd.DeviceIp,
-                        devicePort = firstCmd.DevicePort
+                        devicePort = firstCmd.DevicePort,
+                        deviceType = firstCmd.DeviceType,
+                        monitorRecordingStatus = firstCmd.MonitorRecordingStatus,
+                        statusEndpoint = firstCmd.StatusEndpoint,
+                        statusPollingIntervalSeconds = firstCmd.StatusPollingIntervalSeconds
                     })
                 };
 
