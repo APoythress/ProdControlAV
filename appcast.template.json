@@ -1,0 +1,23 @@
+{
+  "title": "ProdControlAV Agent",
+  "language": "en",
+  "description": "Automatic updates for ProdControlAV Agent",
+  "items": [
+    {
+      "title": "Version 0.2.0",
+      "version": "0.2.0",
+      "short_version": "0.2.0",
+      "pub_date": "2024-01-01T00:00:00Z",
+      "url": "https://yourstorageaccount.blob.core.windows.net/updates/ProdControlAV-Agent-0.2.0-linux-arm64.zip",
+      "description": "Initial release with automatic update support",
+      "size": 0,
+      "type": "application/zip",
+      "signature": {
+        "ed25519": "BASE64_SIGNATURE_WILL_BE_GENERATED_BY_SIGN_SCRIPT"
+      },
+      "os": "linux",
+      "critical_update": false,
+      "min_system_version": "0.0.0"
+    }
+  ]
+}

@@ -18,6 +18,7 @@ builder.Logging.AddConsole();
 // Bind options
 builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("Polling"));
 builder.Services.Configure<ApiOptions>(builder.Configuration.GetSection("Api"));
+builder.Services.Configure<UpdateOptions>(builder.Configuration.GetSection("Update"));
 
 // Post-configure ApiOptions to handle environment variable fallback and validation
 builder.Services.PostConfigure<ApiOptions>(options =>
@@ -97,5 +98,6 @@ builder.Services.AddSingleton<IDeviceSource>(sp =>
 // Hosted workers - DeviceSource must be registered as hosted service to start background processing
 builder.Services.AddHostedService(sp => (DeviceSource)sp.GetRequiredService<IDeviceSource>());
 builder.Services.AddHostedService<AgentService>();
+builder.Services.AddHostedService<UpdateService>();
 
 await builder.Build().RunAsync();

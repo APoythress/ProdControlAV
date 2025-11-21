@@ -1,0 +1,216 @@
+name: Agent Release Build
+
+# This workflow builds the ProdControlAV Agent for Raspberry Pi (linux-arm64),
+# signs the release with Ed25519, generates an appcast manifest,
+# and uploads both to Azure Blob Storage for automatic updates.
+
+on:
+  push:
+    tags:
+      - 'agent-v*.*.*'  # Trigger on tags like agent-v0.2.0, agent-v1.0.0, etc.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 0.2.0)'
+        required: true
+        type: string
+      description:
+        description: 'Release description'
+        required: false
+        default: 'Release build'
+        type: string
+      critical:
+        description: 'Mark as critical update'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  PROJECT_PATH: 'src/ProdControlAV.Agent/ProdControlAV.Agent.csproj'
+  PUBLISH_OUTPUT: 'publish/agent'
+  AZURE_STORAGE_CONTAINER: 'updates'
+  
+jobs:
+  build-and-release:
+    name: Build and Release Agent
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            # Extract version from tag (agent-v0.2.0 -> 0.2.0)
+            VERSION="${GITHUB_REF#refs/tags/agent-v}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Release version: $VERSION"
+      
+      - name: Restore dependencies
+        run: dotnet restore
+      
+      - name: Build solution
+        run: dotnet build --configuration Release --no-restore
+      
+      - name: Publish agent for linux-arm64
+        run: |
+          dotnet publish ${{ env.PROJECT_PATH }} \
+            -c Release \
+            -r linux-arm64 \
+            --self-contained true \
+            -o ${{ env.PUBLISH_OUTPUT }} \
+            -p:Version=${{ steps.version.outputs.version }} \
+            -p:AssemblyVersion=${{ steps.version.outputs.version }}.0 \
+            -p:FileVersion=${{ steps.version.outputs.version }}.0
+      
+      - name: Create release ZIP
+        run: |
+          cd ${{ env.PUBLISH_OUTPUT }}
+          zip -r ../ProdControlAV-Agent-${{ steps.version.outputs.version }}-linux-arm64.zip .
+          cd ..
+          echo "ZIP created: $(ls -lh ProdControlAV-Agent-${{ steps.version.outputs.version }}-linux-arm64.zip)"
+      
+      - name: Setup Python for signing scripts
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install PyNaCl
+      
+      - name: Sign release ZIP with Ed25519
+        id: sign
+        env:
+          NETSPARKLE_PRIVATE_KEY: ${{ secrets.NETSPARKLE_PRIVATE_KEY }}
+        run: |
+          # Sign the ZIP file
+          SIGNATURE=$(python .github/scripts/sign_zip.py "publish/ProdControlAV-Agent-${{ steps.version.outputs.version }}-linux-arm64.zip")
+          echo "signature=$SIGNATURE" >> $GITHUB_OUTPUT
+          echo "Signature generated successfully"
+          
+          # Get file size for appcast
+          FILE_SIZE=$(stat -c%s "publish/ProdControlAV-Agent-${{ steps.version.outputs.version }}-linux-arm64.zip")
+          echo "size=$FILE_SIZE" >> $GITHUB_OUTPUT
+          echo "File size: $FILE_SIZE bytes"
+      
+      - name: Generate appcast manifest
+        run: |
+          # Determine description
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            DESCRIPTION="${{ inputs.description }}"
+            CRITICAL="${{ inputs.critical }}"
+          else
+            DESCRIPTION="Release version ${{ steps.version.outputs.version }}"
+            CRITICAL="false"
+          fi
+          
+          # Determine Azure Blob URL (customize this for your storage account)
+          # Format: https://<storage-account>.blob.core.windows.net/<container>/<file>
+          # Replace 'yourstorageaccount' with your actual Azure Storage account name
+          BLOB_BASE_URL="${{ secrets.AZURE_BLOB_BASE_URL }}"
+          if [ -z "$BLOB_BASE_URL" ]; then
+            echo "ERROR: AZURE_BLOB_BASE_URL secret not set"
+            exit 1
+          fi
+          DOWNLOAD_URL="${BLOB_BASE_URL}/${{ env.AZURE_STORAGE_CONTAINER }}/ProdControlAV-Agent-${{ steps.version.outputs.version }}-linux-arm64.zip"
+          
+          # Generate appcast
+          python .github/scripts/make_appcast.py \
+            --template appcast.template.json \
+            --version "${{ steps.version.outputs.version }}" \
+            --url "$DOWNLOAD_URL" \
+            --signature "${{ steps.sign.outputs.signature }}" \
+            --size "${{ steps.sign.outputs.size }}" \
+            --description "$DESCRIPTION" \
+            --output publish/appcast.json \
+            $([ "$CRITICAL" == "true" ] && echo "--critical" || echo "")
+          
+          echo "Appcast manifest generated:"
+          cat publish/appcast.json
+      
+      - name: Upload to Azure Blob Storage
+        env:
+          AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+        run: |
+          # Install Azure CLI
+          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+          
+          # Upload ZIP file
+          az storage blob upload \
+            --connection-string "$AZURE_STORAGE_CONNECTION_STRING" \
+            --container-name "${{ env.AZURE_STORAGE_CONTAINER }}" \
+            --name "ProdControlAV-Agent-${{ steps.version.outputs.version }}-linux-arm64.zip" \
+            --file "publish/ProdControlAV-Agent-${{ steps.version.outputs.version }}-linux-arm64.zip" \
+            --overwrite
+          
+          echo "✓ ZIP uploaded to Azure Blob Storage"
+          
+          # Upload appcast manifest
+          az storage blob upload \
+            --connection-string "$AZURE_STORAGE_CONNECTION_STRING" \
+            --container-name "${{ env.AZURE_STORAGE_CONTAINER }}" \
+            --name "appcast.json" \
+            --file "publish/appcast.json" \
+            --content-type "application/json" \
+            --overwrite
+          
+          echo "✓ Appcast manifest uploaded to Azure Blob Storage"
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            publish/ProdControlAV-Agent-${{ steps.version.outputs.version }}-linux-arm64.zip
+            publish/appcast.json
+          body: |
+            ## ProdControlAV Agent Release ${{ steps.version.outputs.version }}
+            
+            ### Installation
+            This release is automatically deployed to Azure Blob Storage for automatic updates.
+            
+            **For manual installation:**
+            1. Download the ZIP file
+            2. Extract to `/opt/prodcontrolav/agent/`
+            3. Update systemd service if needed
+            4. Restart the agent: `sudo systemctl restart prodcontrolav-agent`
+            
+            ### Automatic Updates
+            Agents configured with automatic updates will receive this release automatically.
+            
+            **Files:**
+            - `ProdControlAV-Agent-${{ steps.version.outputs.version }}-linux-arm64.zip` - Agent binary (linux-arm64)
+            - `appcast.json` - Update manifest
+            
+            **Signature:** Ed25519 signed for security
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Summary
+        run: |
+          echo "## Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Agent version ${{ steps.version.outputs.version }} built successfully" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Release signed with Ed25519" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Appcast manifest generated" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Uploaded to Azure Blob Storage" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Files" >> $GITHUB_STEP_SUMMARY
+          echo "- ZIP: ProdControlAV-Agent-${{ steps.version.outputs.version }}-linux-arm64.zip" >> $GITHUB_STEP_SUMMARY
+          echo "- Size: ${{ steps.sign.outputs.size }} bytes" >> $GITHUB_STEP_SUMMARY
+          echo "- Signature: \`${{ steps.sign.outputs.signature }}\`" >> $GITHUB_STEP_SUMMARY

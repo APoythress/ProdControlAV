@@ -58,6 +58,14 @@ Desktop.ini
 # Publish output
 publish/
 
+# Update release artifacts
+*.zip
+appcast.json
+!appcast.template.json
+
+# NetSparkle temporary update files
+*-update.zip
+
 # Deploy env files
 deploy/
 

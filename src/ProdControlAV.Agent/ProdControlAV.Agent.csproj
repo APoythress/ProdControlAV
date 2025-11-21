@@ -16,6 +16,7 @@
     <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.8" />
+    <PackageReference Include="NetSparkleUpdater.SparkleUpdater" Version="3.0.4" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ProdControlAV.Core\ProdControlAV.Core.csproj" />
@@ -28,16 +29,7 @@
   <Target Name="StripForeignAppsettings" BeforeTargets="ProcessPublishFiles">
     <ItemGroup>
       <!-- Remove appsettings* that originate from the API project -->
-      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
-                             Condition="
-          (
-            $([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').ToLower()) == 'appsettings.json'
-            OR
-            $([System.Text.RegularExpressions.Regex]::IsMatch('%(ResolvedFileToPublish.RelativePath)', '^appsettings\..*\.json$', System.Text.RegularExpressions.RegexOptions.IgnoreCase))
-          )
-          AND
-          $([System.String]::Copy('%(ResolvedFileToPublish.Identity)').ToLower()).Contains('prodcontrolav.api')
-        " />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="&#xA;          (&#xA;            $([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').ToLower()) == 'appsettings.json'&#xA;            OR&#xA;            $([System.Text.RegularExpressions.Regex]::IsMatch('%(ResolvedFileToPublish.RelativePath)', '^appsettings\..*\.json$', System.Text.RegularExpressions.RegexOptions.IgnoreCase))&#xA;          )&#xA;          AND&#xA;          $([System.String]::Copy('%(ResolvedFileToPublish.Identity)').ToLower()).Contains('prodcontrolav.api')&#xA;        " />
     </ItemGroup>
   </Target>
 </Project>
