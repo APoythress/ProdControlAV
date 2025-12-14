@@ -47,8 +47,16 @@
             <div class="col-9 col-sm-6">
                 <label class="form-label">Device Ip</label>
                 <InputText class="form-control" @bind-Value="_device.Ip" />
-                <div class="form-text">What brand is your device?</div>
+                <div class="form-text">Enter the IP address of the device</div>
             </div>
+            <div class="col-9 col-sm-6">
+                <label class="form-label">Port (Optional)</label>
+                <InputNumber class="form-control" @bind-Value="_device.Port" />
+                <div class="form-text">Default is 80 if not specified</div>
+            </div>
+        </div>
+
+        <div class="row mt-2">
             <div class="col">
                 <div class="form-check form-switch">
                     <InputCheckbox class="form-check-input" @bind-Value="_device.AllowTelNet"/>
