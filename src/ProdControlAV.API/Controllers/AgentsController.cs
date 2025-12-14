@@ -771,7 +771,9 @@ public sealed class AgentsController : ControllerBase
                 return Ok(new AgentUpdateInfoDto { LatestVersion = null, Description = null, IsCritical = false });
             }
 
-            using var httpClient = new HttpClient();
+            // Use IHttpClientFactory to avoid socket exhaustion
+            var httpClientFactory = HttpContext.RequestServices.GetRequiredService<IHttpClientFactory>();
+            var httpClient = httpClientFactory.CreateClient();
             httpClient.Timeout = TimeSpan.FromSeconds(10);
             
             var response = await httpClient.GetAsync(appcastUrl, ct);

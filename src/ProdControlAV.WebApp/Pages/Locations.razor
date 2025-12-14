@@ -58,9 +58,7 @@
                                     {
                                         <span class="ms-2" 
                                               style="cursor: pointer; color: #28a745;"
-                                              title="@GetUpdateTooltip()"
-                                              @onmouseenter="@(() => ShowUpdateTooltip(agent.AgentId))"
-                                              @onmouseleave="@(() => HideUpdateTooltip())">
+                                              title="@GetUpdateTooltip()">
                                             <i class="fas fa-arrow-up"></i>
                                         </span>
                                     }
@@ -340,16 +338,6 @@
         {
             return "MINOR";
         }
-    }
-
-    private void ShowUpdateTooltip(Guid agentId)
-    {
-        // Tooltip is handled via HTML title attribute
-    }
-
-    private void HideUpdateTooltip()
-    {
-        // Tooltip is handled via HTML title attribute
     }
 
     // DTOs
