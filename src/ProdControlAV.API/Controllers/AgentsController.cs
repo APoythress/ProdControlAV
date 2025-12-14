@@ -571,11 +571,14 @@ public sealed class AgentsController : ControllerBase
                     return Ok(new { command = (CommandEnvelope?)null });
                 }
                 
+                // Capture current attempt count before incrementing
+                var currentAttempt = firstCmd.AttemptCount + 1; // Will be attempt 1, 2, or 3
+                
                 // Mark as processing and increment attempt count
                 await queueStore.MarkAsProcessingAsync(tenantId, firstCmd.CommandId, ct);
                 
-                _logger.LogInformation("[COMMANDS/POLL] Returning command {CommandId} for execution (attempt {AttemptCount})", 
-                    firstCmd.CommandId, firstCmd.AttemptCount + 1);
+                _logger.LogInformation("[COMMANDS/POLL] Returning command {CommandId} for execution (attempt {AttemptCount} of 3)", 
+                    firstCmd.CommandId, currentAttempt);
                 
                 var envelope = new CommandEnvelope
                 {

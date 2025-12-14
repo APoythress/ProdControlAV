@@ -1,5 +1,6 @@
 using Azure;
 using Azure.Data.Tables;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
@@ -16,8 +17,13 @@ namespace ProdControlAV.Infrastructure.Services
     public sealed class TableCommandQueueStore : ICommandQueueStore
     {
         private readonly TableClient _table;
+        private readonly ILogger<TableCommandQueueStore>? _logger;
 
-        public TableCommandQueueStore(TableClient table) => _table = table;
+        public TableCommandQueueStore(TableClient table, ILogger<TableCommandQueueStore>? logger = null)
+        {
+            _table = table;
+            _logger = logger;
+        }
 
         public async Task EnqueueAsync(CommandQueueDto command, CancellationToken ct)
         {
@@ -110,9 +116,15 @@ namespace ProdControlAV.Infrastructure.Services
                             isStuck = true;
                         }
                     }
-                    catch
+                    catch (InvalidCastException ex)
                     {
-                        // Skip if can't parse
+                        // Cannot parse ProcessingStartedUtc, skip this command
+                        _logger?.LogWarning(ex, "Failed to parse ProcessingStartedUtc for stuck command check");
+                    }
+                    catch (FormatException ex)
+                    {
+                        // Cannot parse ProcessingStartedUtc, skip this command
+                        _logger?.LogWarning(ex, "Failed to parse ProcessingStartedUtc for stuck command check");
                     }
                     
                     if (isStuck)
@@ -209,18 +221,44 @@ namespace ProdControlAV.Infrastructure.Services
             }
         }
         
-        private static CommandQueueDto MapToDto(TableEntity e)
+        private CommandQueueDto MapToDto(TableEntity e)
         {
             bool monitorRecordingStatus = false;
             if (e.TryGetValue("MonitorRecordingStatus", out var monitor) && monitor != null)
             {
-                try { monitorRecordingStatus = Convert.ToBoolean(monitor); } catch { }
+                try 
+                { 
+                    monitorRecordingStatus = Convert.ToBoolean(monitor); 
+                } 
+                catch (InvalidCastException ex)
+                {
+                    _logger?.LogWarning(ex, "Failed to parse MonitorRecordingStatus, defaulting to false");
+                }
+                catch (FormatException ex)
+                {
+                    _logger?.LogWarning(ex, "Failed to parse MonitorRecordingStatus, defaulting to false");
+                }
             }
             
             int attemptCount = 0;
             if (e.TryGetValue("AttemptCount", out var attemptValue) && attemptValue != null)
             {
-                try { attemptCount = Convert.ToInt32(attemptValue); } catch { }
+                try 
+                { 
+                    attemptCount = Convert.ToInt32(attemptValue); 
+                } 
+                catch (InvalidCastException ex)
+                {
+                    _logger?.LogWarning(ex, "Failed to parse AttemptCount, defaulting to 0");
+                }
+                catch (FormatException ex)
+                {
+                    _logger?.LogWarning(ex, "Failed to parse AttemptCount, defaulting to 0");
+                }
+                catch (OverflowException ex)
+                {
+                    _logger?.LogWarning(ex, "AttemptCount overflow, defaulting to 0");
+                }
             }
             
             return new CommandQueueDto(
