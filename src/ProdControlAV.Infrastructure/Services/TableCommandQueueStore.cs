@@ -1,5 +1,6 @@
 using Azure;
 using Azure.Data.Tables;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
@@ -16,8 +17,13 @@ namespace ProdControlAV.Infrastructure.Services
     public sealed class TableCommandQueueStore : ICommandQueueStore
     {
         private readonly TableClient _table;
+        private readonly ILogger<TableCommandQueueStore>? _logger;
 
-        public TableCommandQueueStore(TableClient table) => _table = table;
+        public TableCommandQueueStore(TableClient table, ILogger<TableCommandQueueStore>? logger = null)
+        {
+            _table = table;
+            _logger = logger;
+        }
 
         public async Task EnqueueAsync(CommandQueueDto command, CancellationToken ct)
         {
@@ -41,7 +47,8 @@ namespace ProdControlAV.Infrastructure.Services
                 ["MonitorRecordingStatus"] = command.MonitorRecordingStatus,
                 ["StatusEndpoint"] = command.StatusEndpoint,
                 ["StatusPollingIntervalSeconds"] = command.StatusPollingIntervalSeconds,
-                ["Status"] = command.Status
+                ["Status"] = command.Status,
+                ["AttemptCount"] = command.AttemptCount
             };
 
             await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
@@ -82,6 +89,70 @@ namespace ProdControlAV.Infrastructure.Services
             }
         }
         
+        public async IAsyncEnumerable<CommandQueueDto> GetStuckProcessingCommandsAsync(
+            Guid tenantId,
+            TimeSpan timeout,
+            [EnumeratorCancellation] CancellationToken ct)
+        {
+            var partitionKey = tenantId.ToString().ToLowerInvariant();
+            var cutoffTime = DateTimeOffset.UtcNow.Add(-timeout);
+        
+            // Get all processing commands for the tenant
+            var filter = $"PartitionKey eq '{partitionKey}' and Status eq 'Processing'";
+        
+            var query = _table.QueryAsync<TableEntity>(filter, cancellationToken: ct);
+        
+            await foreach (var e in query)
+            {
+                // Check if ProcessingStartedUtc is older than cutoff
+                if (e.TryGetValue("ProcessingStartedUtc", out var startedValue) && startedValue != null)
+                {
+                    var isStuck = false;
+                    try
+                    {
+                        var startedUtc = (DateTimeOffset)startedValue;
+                        if (startedUtc < cutoffTime)
+                        {
+                            isStuck = true;
+                        }
+                    }
+                    catch (InvalidCastException ex)
+                    {
+                        // Cannot parse ProcessingStartedUtc, skip this command
+                        _logger?.LogWarning(ex, "Failed to parse ProcessingStartedUtc for stuck command check");
+                    }
+                    catch (FormatException ex)
+                    {
+                        // Cannot parse ProcessingStartedUtc, skip this command
+                        _logger?.LogWarning(ex, "Failed to parse ProcessingStartedUtc for stuck command check");
+                    }
+                    
+                    if (isStuck)
+                    {
+                        yield return MapToDto(e);
+                    }
+                }
+            }
+        }
+        
+        public async Task ResetToPendingAsync(Guid tenantId, Guid commandId, CancellationToken ct)
+        {
+            var partitionKey = tenantId.ToString().ToLowerInvariant();
+            var commandIdStr = commandId.ToString();
+        
+            var filter = $"PartitionKey eq '{partitionKey}' and CommandId eq '{commandIdStr}'";
+        
+            var query = _table.QueryAsync<TableEntity>(filter, maxPerPage: 1, cancellationToken: ct);
+        
+            await foreach (var entity in query)
+            {
+                entity["Status"] = "Pending";
+                entity["ProcessingStartedUtc"] = null;
+                await _table.UpdateEntityAsync(entity, entity.ETag, TableUpdateMode.Replace, ct);
+                return;
+            }
+        }
+        
         public async Task MarkAsProcessingAsync(Guid tenantId, Guid commandId, CancellationToken ct)
         {
             var partitionKey = tenantId.ToString().ToLowerInvariant();
@@ -93,8 +164,50 @@ namespace ProdControlAV.Infrastructure.Services
         
             await foreach (var entity in query)
             {
+                // Increment attempt count with comprehensive error handling
+                int attemptCount = 0;
+                if (entity.TryGetValue("AttemptCount", out var attemptValue) && attemptValue != null)
+                {
+                    try
+                    {
+                        attemptCount = Convert.ToInt32(attemptValue);
+                    }
+                    catch (InvalidCastException ex)
+                    {
+                        _logger?.LogWarning(ex, "Failed to parse AttemptCount in MarkAsProcessingAsync, defaulting to 0");
+                    }
+                    catch (FormatException ex)
+                    {
+                        _logger?.LogWarning(ex, "Failed to parse AttemptCount in MarkAsProcessingAsync, defaulting to 0");
+                    }
+                    catch (OverflowException ex)
+                    {
+                        _logger?.LogWarning(ex, "AttemptCount overflow in MarkAsProcessingAsync, defaulting to 0");
+                    }
+                }
+                attemptCount++;
+                
+                entity["AttemptCount"] = attemptCount;
                 entity["Status"] = "Processing";
                 entity["ProcessingStartedUtc"] = DateTimeOffset.UtcNow;
+                await _table.UpdateEntityAsync(entity, entity.ETag, TableUpdateMode.Replace, ct);
+                return;
+            }
+        }
+        
+        public async Task MarkAsFailedAsync(Guid tenantId, Guid commandId, CancellationToken ct)
+        {
+            var partitionKey = tenantId.ToString().ToLowerInvariant();
+            var commandIdStr = commandId.ToString();
+        
+            var filter = $"PartitionKey eq '{partitionKey}' and CommandId eq '{commandIdStr}'";
+        
+            var query = _table.QueryAsync<TableEntity>(filter, maxPerPage: 1, cancellationToken: ct);
+        
+            await foreach (var entity in query)
+            {
+                entity["Status"] = "Failed";
+                entity["FailedUtc"] = DateTimeOffset.UtcNow;
                 await _table.UpdateEntityAsync(entity, entity.ETag, TableUpdateMode.Replace, ct);
                 return;
             }
@@ -123,12 +236,44 @@ namespace ProdControlAV.Infrastructure.Services
             }
         }
         
-        private static CommandQueueDto MapToDto(TableEntity e)
+        private CommandQueueDto MapToDto(TableEntity e)
         {
             bool monitorRecordingStatus = false;
             if (e.TryGetValue("MonitorRecordingStatus", out var monitor) && monitor != null)
             {
-                try { monitorRecordingStatus = Convert.ToBoolean(monitor); } catch { }
+                try 
+                { 
+                    monitorRecordingStatus = Convert.ToBoolean(monitor); 
+                } 
+                catch (InvalidCastException ex)
+                {
+                    _logger?.LogWarning(ex, "Failed to parse MonitorRecordingStatus, defaulting to false");
+                }
+                catch (FormatException ex)
+                {
+                    _logger?.LogWarning(ex, "Failed to parse MonitorRecordingStatus, defaulting to false");
+                }
+            }
+            
+            int attemptCount = 0;
+            if (e.TryGetValue("AttemptCount", out var attemptValue) && attemptValue != null)
+            {
+                try 
+                { 
+                    attemptCount = Convert.ToInt32(attemptValue); 
+                } 
+                catch (InvalidCastException ex)
+                {
+                    _logger?.LogWarning(ex, "Failed to parse AttemptCount, defaulting to 0");
+                }
+                catch (FormatException ex)
+                {
+                    _logger?.LogWarning(ex, "Failed to parse AttemptCount, defaulting to 0");
+                }
+                catch (OverflowException ex)
+                {
+                    _logger?.LogWarning(ex, "AttemptCount overflow, defaulting to 0");
+                }
             }
             
             return new CommandQueueDto(
@@ -149,7 +294,8 @@ namespace ProdControlAV.Infrastructure.Services
                 monitorRecordingStatus,
                 e.TryGetValue("StatusEndpoint", out var endpoint) ? endpoint?.ToString() : null,
                 e.TryGetValue("StatusPollingIntervalSeconds", out var interval) && interval != null ? Convert.ToInt32(interval) : 60,
-                e.TryGetValue("Status", out var status) ? status?.ToString() ?? "Pending" : "Pending"
+                e.TryGetValue("Status", out var status) ? status?.ToString() ?? "Pending" : "Pending",
+                attemptCount
             );
         }
     }

@@ -26,7 +26,8 @@ namespace ProdControlAV.Infrastructure.Services
         bool MonitorRecordingStatus = false,
         string? StatusEndpoint = null,
         int StatusPollingIntervalSeconds = 60,
-        string Status = "Pending");
+        string Status = "Pending",
+        int AttemptCount = 0);
 
     /// <summary>
     /// Represents command execution history in Table Storage
@@ -65,9 +66,24 @@ namespace ProdControlAV.Infrastructure.Services
         IAsyncEnumerable<CommandQueueDto> GetPendingForTenantAsync(Guid tenantId, CancellationToken ct);
         
         /// <summary>
-        /// Mark command as processing
+        /// Get processing commands that have been stuck for longer than the timeout
+        /// </summary>
+        IAsyncEnumerable<CommandQueueDto> GetStuckProcessingCommandsAsync(Guid tenantId, TimeSpan timeout, CancellationToken ct);
+        
+        /// <summary>
+        /// Reset command from Processing back to Pending for retry
+        /// </summary>
+        Task ResetToPendingAsync(Guid tenantId, Guid commandId, CancellationToken ct);
+        
+        /// <summary>
+        /// Mark command as processing and increment attempt count
         /// </summary>
         Task MarkAsProcessingAsync(Guid tenantId, Guid commandId, CancellationToken ct);
+        
+        /// <summary>
+        /// Mark command as failed after max retries
+        /// </summary>
+        Task MarkAsFailedAsync(Guid tenantId, Guid commandId, CancellationToken ct);
         
         /// <summary>
         /// Remove command from queue after processing

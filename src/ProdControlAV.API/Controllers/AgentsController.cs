@@ -515,6 +515,20 @@ public sealed class AgentsController : ControllerBase
         {
             var queueStore = HttpContext.RequestServices.GetRequiredService<ICommandQueueStore>();
             
+            // First, check for stuck processing commands (stuck for more than 5 minutes) and reset them
+            var stuckCommands = new List<CommandQueueDto>();
+            await foreach (var cmd in queueStore.GetStuckProcessingCommandsAsync(tenantId, TimeSpan.FromMinutes(5), ct))
+            {
+                stuckCommands.Add(cmd);
+            }
+            
+            foreach (var stuckCmd in stuckCommands)
+            {
+                _logger.LogWarning("[COMMANDS/POLL] Found stuck command {CommandId} (attempt {AttemptCount}), resetting to Pending", 
+                    stuckCmd.CommandId, stuckCmd.AttemptCount);
+                await queueStore.ResetToPendingAsync(tenantId, stuckCmd.CommandId, ct);
+            }
+            
             // Get all pending commands for this tenant from Table Storage
             var pendingCommands = new List<CommandQueueDto>();
             await foreach (var cmd in queueStore.GetPendingForTenantAsync(tenantId, ct))
@@ -527,8 +541,49 @@ public sealed class AgentsController : ControllerBase
             {
                 var firstCmd = pendingCommands.First();
                 
-                // Mark as processing
+                // Check if command has exceeded max retry attempts (3 attempts)
+                // AttemptCount logic:
+                //   - AttemptCount=0: First poll, will become attempt 1
+                //   - AttemptCount=1: Second poll, will become attempt 2
+                //   - AttemptCount=2: Third poll, will become attempt 3
+                //   - AttemptCount=3: Already attempted 3 times, mark as failed
+                if (firstCmd.AttemptCount >= 3)
+                {
+                    _logger.LogWarning("[COMMANDS/POLL] Command {CommandId} exceeded max retry attempts ({AttemptCount}), marking as failed", 
+                        firstCmd.CommandId, firstCmd.AttemptCount);
+                    
+                    // Mark as failed in CommandQueue
+                    await queueStore.MarkAsFailedAsync(tenantId, firstCmd.CommandId, ct);
+                    
+                    // Record failure in CommandHistory
+                    var historyStore = HttpContext.RequestServices.GetRequiredService<ICommandHistoryStore>();
+                    var failureHistory = new CommandHistoryDto(
+                        ExecutionId: Guid.NewGuid(),
+                        CommandId: firstCmd.CommandId,
+                        TenantId: tenantId,
+                        DeviceId: firstCmd.DeviceId,
+                        CommandName: firstCmd.CommandName,
+                        ExecutedUtc: DateTimeOffset.UtcNow,
+                        Success: false,
+                        ErrorMessage: $"Command failed after {firstCmd.AttemptCount} attempts",
+                        Response: null,
+                        HttpStatusCode: null,
+                        ExecutionTimeMs: null
+                    );
+                    await historyStore.RecordExecutionAsync(failureHistory, ct);
+                    
+                    // Return null to indicate no command available (agent will continue polling)
+                    return Ok(new { command = (CommandEnvelope?)null });
+                }
+                
+                // Capture current attempt count before incrementing
+                var currentAttempt = firstCmd.AttemptCount + 1; // Will be attempt 1, 2, or 3
+                
+                // Mark as processing and increment attempt count
                 await queueStore.MarkAsProcessingAsync(tenantId, firstCmd.CommandId, ct);
+                
+                _logger.LogInformation("[COMMANDS/POLL] Returning command {CommandId} for execution (attempt {AttemptCount} of 3)", 
+                    firstCmd.CommandId, currentAttempt);
                 
                 var envelope = new CommandEnvelope
                 {
