@@ -542,6 +542,11 @@ public sealed class AgentsController : ControllerBase
                 var firstCmd = pendingCommands.First();
                 
                 // Check if command has exceeded max retry attempts (3 attempts)
+                // AttemptCount logic:
+                //   - AttemptCount=0: First poll, will become attempt 1
+                //   - AttemptCount=1: Second poll, will become attempt 2
+                //   - AttemptCount=2: Third poll, will become attempt 3
+                //   - AttemptCount=3: Already attempted 3 times, mark as failed
                 if (firstCmd.AttemptCount >= 3)
                 {
                     _logger.LogWarning("[COMMANDS/POLL] Command {CommandId} exceeded max retry attempts ({AttemptCount}), marking as failed", 
