@@ -164,11 +164,26 @@ namespace ProdControlAV.Infrastructure.Services
         
             await foreach (var entity in query)
             {
-                // Increment attempt count
+                // Increment attempt count with comprehensive error handling
                 int attemptCount = 0;
                 if (entity.TryGetValue("AttemptCount", out var attemptValue) && attemptValue != null)
                 {
-                    attemptCount = Convert.ToInt32(attemptValue);
+                    try
+                    {
+                        attemptCount = Convert.ToInt32(attemptValue);
+                    }
+                    catch (InvalidCastException ex)
+                    {
+                        _logger?.LogWarning(ex, "Failed to parse AttemptCount in MarkAsProcessingAsync, defaulting to 0");
+                    }
+                    catch (FormatException ex)
+                    {
+                        _logger?.LogWarning(ex, "Failed to parse AttemptCount in MarkAsProcessingAsync, defaulting to 0");
+                    }
+                    catch (OverflowException ex)
+                    {
+                        _logger?.LogWarning(ex, "AttemptCount overflow in MarkAsProcessingAsync, defaulting to 0");
+                    }
                 }
                 attemptCount++;
                 
