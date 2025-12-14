@@ -22,6 +22,10 @@ namespace ProdControlAV.Infrastructure.Services
         Guid QueuedByUserId,
         string? DeviceIp = null,
         int? DevicePort = null,
+        string? DeviceType = null,
+        bool MonitorRecordingStatus = false,
+        string? StatusEndpoint = null,
+        int StatusPollingIntervalSeconds = 60,
         string Status = "Pending");
 
     /// <summary>

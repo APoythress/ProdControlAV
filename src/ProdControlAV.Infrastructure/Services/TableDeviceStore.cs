@@ -58,6 +58,27 @@ namespace ProdControlAV.Infrastructure.Services
             }
         }
 
+        public async Task UpsertRecordingStatusAsync(Guid tenantId, Guid deviceId, bool recordingStatus, CancellationToken ct)
+        {
+            var partitionKey = tenantId.ToString().ToLowerInvariant();
+            var rowKey = deviceId.ToString();
+            
+            var entity = new TableEntity(partitionKey, rowKey)
+            {
+                ["RecordingStatus"] = recordingStatus
+            };
+            
+            try
+            {
+                // Use UpdateEntity with Merge mode - only update RecordingStatus field
+                await _table.UpdateEntityAsync(entity, ETag.All, TableUpdateMode.Merge, ct);
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+                // Device doesn't exist in table yet - skip recording status update silently
+            }
+        }
+
         public async Task DeleteAsync(Guid tenantId, Guid deviceId, CancellationToken ct)
         {
             try
@@ -165,6 +186,19 @@ namespace ProdControlAV.Infrastructure.Services
                     try { healthMetric = Convert.ToDouble(v); } catch { healthMetric = null; }
                 }
 
+                // RecordingStatus (nullable bool) - for Video devices
+                bool? recordingStatus = null;
+                if (e.TryGetValue("RecordingStatus", out v) && v != null)
+                {
+                    if (v is bool b) recordingStatus = b;
+                    else
+                    {
+                        var s = Convert.ToString(v);
+                        if (bool.TryParse(s, out var pb)) recordingStatus = pb;
+                        else if (int.TryParse(s, out var pi)) recordingStatus = pi != 0;
+                    }
+                }
+
                 yield return new DeviceDto(
                     Guid.Parse(e.RowKey),
                     name,
@@ -180,7 +214,8 @@ namespace ProdControlAV.Infrastructure.Services
                     string.IsNullOrWhiteSpace(status) ? null : status,
                     lastSeen,
                     lastPolled,
-                    healthMetric
+                    healthMetric,
+                    recordingStatus
                 );
             }
         }

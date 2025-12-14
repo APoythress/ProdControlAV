@@ -18,4 +18,5 @@ public class Device
     public DateTimeOffset? LastChecked { get; set; }
     public string? LastResponse { get; set; }
     public int PingFrequencySeconds { get; set; } = 300; // Default to 300 seconds (5 minutes)
+    public bool? RecordingStatus { get; set; } // For Video devices - true when recording, false when idle
 }

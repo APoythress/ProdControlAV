@@ -48,6 +48,9 @@ public class CommandService : ICommandService
     {
         TypeInfoResolver = new DefaultJsonTypeInfoResolver()
     };
+    
+    // Shared HttpClient for device communication to avoid socket exhaustion
+    private static readonly HttpClient s_deviceHttpClient = new() { Timeout = TimeSpan.FromSeconds(5) };
 
     public CommandService(HttpClient http, ILogger<CommandService> logger, IOptions<ApiOptions> api, IJwtAuthService jwtAuth)
     {
@@ -121,6 +124,11 @@ public class CommandService : ICommandService
         string message = "";
         string? response = null;
         int? httpStatusCode = null;
+        bool monitorRecordingStatus = false;
+        string? statusEndpoint = null;
+        string? deviceIp = null;
+        int devicePort = 80;
+        string? deviceType = null;
 
         try
         {
@@ -130,6 +138,23 @@ public class CommandService : ICommandService
                 var payloadJson = JsonSerializer.Deserialize<JsonElement>(command.Payload, s_jsonOptions);
                 
                 var commandType = payloadJson.GetProperty("commandType").GetString();
+                
+                // Extract device info for potential recording status check
+                deviceIp = payloadJson.TryGetProperty("deviceIp", out var ipProp) ? ipProp.GetString() : null;
+                devicePort = payloadJson.TryGetProperty("devicePort", out var portProp) && portProp.ValueKind != JsonValueKind.Null 
+                    ? portProp.GetInt32() : 80;
+                deviceType = payloadJson.TryGetProperty("deviceType", out var typeProp) ? typeProp.GetString() : null;
+                
+                // Check if we should monitor recording status
+                if (payloadJson.TryGetProperty("monitorRecordingStatus", out var monitorProp))
+                {
+                    monitorRecordingStatus = monitorProp.GetBoolean();
+                }
+                
+                if (monitorRecordingStatus && payloadJson.TryGetProperty("statusEndpoint", out var endpointProp))
+                {
+                    statusEndpoint = endpointProp.GetString();
+                }
                 
                 if (commandType == "REST")
                 {
@@ -174,6 +199,13 @@ public class CommandService : ICommandService
                         _logger.LogWarning(message);
                         break;
                 }
+            }
+            
+            // If command was successful and we should monitor recording status, check it
+            if (success && monitorRecordingStatus && !string.IsNullOrEmpty(statusEndpoint) 
+                && !string.IsNullOrEmpty(deviceIp) && deviceType == "Video")
+            {
+                await CheckAndUpdateRecordingStatusAsync(command.DeviceId, deviceIp, devicePort, statusEndpoint, ct);
             }
         }
         catch (Exception ex)
@@ -239,8 +271,7 @@ public class CommandService : ICommandService
                 request.Content = new StringContent(requestBody, System.Text.Encoding.UTF8, "application/json");
             }
 
-            using var deviceClient = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-            using var httpResponse = await deviceClient.SendAsync(request, ct);
+            using var httpResponse = await s_deviceHttpClient.SendAsync(request, ct);
             
             var responseBody = await httpResponse.Content.ReadAsStringAsync(ct);
             var statusCode = (int)httpResponse.StatusCode;
@@ -350,5 +381,103 @@ public class CommandService : ICommandService
         // For security, this is a controlled status check operation
         _logger.LogInformation("Executing status command for device {DeviceId}", command.DeviceId);
         await Task.Delay(50, ct); // Simulate status check
+    }
+    
+    private async Task CheckAndUpdateRecordingStatusAsync(Guid deviceId, string deviceIp, int devicePort, string statusEndpoint, CancellationToken ct)
+    {
+        try
+        {
+            _logger.LogInformation("Checking recording status for Video device {DeviceId} at endpoint {StatusEndpoint}", 
+                deviceId, statusEndpoint);
+            
+            // Build the full URL for the status check
+            // Support both HTTP and HTTPS - prefer HTTPS if port 443 is specified
+            var protocol = devicePort == 443 ? "https" : "http";
+            var baseUri = new Uri($"{protocol}://{deviceIp}:{devicePort}");
+            var path = statusEndpoint?.TrimStart('/') ?? "";
+            var fullUri = new Uri(baseUri, path);
+            
+            using var statusResponse = await s_deviceHttpClient.GetAsync(fullUri, ct);
+            
+            if (statusResponse.IsSuccessStatusCode)
+            {
+                var statusJson = await statusResponse.Content.ReadAsStringAsync(ct);
+                _logger.LogDebug("Recording status response: {Response}", statusJson);
+                
+                // Try to parse the response to determine recording status
+                // Assume the response is JSON with a "recording" boolean field
+                bool isRecording = false;
+                try
+                {
+                    var json = JsonSerializer.Deserialize<JsonElement>(statusJson, s_jsonOptions);
+                    if (json.TryGetProperty("recording", out var recordingProp))
+                    {
+                        isRecording = recordingProp.GetBoolean();
+                    }
+                    else if (json.TryGetProperty("isRecording", out var isRecordingProp))
+                    {
+                        isRecording = isRecordingProp.GetBoolean();
+                    }
+                }
+                catch
+                {
+                    // If parsing fails, assume not recording
+                    _logger.LogWarning("Failed to parse recording status response, assuming not recording");
+                }
+                
+                // Update recording status via API
+                await UpdateRecordingStatusAsync(deviceId, isRecording, ct);
+            }
+            else
+            {
+                _logger.LogWarning("Failed to get recording status: HTTP {StatusCode}", statusResponse.StatusCode);
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            _logger.LogWarning("Recording status check timed out for device {DeviceId}", deviceId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error checking recording status for device {DeviceId}", deviceId);
+        }
+    }
+    
+    private async Task UpdateRecordingStatusAsync(Guid deviceId, bool recordingStatus, CancellationToken ct)
+    {
+        try
+        {
+            // Get valid JWT token
+            var token = await _jwtAuth.GetValidTokenAsync(ct);
+            if (string.IsNullOrEmpty(token))
+            {
+                _logger.LogWarning("Failed to obtain valid JWT token for updating recording status");
+                return;
+            }
+            
+            var updateRequest = new
+            {
+                deviceId,
+                recordingStatus
+            };
+            
+            var endpoint = "/api/agents/recording-status";
+            
+            using var req = new HttpRequestMessage(HttpMethod.Post, endpoint)
+            {
+                Content = JsonContent.Create(updateRequest, options: s_jsonOptions)
+            };
+            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            
+            using var res = await _http.SendAsync(req, ct);
+            res.EnsureSuccessStatusCode();
+            
+            _logger.LogInformation("Recording status updated for device {DeviceId}: {RecordingStatus}", 
+                deviceId, recordingStatus ? "Recording" : "Idle");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to update recording status for device {DeviceId}", deviceId);
+        }
     }
 }

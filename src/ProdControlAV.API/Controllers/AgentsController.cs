@@ -544,7 +544,11 @@ public sealed class AgentsController : ControllerBase
                         requestBody = firstCmd.RequestBody,
                         requestHeaders = firstCmd.RequestHeaders,
                         deviceIp = firstCmd.DeviceIp,
-                        devicePort = firstCmd.DevicePort
+                        devicePort = firstCmd.DevicePort,
+                        deviceType = firstCmd.DeviceType,
+                        monitorRecordingStatus = firstCmd.MonitorRecordingStatus,
+                        statusEndpoint = firstCmd.StatusEndpoint,
+                        statusPollingIntervalSeconds = firstCmd.StatusPollingIntervalSeconds
                     })
                 };
 
@@ -623,5 +627,56 @@ public sealed class AgentsController : ControllerBase
         public string? Response { get; set; }
         public int? HttpStatusCode { get; set; }
         public double? ExecutionTimeMs { get; set; }
+    }
+    
+    /// <summary>
+    /// Request for updating recording status of a Video device
+    /// </summary>
+    public sealed class UpdateRecordingStatusRequest
+    {
+        public Guid DeviceId { get; set; }
+        public bool RecordingStatus { get; set; }
+    }
+    
+    /// <summary>
+    /// Updates the recording status for a Video device in Table Storage
+    /// POST /api/agents/recording-status
+    /// </summary>
+    [HttpPost("recording-status")]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> UpdateRecordingStatus([FromBody] UpdateRecordingStatusRequest request, CancellationToken ct)
+    {
+        try
+        {
+            // Extract tenant ID from JWT claims
+            var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenantId" || c.Type.EndsWith("/tenantId"))?.Value;
+            if (!Guid.TryParse(tenantIdClaim, out var tenantId))
+            {
+                _logger.LogWarning("[RECORDING-STATUS] Invalid tenant claim: {TenantIdClaim}", tenantIdClaim);
+                return Unauthorized(new { error = "invalid_token_claims" });
+            }
+            
+            // Validate request
+            if (request.DeviceId == Guid.Empty)
+            {
+                return BadRequest(new { error = "DeviceId is required" });
+            }
+            
+            // Update recording status in Table Storage
+            await _deviceStore.UpsertRecordingStatusAsync(tenantId, request.DeviceId, request.RecordingStatus, ct);
+            
+            _logger.LogInformation("[RECORDING-STATUS] Updated recording status for device {DeviceId} to {RecordingStatus}", 
+                request.DeviceId, request.RecordingStatus);
+            
+            return Ok(new { success = true, deviceId = request.DeviceId, recordingStatus = request.RecordingStatus });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[RECORDING-STATUS] Error updating recording status for device {DeviceId}", request.DeviceId);
+            return StatusCode(500, new { error = "Failed to update recording status", details = ex.Message });
+        }
     }
 }

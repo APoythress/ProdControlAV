@@ -31,6 +31,14 @@
                                     Status:
                                     <span class="badge @GetStatusClass(device)">@(device.Status ? "online" : "offline")</span>
                                 </p>
+                                @if (device.Type == "Video" && device.RecordingStatus.HasValue)
+                                {
+                                    <p class="card-text">
+                                        <span class="badge @(device.RecordingStatus.Value ? "bg-danger" : "bg-secondary")">
+                                            @(device.RecordingStatus.Value ? "Recording" : "Idle")
+                                        </span>
+                                    </p>
+                                }
                             </div>
 
                         </div>
@@ -64,6 +72,11 @@
                             <div class="col-md-6 mb-3">
                                 <label for="deviceIp" class="form-label">IP Address</label>
                                 <input type="text" class="form-control" id="deviceIp" @bind="_deviceForm.Ip">
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="devicePort" class="form-label">Port</label>
+                                <input type="number" class="form-control" id="devicePort" @bind="_deviceForm.Port" min="1" max="65535">
                             </div>
 
                             <div class="col-md-6 mb-3">
@@ -368,6 +381,7 @@
             public string Ip { get; set; } = "";
             public bool AllowTelNet { get; set; }
             public string Location { get; set; } = "";
+            public int Port { get; set; } = 80;
         }
         
         // Get logic
@@ -389,7 +403,8 @@
                 Model = device.Model,
                 Ip = device.Ip,
                 AllowTelNet = device.AllowTelNet,
-                Location = device.Location ?? ""
+                Location = device.Location ?? "",
+                Port = device.Port
             };
             
             // Get actions for this device
@@ -427,6 +442,7 @@
             public string? Location { get; set; }
             public Guid TenantId { get; set; }
             public bool Status { get; set; }
+            public bool? RecordingStatus { get; set; }
         }
 
         private async Task SaveDeviceChanges()
@@ -449,7 +465,7 @@
                     Type = _selectedDevice.Type,
                     AllowTelNet = _deviceForm.AllowTelNet,
                     Ip = _deviceForm.Ip,
-                    Port = _selectedDevice.Port,
+                    Port = _deviceForm.Port,
                     Location = _deviceForm.Location
                 };
 
@@ -463,6 +479,7 @@
                     {
                         _devices[deviceIndex].Name = _deviceForm.Name;
                         _devices[deviceIndex].Ip = _deviceForm.Ip;
+                        _devices[deviceIndex].Port = _deviceForm.Port;
                         _devices[deviceIndex].AllowTelNet = _deviceForm.AllowTelNet;
                         _devices[deviceIndex].Location = _deviceForm.Location;
                     }
@@ -470,6 +487,7 @@
                     // Update selected device
                     _selectedDevice.Name = _deviceForm.Name;
                     _selectedDevice.Ip = _deviceForm.Ip;
+                    _selectedDevice.Port = _deviceForm.Port;
                     _selectedDevice.AllowTelNet = _deviceForm.AllowTelNet;
                     _selectedDevice.Location = _deviceForm.Location;
 

@@ -31,8 +31,15 @@
             </div>
             <div class="col-9 col-sm-6">
                 <label class="form-label">Device Type</label>
-                <InputText class="form-control" @bind-Value="_device.Type" />
-                <div class="form-text">Audio, Video, Lighting, Network or Other?</div>
+                <InputSelect class="form-select" @bind-Value="_device.Type">
+                    <option value="">-- Select Type --</option>
+                    <option value="Audio">Audio</option>
+                    <option value="Video">Video</option>
+                    <option value="Lighting">Lighting</option>
+                    <option value="Network">Network</option>
+                    <option value="Other">Other</option>
+                </InputSelect>
+                <div class="form-text">Select the device type</div>
             </div>
         </div>
 
@@ -40,8 +47,16 @@
             <div class="col-9 col-sm-6">
                 <label class="form-label">Device Ip</label>
                 <InputText class="form-control" @bind-Value="_device.Ip" />
-                <div class="form-text">What brand is your device?</div>
+                <div class="form-text">Enter the IP address of the device</div>
             </div>
+            <div class="col-9 col-sm-6">
+                <label class="form-label">Port (Optional)</label>
+                <InputNumber class="form-control" @bind-Value="_device.Port" />
+                <div class="form-text">Default is 80 if not specified</div>
+            </div>
+        </div>
+
+        <div class="row mt-2">
             <div class="col">
                 <div class="form-check form-switch">
                     <InputCheckbox class="form-check-input" @bind-Value="_device.AllowTelNet"/>
