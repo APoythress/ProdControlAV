@@ -41,7 +41,8 @@ namespace ProdControlAV.Infrastructure.Services
                 ["MonitorRecordingStatus"] = command.MonitorRecordingStatus,
                 ["StatusEndpoint"] = command.StatusEndpoint,
                 ["StatusPollingIntervalSeconds"] = command.StatusPollingIntervalSeconds,
-                ["Status"] = command.Status
+                ["Status"] = command.Status,
+                ["AttemptCount"] = command.AttemptCount
             };
 
             await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
@@ -82,6 +83,64 @@ namespace ProdControlAV.Infrastructure.Services
             }
         }
         
+        public async IAsyncEnumerable<CommandQueueDto> GetStuckProcessingCommandsAsync(
+            Guid tenantId,
+            TimeSpan timeout,
+            [EnumeratorCancellation] CancellationToken ct)
+        {
+            var partitionKey = tenantId.ToString().ToLowerInvariant();
+            var cutoffTime = DateTimeOffset.UtcNow.Add(-timeout);
+        
+            // Get all processing commands for the tenant
+            var filter = $"PartitionKey eq '{partitionKey}' and Status eq 'Processing'";
+        
+            var query = _table.QueryAsync<TableEntity>(filter, cancellationToken: ct);
+        
+            await foreach (var e in query)
+            {
+                // Check if ProcessingStartedUtc is older than cutoff
+                if (e.TryGetValue("ProcessingStartedUtc", out var startedValue) && startedValue != null)
+                {
+                    var isStuck = false;
+                    try
+                    {
+                        var startedUtc = (DateTimeOffset)startedValue;
+                        if (startedUtc < cutoffTime)
+                        {
+                            isStuck = true;
+                        }
+                    }
+                    catch
+                    {
+                        // Skip if can't parse
+                    }
+                    
+                    if (isStuck)
+                    {
+                        yield return MapToDto(e);
+                    }
+                }
+            }
+        }
+        
+        public async Task ResetToPendingAsync(Guid tenantId, Guid commandId, CancellationToken ct)
+        {
+            var partitionKey = tenantId.ToString().ToLowerInvariant();
+            var commandIdStr = commandId.ToString();
+        
+            var filter = $"PartitionKey eq '{partitionKey}' and CommandId eq '{commandIdStr}'";
+        
+            var query = _table.QueryAsync<TableEntity>(filter, maxPerPage: 1, cancellationToken: ct);
+        
+            await foreach (var entity in query)
+            {
+                entity["Status"] = "Pending";
+                entity["ProcessingStartedUtc"] = null;
+                await _table.UpdateEntityAsync(entity, entity.ETag, TableUpdateMode.Replace, ct);
+                return;
+            }
+        }
+        
         public async Task MarkAsProcessingAsync(Guid tenantId, Guid commandId, CancellationToken ct)
         {
             var partitionKey = tenantId.ToString().ToLowerInvariant();
@@ -93,8 +152,35 @@ namespace ProdControlAV.Infrastructure.Services
         
             await foreach (var entity in query)
             {
+                // Increment attempt count
+                int attemptCount = 0;
+                if (entity.TryGetValue("AttemptCount", out var attemptValue) && attemptValue != null)
+                {
+                    attemptCount = Convert.ToInt32(attemptValue);
+                }
+                attemptCount++;
+                
+                entity["AttemptCount"] = attemptCount;
                 entity["Status"] = "Processing";
                 entity["ProcessingStartedUtc"] = DateTimeOffset.UtcNow;
+                await _table.UpdateEntityAsync(entity, entity.ETag, TableUpdateMode.Replace, ct);
+                return;
+            }
+        }
+        
+        public async Task MarkAsFailedAsync(Guid tenantId, Guid commandId, CancellationToken ct)
+        {
+            var partitionKey = tenantId.ToString().ToLowerInvariant();
+            var commandIdStr = commandId.ToString();
+        
+            var filter = $"PartitionKey eq '{partitionKey}' and CommandId eq '{commandIdStr}'";
+        
+            var query = _table.QueryAsync<TableEntity>(filter, maxPerPage: 1, cancellationToken: ct);
+        
+            await foreach (var entity in query)
+            {
+                entity["Status"] = "Failed";
+                entity["FailedUtc"] = DateTimeOffset.UtcNow;
                 await _table.UpdateEntityAsync(entity, entity.ETag, TableUpdateMode.Replace, ct);
                 return;
             }
@@ -131,6 +217,12 @@ namespace ProdControlAV.Infrastructure.Services
                 try { monitorRecordingStatus = Convert.ToBoolean(monitor); } catch { }
             }
             
+            int attemptCount = 0;
+            if (e.TryGetValue("AttemptCount", out var attemptValue) && attemptValue != null)
+            {
+                try { attemptCount = Convert.ToInt32(attemptValue); } catch { }
+            }
+            
             return new CommandQueueDto(
                 Guid.Parse(e["CommandId"].ToString()!),
                 Guid.Parse(e.PartitionKey),
@@ -149,7 +241,8 @@ namespace ProdControlAV.Infrastructure.Services
                 monitorRecordingStatus,
                 e.TryGetValue("StatusEndpoint", out var endpoint) ? endpoint?.ToString() : null,
                 e.TryGetValue("StatusPollingIntervalSeconds", out var interval) && interval != null ? Convert.ToInt32(interval) : 60,
-                e.TryGetValue("Status", out var status) ? status?.ToString() ?? "Pending" : "Pending"
+                e.TryGetValue("Status", out var status) ? status?.ToString() ?? "Pending" : "Pending",
+                attemptCount
             );
         }
     }

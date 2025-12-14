@@ -515,6 +515,20 @@ public sealed class AgentsController : ControllerBase
         {
             var queueStore = HttpContext.RequestServices.GetRequiredService<ICommandQueueStore>();
             
+            // First, check for stuck processing commands (stuck for more than 5 minutes) and reset them
+            var stuckCommands = new List<CommandQueueDto>();
+            await foreach (var cmd in queueStore.GetStuckProcessingCommandsAsync(tenantId, TimeSpan.FromMinutes(5), ct))
+            {
+                stuckCommands.Add(cmd);
+            }
+            
+            foreach (var stuckCmd in stuckCommands)
+            {
+                _logger.LogWarning("[COMMANDS/POLL] Found stuck command {CommandId} (attempt {AttemptCount}), resetting to Pending", 
+                    stuckCmd.CommandId, stuckCmd.AttemptCount);
+                await queueStore.ResetToPendingAsync(tenantId, stuckCmd.CommandId, ct);
+            }
+            
             // Get all pending commands for this tenant from Table Storage
             var pendingCommands = new List<CommandQueueDto>();
             await foreach (var cmd in queueStore.GetPendingForTenantAsync(tenantId, ct))
@@ -527,8 +541,41 @@ public sealed class AgentsController : ControllerBase
             {
                 var firstCmd = pendingCommands.First();
                 
-                // Mark as processing
+                // Check if command has exceeded max retry attempts (3 attempts)
+                if (firstCmd.AttemptCount >= 3)
+                {
+                    _logger.LogWarning("[COMMANDS/POLL] Command {CommandId} exceeded max retry attempts ({AttemptCount}), marking as failed", 
+                        firstCmd.CommandId, firstCmd.AttemptCount);
+                    
+                    // Mark as failed in CommandQueue
+                    await queueStore.MarkAsFailedAsync(tenantId, firstCmd.CommandId, ct);
+                    
+                    // Record failure in CommandHistory
+                    var historyStore = HttpContext.RequestServices.GetRequiredService<ICommandHistoryStore>();
+                    var failureHistory = new CommandHistoryDto(
+                        ExecutionId: Guid.NewGuid(),
+                        CommandId: firstCmd.CommandId,
+                        TenantId: tenantId,
+                        DeviceId: firstCmd.DeviceId,
+                        CommandName: firstCmd.CommandName,
+                        ExecutedUtc: DateTimeOffset.UtcNow,
+                        Success: false,
+                        ErrorMessage: $"Command failed after {firstCmd.AttemptCount} attempts",
+                        Response: null,
+                        HttpStatusCode: null,
+                        ExecutionTimeMs: null
+                    );
+                    await historyStore.RecordExecutionAsync(failureHistory, ct);
+                    
+                    // Return null to indicate no command available (agent will continue polling)
+                    return Ok(new { command = (CommandEnvelope?)null });
+                }
+                
+                // Mark as processing and increment attempt count
                 await queueStore.MarkAsProcessingAsync(tenantId, firstCmd.CommandId, ct);
+                
+                _logger.LogInformation("[COMMANDS/POLL] Returning command {CommandId} for execution (attempt {AttemptCount})", 
+                    firstCmd.CommandId, firstCmd.AttemptCount + 1);
                 
                 var envelope = new CommandEnvelope
                 {
