@@ -624,4 +624,212 @@ public sealed class AgentsController : ControllerBase
         public int? HttpStatusCode { get; set; }
         public double? ExecutionTimeMs { get; set; }
     }
+
+    /// <summary>
+    /// Get all agents for the current tenant with status information
+    /// </summary>
+    [HttpGet("list")]
+    [Authorize(Policy = "TenantMember")]
+    [ProducesResponseType<List<AgentListDto>>(200)]
+    public async Task<IActionResult> ListAgents(CancellationToken ct)
+    {
+        var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenant_id")?.Value;
+        if (!Guid.TryParse(tenantIdClaim, out var tenantId))
+        {
+            _logger.LogWarning("[AGENTS/LIST] Invalid tenant claim");
+            return Unauthorized(new { error = "invalid_tenant" });
+        }
+
+        try
+        {
+            var agents = new List<AgentListDto>();
+            var cutoffTime = DateTimeOffset.UtcNow.AddMinutes(-10); // Consider agent offline if no activity in 10 minutes
+
+            await foreach (var agent in _agentAuthStore.GetAllForTenantAsync(tenantId, ct))
+            {
+                var isOnline = agent.LastSeenUtc.HasValue && agent.LastSeenUtc.Value >= cutoffTime;
+                
+                agents.Add(new AgentListDto
+                {
+                    AgentId = agent.AgentId,
+                    Name = agent.Name,
+                    Version = agent.Version,
+                    LastSeenUtc = agent.LastSeenUtc,
+                    IsOnline = isOnline,
+                    LastHostname = agent.LastHostname,
+                    LastIp = agent.LastIp
+                });
+            }
+
+            _logger.LogInformation("[AGENTS/LIST] Returning {Count} agents for TenantId={TenantId}", agents.Count, tenantId);
+            return Ok(agents);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[AGENTS/LIST] Error listing agents for TenantId={TenantId}", tenantId);
+            return StatusCode(500, new { error = "failed_to_list_agents" });
+        }
+    }
+
+    /// <summary>
+    /// Trigger an agent restart via command queue
+    /// </summary>
+    [HttpPost("{agentId}/restart")]
+    [Authorize(Policy = "TenantMember")]
+    public async Task<IActionResult> RestartAgent(Guid agentId, CancellationToken ct)
+    {
+        var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenant_id")?.Value;
+        if (!Guid.TryParse(tenantIdClaim, out var tenantId))
+        {
+            _logger.LogWarning("[AGENTS/RESTART] Invalid tenant claim");
+            return Unauthorized(new { error = "invalid_tenant" });
+        }
+
+        try
+        {
+            // Validate agent belongs to tenant
+            var agent = await _db.Agents.FirstOrDefaultAsync(a => a.Id == agentId && a.TenantId == tenantId, ct);
+            if (agent is null)
+            {
+                _logger.LogWarning("[AGENTS/RESTART] Agent not found or not in tenant: AgentId={AgentId}, TenantId={TenantId}", 
+                    agentId, tenantId);
+                return NotFound(new { error = "agent_not_found" });
+            }
+
+            // Create restart command
+            var command = new AgentCommand
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                AgentId = agentId,
+                DeviceId = Guid.Empty, // Restart command doesn't target a specific device
+                Verb = "RESTART",
+                Payload = null,
+                CreatedUtc = DateTime.UtcNow
+            };
+
+            _db.AgentCommands.Add(command);
+            await _db.SaveChangesAsync(ct);
+
+            // Enqueue to Azure Queue Storage for delivery
+            try
+            {
+                await _queueService.EnqueueCommandAsync(command, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[AGENTS/RESTART] Failed to enqueue restart command {CommandId}, but SQL record created", command.Id);
+            }
+
+            _logger.LogInformation("[AGENTS/RESTART] Restart command created: CommandId={CommandId}, AgentId={AgentId}", 
+                command.Id, agentId);
+
+            return Ok(new { success = true, commandId = command.Id, message = "Restart command queued successfully" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[AGENTS/RESTART] Error restarting agent AgentId={AgentId}", agentId);
+            return StatusCode(500, new { error = "failed_to_restart_agent" });
+        }
+    }
+
+    public sealed class AgentListDto
+    {
+        public Guid AgentId { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string? Version { get; set; }
+        public DateTimeOffset? LastSeenUtc { get; set; }
+        public bool IsOnline { get; set; }
+        public string? LastHostname { get; set; }
+        public string? LastIp { get; set; }
+    }
+
+    /// <summary>
+    /// Get available agent update information from appcast
+    /// </summary>
+    [HttpGet("updates/available")]
+    [Authorize(Policy = "TenantMember")]
+    [ProducesResponseType<AgentUpdateInfoDto>(200)]
+    public async Task<IActionResult> GetAvailableUpdates(CancellationToken ct)
+    {
+        var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenant_id")?.Value;
+        if (!Guid.TryParse(tenantIdClaim, out var tenantId))
+        {
+            _logger.LogWarning("[AGENTS/UPDATES] Invalid tenant claim");
+            return Unauthorized(new { error = "invalid_tenant" });
+        }
+
+        try
+        {
+            // Get appcast URL from configuration
+            var appcastUrl = HttpContext.RequestServices.GetService<IConfiguration>()?
+                .GetValue<string>("AgentUpdate:AppcastUrl");
+
+            if (string.IsNullOrEmpty(appcastUrl))
+            {
+                _logger.LogWarning("[AGENTS/UPDATES] AppcastUrl not configured");
+                return Ok(new AgentUpdateInfoDto { LatestVersion = null, Description = null, IsCritical = false });
+            }
+
+            using var httpClient = new HttpClient();
+            httpClient.Timeout = TimeSpan.FromSeconds(10);
+            
+            var response = await httpClient.GetAsync(appcastUrl, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("[AGENTS/UPDATES] Failed to fetch appcast from {Url}: {StatusCode}", 
+                    appcastUrl, response.StatusCode);
+                return Ok(new AgentUpdateInfoDto { LatestVersion = null, Description = null, IsCritical = false });
+            }
+
+            var content = await response.Content.ReadAsStringAsync(ct);
+            var appcast = System.Text.Json.JsonSerializer.Deserialize<AppcastDto>(content, new System.Text.Json.JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (appcast?.Items == null || !appcast.Items.Any())
+            {
+                return Ok(new AgentUpdateInfoDto { LatestVersion = null, Description = null, IsCritical = false });
+            }
+
+            // Get latest version (first item in appcast)
+            var latest = appcast.Items.OrderByDescending(i => i.Version).FirstOrDefault();
+            if (latest == null)
+            {
+                return Ok(new AgentUpdateInfoDto { LatestVersion = null, Description = null, IsCritical = false });
+            }
+
+            return Ok(new AgentUpdateInfoDto
+            {
+                LatestVersion = latest.Version,
+                Description = latest.Description,
+                IsCritical = latest.CriticalUpdate
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[AGENTS/UPDATES] Error fetching update information");
+            return Ok(new AgentUpdateInfoDto { LatestVersion = null, Description = null, IsCritical = false });
+        }
+    }
+
+    public sealed class AgentUpdateInfoDto
+    {
+        public string? LatestVersion { get; set; }
+        public string? Description { get; set; }
+        public bool IsCritical { get; set; }
+    }
+
+    private class AppcastDto
+    {
+        public List<AppcastItemDto>? Items { get; set; }
+    }
+
+    private class AppcastItemDto
+    {
+        public string Version { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public bool CriticalUpdate { get; set; }
+    }
 }
