@@ -13,6 +13,7 @@ The ProdControlAV Agent is a lightweight, secure monitoring service that:
 - **Executes secure remote commands** with whitelisted operations only
 - **Provides comprehensive logging** and audit trails for all operations
 - **Runs securely** as an unprivileged user with minimal required capabilities
+- **Automatic updates** via NetSparkle with Ed25519 signature verification
 
 ## Architecture
 
@@ -239,6 +240,13 @@ sudo journalctl -u prodcontrolav-agent -f
     "ApiKey": "",
     "RefreshDevicesSeconds": 30,
     "CommandPollIntervalSeconds": 10
+  },
+  "Update": {
+    "Enabled": true,
+    "AppcastUrl": "https://yourstorageaccount.blob.core.windows.net/updates/appcast.json",
+    "Ed25519PublicKey": "",
+    "CheckIntervalSeconds": 3600,
+    "AutoInstall": true
   }
 }
 ```
@@ -266,6 +274,15 @@ The agent supports secure configuration via environment variables with the `PROD
 - **`ApiKey`** - Authentication key (use environment variable)
 - **`RefreshDevicesSeconds`** - How often to refresh device list from API (default: 30)
 - **`CommandPollIntervalSeconds`** - How often to check for new commands (default: 10)
+
+#### Update Settings
+- **`Enabled`** - Enable/disable automatic updates (default: true)
+- **`AppcastUrl`** - URL to appcast.json manifest in Azure Blob Storage
+- **`Ed25519PublicKey`** - Base64-encoded public key for verifying update signatures
+- **`CheckIntervalSeconds`** - How often to check for updates (default: 3600 = 1 hour)
+- **`AutoInstall`** - Automatically download and install updates (default: true)
+
+**For complete automatic update setup instructions, see [AUTOMATIC-UPDATES-SETUP.md](../../AUTOMATIC-UPDATES-SETUP.md)**
 
 ## API Integration
 
