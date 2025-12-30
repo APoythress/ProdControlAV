@@ -85,6 +85,12 @@
                     </div>
                 </div>
 
+                <!-- Info Alert -->
+                <div class="alert alert-info mb-4" role="alert">
+                    <i class="bi bi-info-circle-fill me-2"></i>
+                    <strong>Note:</strong> Command statistics (Success, Failed, Recent Errors) show organization-wide metrics for all devices in your tenant, as the system tracks commands by device rather than by individual agent.
+                </div>
+
                 <!-- Agents Table -->
                 <div class="card bg-dark border-light shadow-lg">
                     <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
@@ -105,9 +111,9 @@
                                         <th>Last Seen</th>
                                         <th>Version</th>
                                         <th>Pending</th>
-                                        <th>Success (48h)</th>
-                                        <th>Failed (48h)</th>
-                                        <th>Recent Errors</th>
+                                        <th>Success (48h)*</th>
+                                        <th>Failed (48h)*</th>
+                                        <th>Recent Errors*</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -310,7 +316,9 @@
 
     private string GetRelativeTime(DateTime dateTime)
     {
-        var timeSpan = DateTime.UtcNow - dateTime;
+        // Convert to UTC DateTimeOffset for proper comparison
+        var dateTimeOffset = new DateTimeOffset(dateTime, TimeSpan.Zero);
+        var timeSpan = DateTimeOffset.UtcNow - dateTimeOffset;
 
         if (timeSpan.TotalMinutes < 1)
             return "just now";

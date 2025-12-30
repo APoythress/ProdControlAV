@@ -181,11 +181,14 @@ public class AgentHealthControllerTests
         var agents = new List<AgentAuthDto>
         {
             new AgentAuthDto(onlineAgentId, tenantId, "Online Agent", "hash1", 
-                LastSeenUtc: DateTimeOffset.UtcNow.AddSeconds(-60)), // Within 90s threshold
-            new AgentAuthDto(offlineAgentId, tenantId, "Offline Agent", "hash2", 
-                LastSeenUtc: DateTimeOffset.UtcNow.AddSeconds(-120)), // Beyond 90s threshold
-            new AgentAuthDto(neverSeenAgentId, tenantId, "Never Seen Agent", "hash3", 
-                LastSeenUtc: null) // Never seen
+                LastHostname: "host1", LastIp: "192.168.1.1",
+                LastSeenUtc: DateTimeOffset.UtcNow.AddSeconds(-60), Version: "0.3.0"), // Within 90s threshold
+            new AgentAuthDto(offlineAgentId, tenantId, "Offline Agent", "hash2",
+                LastHostname: "host2", LastIp: "192.168.1.2", 
+                LastSeenUtc: DateTimeOffset.UtcNow.AddSeconds(-120), Version: "0.3.0"), // Beyond 90s threshold
+            new AgentAuthDto(neverSeenAgentId, tenantId, "Never Seen Agent", "hash3",
+                LastHostname: "host3", LastIp: "192.168.1.3", 
+                LastSeenUtc: null, Version: "0.3.0") // Never seen
         };
 
         agentAuthStoreMock
@@ -255,7 +258,9 @@ public class AgentHealthControllerTests
 
         var agents = new List<AgentAuthDto>
         {
-            new AgentAuthDto(agentId, tenantId, "Test Agent", "hash", LastSeenUtc: DateTimeOffset.UtcNow)
+            new AgentAuthDto(agentId, tenantId, "Test Agent", "hash",
+                LastHostname: "host1", LastIp: "192.168.1.1",
+                LastSeenUtc: DateTimeOffset.UtcNow, Version: "0.3.0")
         };
 
         agentAuthStoreMock
@@ -345,7 +350,9 @@ public class AgentHealthControllerTests
 
         var agents = new List<AgentAuthDto>
         {
-            new AgentAuthDto(agentId, tenantId, "Test Agent", "hash", LastSeenUtc: DateTimeOffset.UtcNow)
+            new AgentAuthDto(agentId, tenantId, "Test Agent", "hash",
+                LastHostname: "host1", LastIp: "192.168.1.1",
+                LastSeenUtc: DateTimeOffset.UtcNow, Version: "0.3.0")
         };
 
         agentAuthStoreMock

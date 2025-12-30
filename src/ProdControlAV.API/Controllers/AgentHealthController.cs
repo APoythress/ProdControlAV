@@ -84,6 +84,38 @@ public sealed class AgentHealthController : ControllerBase
             // Get latest version from appcast if configured
             var latestVersion = await GetLatestVersionFromAppcastAsync(ct);
 
+            // Query tenant-wide command stats once (more efficient than per-agent)
+            // Note: CommandQueue and CommandHistory don't track AgentId, only DeviceId and TenantId
+            var pendingCommands = new List<CommandQueueDto>();
+            await foreach (var cmd in _commandQueueStore.GetPendingForTenantAsync(tenantId, ct))
+            {
+                pendingCommands.Add(cmd);
+            }
+            var tenantPendingCount = pendingCommands.Count;
+
+            // Get command history for last 48 hours (tenant-wide)
+            var historyEntries = new List<CommandHistoryDto>();
+            await foreach (var history in _commandHistoryStore.GetRecentHistoryForTenantAsync(tenantId, HistoryWindowDays, ct))
+            {
+                historyEntries.Add(history);
+            }
+
+            // Calculate tenant-wide success/failure counts
+            var tenantSuccessCount = historyEntries.Count(h => h.Success);
+            var tenantFailureCount = historyEntries.Count(h => !h.Success);
+
+            // Get tenant-wide recent errors (last 48h, max 5, most recent first)
+            var tenantRecentErrors = historyEntries
+                .Where(h => !h.Success && !string.IsNullOrEmpty(h.ErrorMessage))
+                .OrderByDescending(h => h.ExecutedUtc)
+                .Take(5)
+                .Select(h => new AgentErrorInfo
+                {
+                    Timestamp = h.ExecutedUtc.DateTime,
+                    Message = h.ErrorMessage ?? "Unknown error"
+                })
+                .ToList();
+
             // Query all agents for the tenant from Table Storage
             await foreach (var agent in _agentAuthStore.GetAgentsForTenantAsync(tenantId, ct))
             {
@@ -121,37 +153,12 @@ public sealed class AgentHealthController : ControllerBase
                     healthInfo.IsUpToDate = true;
                 }
 
-                // Get pending commands count from CommandQueue table
-                var pendingCommands = new List<CommandQueueDto>();
-                await foreach (var cmd in _commandQueueStore.GetPendingForTenantAsync(tenantId, ct))
-                {
-                    // Filter to only this agent's commands (CommandQueue doesn't have AgentId, so we count all pending for tenant)
-                    pendingCommands.Add(cmd);
-                }
-                healthInfo.CommandsPending = pendingCommands.Count;
-
-                // Get command history for last 48 hours
-                var historyEntries = new List<CommandHistoryDto>();
-                await foreach (var history in _commandHistoryStore.GetRecentHistoryForTenantAsync(tenantId, HistoryWindowDays, ct))
-                {
-                    historyEntries.Add(history);
-                }
-
-                // Calculate success/failure counts
-                healthInfo.CommandsPolledSuccessful = historyEntries.Count(h => h.Success);
-                healthInfo.CommandsPolledUnsuccessful = historyEntries.Count(h => !h.Success);
-
-                // Get recent errors (last 48h, max 5, most recent first)
-                healthInfo.RecentErrors = historyEntries
-                    .Where(h => !h.Success && !string.IsNullOrEmpty(h.ErrorMessage))
-                    .OrderByDescending(h => h.ExecutedUtc)
-                    .Take(5)
-                    .Select(h => new AgentErrorInfo
-                    {
-                        Timestamp = h.ExecutedUtc.DateTime,
-                        Message = h.ErrorMessage ?? "Unknown error"
-                    })
-                    .ToList();
+                // Assign tenant-wide command stats to this agent
+                // Note: These stats are organization-wide since the command system doesn't track per-agent execution
+                healthInfo.CommandsPending = tenantPendingCount;
+                healthInfo.CommandsPolledSuccessful = tenantSuccessCount;
+                healthInfo.CommandsPolledUnsuccessful = tenantFailureCount;
+                healthInfo.RecentErrors = tenantRecentErrors;
 
                 response.Agents.Add(healthInfo);
             }
