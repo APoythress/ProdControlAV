@@ -49,6 +49,9 @@ public class CommandService : ICommandService
         TypeInfoResolver = new DefaultJsonTypeInfoResolver()
     };
     
+    // Delay between retry attempts for command history recording
+    private const int RetryDelayMs = 1000;
+    
     // Shared HttpClient for device communication to avoid socket exhaustion
     // Configure with HTTP/1.1 to handle devices with non-compliant HTTP implementations
     private static readonly HttpClient s_deviceHttpClient = new(new SocketsHttpHandler
@@ -357,44 +360,81 @@ public class CommandService : ICommandService
         double executionTimeMs, 
         CancellationToken ct)
     {
-        try
+        const int maxRetries = 2;
+        
+        for (int attempt = 0; attempt < maxRetries; attempt++)
         {
-            // Get valid JWT token
-            var token = await _jwtAuth.GetValidTokenAsync(ct);
-            if (string.IsNullOrEmpty(token))
+            try
             {
-                _logger.LogWarning("Failed to obtain valid JWT token for recording command history");
-                return;
+                // Get valid JWT token - this will refresh if needed
+                var token = await _jwtAuth.GetValidTokenAsync(ct);
+                if (string.IsNullOrEmpty(token))
+                {
+                    _logger.LogWarning("Failed to obtain valid JWT token for recording command history (attempt {Attempt}/{MaxRetries})", 
+                        attempt + 1, maxRetries);
+                    
+                    if (attempt < maxRetries - 1)
+                    {
+                        // Force a token refresh before retrying
+                        await _jwtAuth.RefreshTokenAsync(ct);
+                        await Task.Delay(RetryDelayMs, ct);
+                        continue;
+                    }
+                    return;
+                }
+
+                var historyRequest = new
+                {
+                    commandId,
+                    deviceId,
+                    commandName = "REST Command", // Will be populated from payload in future
+                    success,
+                    errorMessage = success ? null : message,
+                    response = response?.Length > 2000 ? response.Substring(0, 2000) : response,
+                    httpStatusCode,
+                    executionTimeMs
+                };
+
+                var endpoint = "/api/agents/commands/history";
+                
+                using var req = new HttpRequestMessage(HttpMethod.Post, endpoint)
+                {
+                    Content = JsonContent.Create(historyRequest, options: s_jsonOptions)
+                };
+                req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+                using var res = await _http.SendAsync(req, ct);
+                
+                if (res.StatusCode == System.Net.HttpStatusCode.Unauthorized && attempt < maxRetries - 1)
+                {
+                    // 401 Unauthorized - force token refresh and retry
+                    _logger.LogWarning("Received 401 Unauthorized when recording command history, forcing token refresh (attempt {Attempt}/{MaxRetries})", 
+                        attempt + 1, maxRetries);
+                    await _jwtAuth.RefreshTokenAsync(ct);
+                    await Task.Delay(RetryDelayMs, ct);
+                    continue;
+                }
+                
+                res.EnsureSuccessStatusCode();
+                
+                _logger.LogInformation("Command history recorded for {CommandId}, Success={Success}", commandId, success);
+                return; // Success - exit the retry loop
             }
-
-            var historyRequest = new
+            catch (Exception ex)
             {
-                commandId,
-                deviceId,
-                commandName = "REST Command", // Will be populated from payload in future
-                success,
-                errorMessage = success ? null : message,
-                response = response?.Length > 2000 ? response.Substring(0, 2000) : response,
-                httpStatusCode,
-                executionTimeMs
-            };
-
-            var endpoint = "/api/agents/commands/history";
-            
-            using var req = new HttpRequestMessage(HttpMethod.Post, endpoint)
-            {
-                Content = JsonContent.Create(historyRequest, options: s_jsonOptions)
-            };
-            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-
-            using var res = await _http.SendAsync(req, ct);
-            res.EnsureSuccessStatusCode();
-            
-            _logger.LogInformation("Command history recorded for {CommandId}, Success={Success}", commandId, success);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to record command history for {CommandId}", commandId);
+                if (attempt < maxRetries - 1)
+                {
+                    _logger.LogWarning(ex, "Failed to record command history for {CommandId} (attempt {Attempt}/{MaxRetries}), retrying...", 
+                        commandId, attempt + 1, maxRetries);
+                    await Task.Delay(RetryDelayMs, ct);
+                }
+                else
+                {
+                    _logger.LogError(ex, "Failed to record command history for {CommandId} after {MaxRetries} attempts. " +
+                        "This may cause the command to remain in the queue. Command was executed with Success={Success}", 
+                        commandId, maxRetries, success);
+                }
+            }
         }
     }
 

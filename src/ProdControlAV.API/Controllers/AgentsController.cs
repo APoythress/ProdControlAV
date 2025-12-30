@@ -654,21 +654,47 @@ public sealed class AgentsController : ControllerBase
                 ExecutionTimeMs: req.ExecutionTimeMs
             );
 
-            await historyStore.RecordExecutionAsync(history, ct);
+            // Record execution history
+            Exception? historyException = null;
+            try
+            {
+                await historyStore.RecordExecutionAsync(history, ct);
+                _logger.LogInformation("[COMMANDS/HISTORY] Recorded execution for command {CommandId}, Success={Success}", 
+                    req.CommandId.ToString("D"), req.Success);
+            }
+            catch (Exception ex)
+            {
+                historyException = ex;
+                _logger.LogError(ex, "[COMMANDS/HISTORY] Error recording command history for command {CommandId}", 
+                    req.CommandId.ToString("D"));
+            }
             
-            // Remove command from queue after recording history
-            await queueStore.DequeueAsync(tenantId, req.CommandId, ct);
+            // Always attempt to remove command from queue, even if history recording failed
+            // This prevents commands from getting stuck in the queue
+            try
+            {
+                await queueStore.DequeueAsync(tenantId, req.CommandId, ct);
+                _logger.LogInformation("[COMMANDS/HISTORY] Dequeued command {CommandId}", req.CommandId.ToString("D"));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[COMMANDS/HISTORY] Error dequeuing command {CommandId}. Command may remain in queue.", 
+                    req.CommandId.ToString("D"));
+            }
             
-            _logger.LogInformation("[COMMANDS/HISTORY] Recorded execution for command {CommandId}, Success={Success}", 
-                req.CommandId.ToString("D"), req.Success);
+            // If history recording failed, return error but command was still dequeued
+            if (historyException != null)
+            {
+                return StatusCode(500, new { error = "failed_to_record_history", message = "Command was dequeued but history recording failed" });
+            }
             
             return Ok(new { success = true, executionId = history.ExecutionId });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[COMMANDS/HISTORY] Error recording command history for command {CommandId}", 
+            _logger.LogError(ex, "[COMMANDS/HISTORY] Unexpected error in RecordCommandHistory for command {CommandId}", 
                 req.CommandId.ToString("D"));
-            return StatusCode(500, new { error = "failed_to_record_history" });
+            return StatusCode(500, new { error = "unexpected_error" });
         }
     }
 

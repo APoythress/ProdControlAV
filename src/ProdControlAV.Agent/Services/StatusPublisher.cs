@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Reflection;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -39,6 +40,7 @@ public sealed class StatusPublisher : IStatusPublisher
     private readonly ApiOptions _api;
     private readonly IJwtAuthService _jwtAuth;
     private readonly JsonSerializerOptions _json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    private readonly string _agentVersion;
 
     public StatusPublisher(HttpClient http, ILogger<StatusPublisher> logger, IOptions<ApiOptions> api, IJwtAuthService jwtAuth)
     {
@@ -47,6 +49,12 @@ public sealed class StatusPublisher : IStatusPublisher
         _api = api.Value;
         _jwtAuth = jwtAuth;
         _http.BaseAddress = new Uri(_api.BaseUrl);
+        
+        // Get the actual agent version from assembly
+        var assembly = Assembly.GetExecutingAssembly();
+        _agentVersion = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion 
+            ?? assembly.GetName().Version?.ToString() 
+            ?? "0.0.0";
     }
 
     public async Task PublishAsync(DeviceStatus status, CancellationToken ct)
@@ -117,7 +125,7 @@ public sealed class StatusPublisher : IStatusPublisher
             {
                 Hostname = Environment.MachineName,
                 IpAddress = null,
-                Version = "1.0.001"
+                Version = _agentVersion
             };
             using var req = new HttpRequestMessage(HttpMethod.Post, _api.HeartbeatEndpoint);
             req.Content = JsonContent.Create(request, options: _json);
