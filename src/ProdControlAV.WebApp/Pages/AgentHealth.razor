@@ -1,0 +1,359 @@
+@page "/agent-health"
+@using System.Net.Http
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+
+<div class="container-fluid min-vh-100 py-5">
+    <div class="row justify-content-center">
+        <div class="col-12">
+            <!-- Title Header -->
+            <div class="text-center mb-5">
+                <h1 class="display-5 fw-bold text-white mb-3">
+                    <i class="bi bi-heart-pulse-fill me-3"></i>Agent Health Dashboard
+                </h1>
+                <p class="lead text-white-50">
+                    Monitor the status and health of all deployed agents
+                </p>
+            </div>
+
+            @if (isLoading)
+            {
+                <div class="text-center py-5">
+                    <div class="spinner-border text-light" style="width: 3rem; height: 3rem;" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="text-white-50 mt-3">Loading agent health data...</p>
+                </div>
+            }
+            else if (errorMessage != null)
+            {
+                <div class="alert alert-danger" role="alert">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <strong>Error:</strong> @errorMessage
+                </div>
+            }
+            else if (healthData == null || healthData.Agents.Count == 0)
+            {
+                <div class="card bg-dark border-warning text-center py-5 shadow">
+                    <div class="card-body">
+                        <i class="bi bi-info-circle text-warning" style="font-size: 3rem;"></i>
+                        <h3 class="text-white mt-3">No Agents Found</h3>
+                        <p class="text-white-50">No agents are currently registered for your organization.</p>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <!-- Summary Cards -->
+                <div class="row mb-4">
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-dark border-success text-center shadow">
+                            <div class="card-body">
+                                <i class="bi bi-check-circle-fill text-success" style="font-size: 2rem;"></i>
+                                <h3 class="text-success mt-2">@healthData.Agents.Count(a => a.Status == "online")</h3>
+                                <p class="text-white-50 mb-0">Online</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-dark border-danger text-center shadow">
+                            <div class="card-body">
+                                <i class="bi bi-x-circle-fill text-danger" style="font-size: 2rem;"></i>
+                                <h3 class="text-danger mt-2">@healthData.Agents.Count(a => a.Status == "offline")</h3>
+                                <p class="text-white-50 mb-0">Offline</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-dark border-warning text-center shadow">
+                            <div class="card-body">
+                                <i class="bi bi-arrow-repeat text-warning" style="font-size: 2rem;"></i>
+                                <h3 class="text-warning mt-2">@healthData.Agents.Count(a => !a.IsUpToDate)</h3>
+                                <p class="text-white-50 mb-0">Updates Available</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-dark border-info text-center shadow">
+                            <div class="card-body">
+                                <i class="bi bi-clock-fill text-info" style="font-size: 2rem;"></i>
+                                <h3 class="text-info mt-2">@healthData.Agents.Sum(a => a.CommandsPending)</h3>
+                                <p class="text-white-50 mb-0">Pending Commands</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Info Alert -->
+                <div class="alert alert-info mb-4" role="alert">
+                    <i class="bi bi-info-circle-fill me-2"></i>
+                    <strong>Note:</strong> Command statistics (Success, Failed, Recent Errors) show organization-wide metrics for all devices in your tenant, as the system tracks commands by device rather than by individual agent.
+                </div>
+
+                <!-- Agents Table -->
+                <div class="card bg-dark border-light shadow-lg">
+                    <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="bi bi-list-ul me-2"></i>Agent Details
+                        </h5>
+                        <button class="btn btn-sm btn-outline-light" @onclick="LoadHealthData">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                        </button>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-dark table-hover mb-0">
+                                <thead class="table-secondary">
+                                    <tr>
+                                        <th>Agent Name</th>
+                                        <th>Status</th>
+                                        <th>Last Seen</th>
+                                        <th>Version</th>
+                                        <th>Pending</th>
+                                        <th>Success (48h)*</th>
+                                        <th>Failed (48h)*</th>
+                                        <th>Recent Errors*</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var agent in healthData.Agents.OrderBy(a => a.Name))
+                                    {
+                                        <tr>
+                                            <td class="fw-bold">
+                                                <i class="bi bi-cpu me-2"></i>@agent.Name
+                                            </td>
+                                            <td>
+                                                @if (agent.Status == "online")
+                                                {
+                                                    <span class="badge bg-success">
+                                                        <i class="bi bi-check-circle me-1"></i>Online
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-danger">
+                                                        <i class="bi bi-x-circle me-1"></i>Offline
+                                                    </span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (agent.LastSeenUtc.HasValue)
+                                                {
+                                                    <span title="@agent.LastSeenUtc.Value.ToString("yyyy-MM-dd HH:mm:ss")">
+                                                        @GetRelativeTime(agent.LastSeenUtc.Value)
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">Never</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (!string.IsNullOrEmpty(agent.Version))
+                                                {
+                                                    <span>@agent.Version</span>
+                                                    @if (!agent.IsUpToDate && !string.IsNullOrEmpty(agent.VersionAvailable))
+                                                    {
+                                                        <span class="badge bg-warning text-dark ms-2" title="Update available: @agent.VersionAvailable">
+                                                            <i class="bi bi-arrow-up-circle"></i>
+                                                        </span>
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">Unknown</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (agent.CommandsPending > 0)
+                                                {
+                                                    <span class="badge bg-info">@agent.CommandsPending</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">0</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (agent.CommandsPolledSuccessful > 0)
+                                                {
+                                                    <span class="text-success">@agent.CommandsPolledSuccessful</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">0</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (agent.CommandsPolledUnsuccessful > 0)
+                                                {
+                                                    <span class="text-danger">@agent.CommandsPolledUnsuccessful</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">0</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (agent.RecentErrors.Count > 0)
+                                                {
+                                                    <button class="btn btn-sm btn-outline-warning" @onclick="() => ShowErrors(agent)">
+                                                        <i class="bi bi-exclamation-triangle me-1"></i>View (@agent.RecentErrors.Count)
+                                                    </button>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">None</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Error Details Modal -->
+                @if (selectedAgent != null)
+                {
+                    <div class="modal show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+                        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                            <div class="modal-content bg-dark text-white">
+                                <div class="modal-header border-secondary">
+                                    <h5 class="modal-title">
+                                        <i class="bi bi-exclamation-triangle me-2"></i>Recent Errors - @selectedAgent.Name
+                                    </h5>
+                                    <button type="button" class="btn-close btn-close-white" @onclick="CloseErrorModal"></button>
+                                </div>
+                                <div class="modal-body">
+                                    @if (selectedAgent.RecentErrors.Count == 0)
+                                    {
+                                        <p class="text-muted">No recent errors.</p>
+                                    }
+                                    else
+                                    {
+                                        <div class="list-group">
+                                            @foreach (var error in selectedAgent.RecentErrors)
+                                            {
+                                                <div class="list-group-item bg-secondary text-white mb-2 border-danger">
+                                                    <div class="d-flex w-100 justify-content-between">
+                                                        <h6 class="mb-1 text-danger">
+                                                            <i class="bi bi-x-circle-fill me-1"></i>Error
+                                                        </h6>
+                                                        <small class="text-muted">@error.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</small>
+                                                    </div>
+                                                    <p class="mb-0">@error.Message</p>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                                <div class="modal-footer border-secondary">
+                                    <button type="button" class="btn btn-secondary" @onclick="CloseErrorModal">Close</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool isLoading = true;
+    private string? errorMessage = null;
+    private AgentHealthDashboardResponse? healthData = null;
+    private AgentHealthInfo? selectedAgent = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadHealthData();
+    }
+
+    private async Task LoadHealthData()
+    {
+        isLoading = true;
+        errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            healthData = await Http.GetFromJsonAsync<AgentHealthDashboardResponse>("/api/agent/health-dashboard");
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            errorMessage = "Access denied. This dashboard is only accessible to DevAdmin users.";
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            errorMessage = "You must be logged in to view this dashboard.";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to load agent health data: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ShowErrors(AgentHealthInfo agent)
+    {
+        selectedAgent = agent;
+        StateHasChanged();
+    }
+
+    private void CloseErrorModal()
+    {
+        selectedAgent = null;
+        StateHasChanged();
+    }
+
+    private string GetRelativeTime(DateTimeOffset dateTime)
+    {
+        var timeSpan = DateTimeOffset.UtcNow - dateTime;
+
+        if (timeSpan.TotalMinutes < 1)
+            return "just now";
+        if (timeSpan.TotalMinutes < 60)
+            return $"{(int)timeSpan.TotalMinutes}m ago";
+        if (timeSpan.TotalHours < 24)
+            return $"{(int)timeSpan.TotalHours}h ago";
+        if (timeSpan.TotalDays < 7)
+            return $"{(int)timeSpan.TotalDays}d ago";
+        
+        return dateTime.DateTime.ToString("MMM dd, yyyy");
+    }
+
+    // DTOs matching the backend response
+    public class AgentHealthDashboardResponse
+    {
+        public List<AgentHealthInfo> Agents { get; set; } = new();
+    }
+
+    public class AgentHealthInfo
+    {
+        public string AgentId { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Status { get; set; } = "offline";
+        public DateTimeOffset? LastSeenUtc { get; set; }
+        public string? Version { get; set; }
+        public bool IsUpToDate { get; set; }
+        public string? VersionAvailable { get; set; }
+        public int CommandsPending { get; set; }
+        public int CommandsPolledSuccessful { get; set; }
+        public int CommandsPolledUnsuccessful { get; set; }
+        public List<AgentErrorInfo> RecentErrors { get; set; } = new();
+    }
+
+    public class AgentErrorInfo
+    {
+        public DateTimeOffset Timestamp { get; set; }
+        public string Message { get; set; } = string.Empty;
+    }
+}

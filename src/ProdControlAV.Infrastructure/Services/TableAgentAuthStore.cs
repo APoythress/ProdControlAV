@@ -216,4 +216,28 @@ public sealed class TableAgentAuthStore : IAgentAuthStore
             throw;
         }
     }
+
+    public async IAsyncEnumerable<AgentAuthDto> GetAgentsForTenantAsync(Guid tenantId, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        var partitionKey = tenantId.ToString().ToLowerInvariant();
+        var filter = $"PartitionKey eq '{partitionKey}'";
+        
+        _logger.LogDebug("Querying agents for tenant: TenantId={TenantId}", tenantId);
+        
+        await foreach (var entity in _agentsTable.QueryAsync<TableEntity>(filter, cancellationToken: ct))
+        {
+            var agentId = Guid.Parse(entity.RowKey);
+            
+            yield return new AgentAuthDto(
+                AgentId: agentId,
+                TenantId: tenantId,
+                Name: entity.GetString("Name") ?? "Agent",
+                AgentKeyHash: entity.GetString("AgentKeyHash") ?? string.Empty,
+                LastHostname: entity.GetString("LastHostname"),
+                LastIp: entity.GetString("LastIp"),
+                LastSeenUtc: entity.GetDateTimeOffset("LastSeenUtc"),
+                Version: entity.GetString("Version")
+            );
+        }
+    }
  }
