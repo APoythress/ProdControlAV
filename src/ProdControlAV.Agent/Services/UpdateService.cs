@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.Extensions.Options;
 using NetSparkleUpdater;
 using NetSparkleUpdater.Enums;
@@ -14,6 +15,7 @@ public sealed class UpdateService : BackgroundService
 {
     private readonly ILogger<UpdateService> _logger;
     private readonly UpdateOptions _updateOptions;
+    private readonly string _currentVersion;
     private SparkleUpdater? _sparkle;
 
     public UpdateService(
@@ -22,6 +24,12 @@ public sealed class UpdateService : BackgroundService
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _updateOptions = updateOptions?.Value ?? throw new ArgumentNullException(nameof(updateOptions));
+        
+        // Get the current agent version from assembly
+        var assembly = Assembly.GetExecutingAssembly();
+        _currentVersion = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion 
+            ?? assembly.GetName().Version?.ToString() 
+            ?? "0.0.0";
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -50,6 +58,7 @@ public sealed class UpdateService : BackgroundService
         {
             // Initialize NetSparkle with Ed25519 signature verification
             _logger.LogInformation("Initializing NetSparkle update system...");
+            _logger.LogInformation("Current agent version: {CurrentVersion}", _currentVersion);
             _logger.LogInformation("Appcast URL: {AppcastUrl}", _updateOptions.AppcastUrl);
             _logger.LogInformation("Check interval: {Interval} seconds", _updateOptions.CheckIntervalSeconds);
             _logger.LogInformation("Auto-install: {AutoInstall}", _updateOptions.AutoInstall);
@@ -72,16 +81,17 @@ public sealed class UpdateService : BackgroundService
             {
                 try
                 {
-                    _logger.LogDebug("Checking for updates...");
+                    _logger.LogDebug("Checking for updates (current version: {CurrentVersion})...", _currentVersion);
                     
                     // Check for updates
                     var updateInfo = await _sparkle.CheckForUpdatesQuietly();
                     
                     if (updateInfo.Status == UpdateStatus.UpdateAvailable)
                     {
+                        var latestVersion = updateInfo.Updates?.FirstOrDefault()?.Version ?? "unknown";
                         _logger.LogInformation(
-                            "Update available: Version {Version}",
-                            updateInfo.Updates?.FirstOrDefault()?.Version ?? "unknown");
+                            "Update available: Version {LatestVersion} (current: {CurrentVersion})",
+                            latestVersion, _currentVersion);
 
                         if (_updateOptions.AutoInstall)
                         {
@@ -104,11 +114,11 @@ public sealed class UpdateService : BackgroundService
                     }
                     else if (updateInfo.Status == UpdateStatus.UpdateNotAvailable)
                     {
-                        _logger.LogDebug("No updates available");
+                        _logger.LogDebug("No updates available. Current version {CurrentVersion} is up to date.", _currentVersion);
                     }
                     else if (updateInfo.Status == UpdateStatus.CouldNotDetermine)
                     {
-                        _logger.LogWarning("Could not determine update status");
+                        _logger.LogWarning("Could not determine update status. Check appcast URL and network connectivity.");
                     }
                 }
                 catch (Exception ex)
