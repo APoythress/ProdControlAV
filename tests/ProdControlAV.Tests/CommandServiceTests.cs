@@ -155,4 +155,61 @@ public class CommandServiceTests
                 It.IsAny<Func<It.IsAnyType, Exception, string>>()),
             Times.AtLeastOnce);
     }
+
+    [Fact]
+    public void CommandPayload_MatchesHyperDeckConfiguration()
+    {
+        // This test validates that the command payload structure matches
+        // the user's HyperDeck "Start Recording" command configuration
+        
+        // Arrange - Simulate exact payload from user's command
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            commandName = "Start Recording",
+            commandType = "REST",
+            commandData = "/transports/0/record",
+            httpMethod = "POST",
+            requestBody = "{ \"clipName\": null }",
+            requestHeaders = "{\"Authorization\": \"Bearer token\"}",
+            deviceIp = "10.10.30.235",
+            devicePort = 9993,
+            deviceType = "Video",
+            monitorRecordingStatus = true,
+            statusEndpoint = "/api/recording/status",
+            statusPollingIntervalSeconds = 60
+        });
+
+        // Act - Parse payload like the agent does
+        var payloadJson = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(payload);
+        
+        var commandData = payloadJson.GetProperty("commandData").GetString();
+        var httpMethod = payloadJson.GetProperty("httpMethod").GetString();
+        var deviceIp = payloadJson.GetProperty("deviceIp").GetString();
+        var devicePort = payloadJson.GetProperty("devicePort").GetInt32();
+        var requestBody = payloadJson.GetProperty("requestBody").GetString();
+        var requestHeaders = payloadJson.GetProperty("requestHeaders").GetString();
+        
+        // Build URL like the agent does
+        var baseUri = new Uri($"http://{deviceIp}:{devicePort}");
+        var path = commandData?.TrimStart('/') ?? "";
+        var fullUri = new Uri(baseUri, path);
+
+        // Assert - Verify all fields are correctly extracted
+        Assert.Equal("/transports/0/record", commandData);
+        Assert.Equal("POST", httpMethod);
+        Assert.Equal("10.10.30.235", deviceIp);
+        Assert.Equal(9993, devicePort);
+        Assert.Equal("{ \"clipName\": null }", requestBody);
+        Assert.Contains("Authorization", requestHeaders);
+        Assert.Contains("Bearer token", requestHeaders);
+        
+        // Verify URL construction matches expected HyperDeck API endpoint
+        Assert.Equal("http://10.10.30.235:9993/transports/0/record", fullUri.ToString());
+        
+        // Verify headers can be parsed
+        var headers = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(requestHeaders);
+        Assert.NotNull(headers);
+        Assert.True(headers.ContainsKey("Authorization"));
+        Assert.Equal("Bearer token", headers["Authorization"]);
+    }
 }
