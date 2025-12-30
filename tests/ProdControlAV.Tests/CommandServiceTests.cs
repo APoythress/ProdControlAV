@@ -122,7 +122,9 @@ public class CommandServiceTests
         var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object);
 
         // Create a REST command payload pointing to a non-existent device
-        // This will timeout or fail, testing error handling
+        // Note: This is an integration-style test that uses the real HttpClient behavior
+        // 192.0.2.1 is from TEST-NET-1 (RFC 5737) - a reserved IP that should not respond
+        // This allows us to test real error handling for unreachable devices
         var payload = System.Text.Json.JsonSerializer.Serialize(new
         {
             commandType = "REST",
