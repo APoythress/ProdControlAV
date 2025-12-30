@@ -130,10 +130,33 @@
 
     private async Task SignOut()
     {
-        displayName = "Signing out...";
-        StateHasChanged();
-        await Http.PostAsync("/api/auth/logout", content: null);
-        await JSRuntime.InvokeVoidAsync("window.location.replace", "/");
+        try
+        {
+            displayName = "Signing out...";
+            StateHasChanged();
+            
+            // Call the logout API endpoint
+            var response = await Http.PostAsync("/api/auth/logout", content: null);
+            
+            // Check if logout was successful
+            if (response.IsSuccessStatusCode)
+            {
+                // Force a full page reload to "/" to ensure all state is cleared
+                await JSRuntime.InvokeVoidAsync("window.location.replace", "/");
+            }
+            else
+            {
+                // If logout failed, still redirect to login but log the error
+                Console.WriteLine($"Logout failed with status: {response.StatusCode}");
+                await JSRuntime.InvokeVoidAsync("window.location.replace", "/");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Even if an error occurs, redirect to login page to be safe
+            Console.WriteLine($"Error during logout: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("window.location.replace", "/");
+        }
     }
 
     private class UserInfoResponse
