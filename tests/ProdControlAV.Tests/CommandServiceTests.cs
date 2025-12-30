@@ -97,4 +97,119 @@ public class CommandServiceTests
                 It.IsAny<Func<It.IsAnyType, Exception, string>>()),
             Times.Once);
     }
+
+    [Fact]
+    public async Task ExecuteCommandAsync_WithRESTCommand_HandlesDeviceErrors()
+    {
+        // Arrange
+        var mockLogger = new Mock<ILogger<CommandService>>();
+        var mockHttpClient = new Mock<HttpClient>();
+        var mockJwtAuth = new Mock<IJwtAuthService>();
+        mockJwtAuth.Setup(x => x.GetValidTokenAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-token");
+
+        var apiOptions = new ApiOptions
+        {
+            BaseUrl = "https://test.com/api",
+            DevicesEndpoint = "/agents/devices",
+            StatusEndpoint = "/agents/status",
+            HeartbeatEndpoint = "/agents/heartbeat",
+            CommandsEndpoint = "/agents/commands/next",
+            CommandCompleteEndpoint = "/agents/commands/complete",
+            ApiKey = "test-key"
+        };
+
+        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object);
+
+        // Create a REST command payload pointing to a non-existent device
+        // Note: This is an integration-style test that uses the real HttpClient behavior
+        // 192.0.2.1 is from TEST-NET-1 (RFC 5737) - a reserved IP that should not respond
+        // This allows us to test real error handling for unreachable devices
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            commandType = "REST",
+            deviceIp = "192.0.2.1", // Reserved IP that should not respond (TEST-NET-1)
+            devicePort = 9999,
+            commandData = "/test",
+            httpMethod = "GET"
+        });
+
+        var command = new CommandEnvelope
+        {
+            CommandId = Guid.NewGuid(),
+            DeviceId = Guid.NewGuid(),
+            Verb = "REST",
+            Payload = payload
+        };
+
+        // Act - Should not throw despite device being unreachable
+        await service.ExecuteCommandAsync(command, CancellationToken.None);
+
+        // Assert - Verify error logging occurred with device context
+        mockLogger.Verify(
+            x => x.Log(
+                It.Is<LogLevel>(l => l == LogLevel.Warning || l == LogLevel.Error),
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString().Contains("192.0.2.1") && v.ToString().Contains("9999")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception, string>>()),
+            Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public void CommandPayload_MatchesHyperDeckConfiguration()
+    {
+        // This test validates that the command payload structure matches
+        // the user's HyperDeck "Start Recording" command configuration
+        
+        // Arrange - Simulate exact payload from user's command
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            commandName = "Start Recording",
+            commandType = "REST",
+            commandData = "/transports/0/record",
+            httpMethod = "POST",
+            requestBody = "{ \"clipName\": null }",
+            requestHeaders = "{\"Authorization\": \"Bearer token\"}",
+            deviceIp = "10.10.30.235",
+            devicePort = 9993,
+            deviceType = "Video",
+            monitorRecordingStatus = true,
+            statusEndpoint = "/api/recording/status",
+            statusPollingIntervalSeconds = 60
+        });
+
+        // Act - Parse payload like the agent does
+        var payloadJson = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(payload);
+        
+        var commandData = payloadJson.GetProperty("commandData").GetString();
+        var httpMethod = payloadJson.GetProperty("httpMethod").GetString();
+        var deviceIp = payloadJson.GetProperty("deviceIp").GetString();
+        var devicePort = payloadJson.GetProperty("devicePort").GetInt32();
+        var requestBody = payloadJson.GetProperty("requestBody").GetString();
+        var requestHeaders = payloadJson.GetProperty("requestHeaders").GetString();
+        
+        // Build URL like the agent does
+        var baseUri = new Uri($"http://{deviceIp}:{devicePort}");
+        var path = commandData?.TrimStart('/') ?? "";
+        var fullUri = new Uri(baseUri, path);
+
+        // Assert - Verify all fields are correctly extracted
+        Assert.Equal("/transports/0/record", commandData);
+        Assert.Equal("POST", httpMethod);
+        Assert.Equal("10.10.30.235", deviceIp);
+        Assert.Equal(9993, devicePort);
+        Assert.Equal("{ \"clipName\": null }", requestBody);
+        Assert.Contains("Authorization", requestHeaders);
+        Assert.Contains("Bearer token", requestHeaders);
+        
+        // Verify URL construction matches expected HyperDeck API endpoint
+        Assert.Equal("http://10.10.30.235:9993/transports/0/record", fullUri.ToString());
+        
+        // Verify headers can be parsed
+        var headers = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(requestHeaders);
+        Assert.NotNull(headers);
+        Assert.True(headers.ContainsKey("Authorization"));
+        Assert.Equal("Bearer token", headers["Authorization"]);
+    }
 }
