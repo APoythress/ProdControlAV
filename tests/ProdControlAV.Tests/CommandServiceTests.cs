@@ -97,4 +97,60 @@ public class CommandServiceTests
                 It.IsAny<Func<It.IsAnyType, Exception, string>>()),
             Times.Once);
     }
+
+    [Fact]
+    public async Task ExecuteCommandAsync_WithRESTCommand_HandlesDeviceErrors()
+    {
+        // Arrange
+        var mockLogger = new Mock<ILogger<CommandService>>();
+        var mockHttpClient = new Mock<HttpClient>();
+        var mockJwtAuth = new Mock<IJwtAuthService>();
+        mockJwtAuth.Setup(x => x.GetValidTokenAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-token");
+
+        var apiOptions = new ApiOptions
+        {
+            BaseUrl = "https://test.com/api",
+            DevicesEndpoint = "/agents/devices",
+            StatusEndpoint = "/agents/status",
+            HeartbeatEndpoint = "/agents/heartbeat",
+            CommandsEndpoint = "/agents/commands/next",
+            CommandCompleteEndpoint = "/agents/commands/complete",
+            ApiKey = "test-key"
+        };
+
+        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object);
+
+        // Create a REST command payload pointing to a non-existent device
+        // This will timeout or fail, testing error handling
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            commandType = "REST",
+            deviceIp = "192.0.2.1", // Reserved IP that should not respond (TEST-NET-1)
+            devicePort = 9999,
+            commandData = "/test",
+            httpMethod = "GET"
+        });
+
+        var command = new CommandEnvelope
+        {
+            CommandId = Guid.NewGuid(),
+            DeviceId = Guid.NewGuid(),
+            Verb = "REST",
+            Payload = payload
+        };
+
+        // Act - Should not throw despite device being unreachable
+        await service.ExecuteCommandAsync(command, CancellationToken.None);
+
+        // Assert - Verify error logging occurred with device context
+        mockLogger.Verify(
+            x => x.Log(
+                It.Is<LogLevel>(l => l == LogLevel.Warning || l == LogLevel.Error),
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString().Contains("192.0.2.1") && v.ToString().Contains("9999")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception, string>>()),
+            Times.AtLeastOnce);
+    }
 }
