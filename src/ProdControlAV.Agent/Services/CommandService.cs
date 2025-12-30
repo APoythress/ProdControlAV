@@ -50,7 +50,19 @@ public class CommandService : ICommandService
     };
     
     // Shared HttpClient for device communication to avoid socket exhaustion
-    private static readonly HttpClient s_deviceHttpClient = new() { Timeout = TimeSpan.FromSeconds(5) };
+    // Configure with HTTP/1.1 to handle devices with non-compliant HTTP implementations
+    private static readonly HttpClient s_deviceHttpClient = new(new SocketsHttpHandler
+    {
+        // Use HTTP/1.1 by default as many devices don't properly support HTTP/2
+        // This helps with devices that return malformed status lines
+        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+        ConnectTimeout = TimeSpan.FromSeconds(3)
+    })
+    {
+        Timeout = TimeSpan.FromSeconds(5),
+        DefaultRequestVersion = new Version(1, 1),
+        DefaultVersionPolicy = System.Net.Http.HttpVersionPolicy.RequestVersionOrLower
+    };
 
     public CommandService(HttpClient http, ILogger<CommandService> logger, IOptions<ApiOptions> api, IJwtAuthService jwtAuth)
     {
@@ -222,12 +234,17 @@ public class CommandService : ICommandService
 
     private async Task<RestCommandResult> ExecuteRestCommandAsync(JsonElement payload, CancellationToken ct)
     {
+        string? deviceIp = null;
+        int devicePort = 80;
+        string? httpMethod = null;
+        string? commandData = null;
+        
         try
         {
-            var commandData = payload.GetProperty("commandData").GetString();
-            var httpMethod = payload.GetProperty("httpMethod").GetString() ?? "GET";
-            var deviceIp = payload.GetProperty("deviceIp").GetString();
-            var devicePort = payload.TryGetProperty("devicePort", out var portProp) && portProp.ValueKind != JsonValueKind.Null 
+            commandData = payload.GetProperty("commandData").GetString();
+            httpMethod = payload.GetProperty("httpMethod").GetString() ?? "GET";
+            deviceIp = payload.GetProperty("deviceIp").GetString();
+            devicePort = payload.TryGetProperty("devicePort", out var portProp) && portProp.ValueKind != JsonValueKind.Null 
                 ? portProp.GetInt32() : 80;
             
             var requestBody = payload.TryGetProperty("requestBody", out var bodyProp) && bodyProp.ValueKind != JsonValueKind.Null
@@ -287,23 +304,43 @@ public class CommandService : ICommandService
                 StatusCode = statusCode
             };
         }
-        catch (TaskCanceledException)
+        catch (HttpRequestException ex) when (ex.Message.Contains("invalid status line") || ex.Message.Contains("protocol"))
         {
+            // Device returned malformed HTTP response - common with embedded devices
+            var errorMsg = $"Device at {deviceIp ?? "unknown"}:{devicePort} returned malformed HTTP response. " +
+                          $"The device may not properly support HTTP protocol. Error: {ex.Message}";
+            _logger.LogError(ex, "Malformed HTTP response from device {DeviceIp}:{DevicePort} for command {Method} {Path}", 
+                deviceIp ?? "unknown", devicePort, httpMethod ?? "unknown", commandData ?? "unknown");
             return new RestCommandResult
             {
                 Success = false,
-                Message = "Request timed out after 5 seconds",
+                Message = errorMsg,
+                Response = null,
+                StatusCode = null
+            };
+        }
+        catch (TaskCanceledException)
+        {
+            var errorMsg = $"Request to {deviceIp ?? "unknown"}:{devicePort} timed out after 5 seconds";
+            _logger.LogWarning("REST command timed out for device {DeviceIp}:{DevicePort} - {Method} {Path}", 
+                deviceIp ?? "unknown", devicePort, httpMethod ?? "unknown", commandData ?? "unknown");
+            return new RestCommandResult
+            {
+                Success = false,
+                Message = errorMsg,
                 Response = null,
                 StatusCode = null
             };
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error executing REST command");
+            var errorMsg = $"Error communicating with device at {deviceIp ?? "unknown"}:{devicePort}: {ex.Message}";
+            _logger.LogError(ex, "Error executing REST command for device {DeviceIp}:{DevicePort} - {Method} {Path}", 
+                deviceIp ?? "unknown", devicePort, httpMethod ?? "unknown", commandData ?? "unknown");
             return new RestCommandResult
             {
                 Success = false,
-                Message = $"Error: {ex.Message}",
+                Message = errorMsg,
                 Response = null,
                 StatusCode = null
             };
