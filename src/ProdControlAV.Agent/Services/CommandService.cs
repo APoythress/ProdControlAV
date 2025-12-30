@@ -49,6 +49,9 @@ public class CommandService : ICommandService
         TypeInfoResolver = new DefaultJsonTypeInfoResolver()
     };
     
+    // Delay between retry attempts for command history recording
+    private const int RetryDelayMs = 1000;
+    
     // Shared HttpClient for device communication to avoid socket exhaustion
     // Configure with HTTP/1.1 to handle devices with non-compliant HTTP implementations
     private static readonly HttpClient s_deviceHttpClient = new(new SocketsHttpHandler
@@ -374,7 +377,7 @@ public class CommandService : ICommandService
                     {
                         // Force a token refresh before retrying
                         await _jwtAuth.RefreshTokenAsync(ct);
-                        await Task.Delay(1000, ct); // Brief delay before retry
+                        await Task.Delay(RetryDelayMs, ct);
                         continue;
                     }
                     return;
@@ -408,7 +411,7 @@ public class CommandService : ICommandService
                     _logger.LogWarning("Received 401 Unauthorized when recording command history, forcing token refresh (attempt {Attempt}/{MaxRetries})", 
                         attempt + 1, maxRetries);
                     await _jwtAuth.RefreshTokenAsync(ct);
-                    await Task.Delay(1000, ct);
+                    await Task.Delay(RetryDelayMs, ct);
                     continue;
                 }
                 
@@ -423,7 +426,7 @@ public class CommandService : ICommandService
                 {
                     _logger.LogWarning(ex, "Failed to record command history for {CommandId} (attempt {Attempt}/{MaxRetries}), retrying...", 
                         commandId, attempt + 1, maxRetries);
-                    await Task.Delay(1000, ct);
+                    await Task.Delay(RetryDelayMs, ct);
                 }
                 else
                 {
