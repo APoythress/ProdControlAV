@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -56,4 +57,12 @@ public interface IAgentAuthStore
     /// <param name="tenantId">Tenant identifier</param>
     /// <param name="ct">Cancellation token</param>
     Task DeleteAgentAsync(Guid agentId, Guid tenantId, CancellationToken ct);
+
+    /// <summary>
+    /// Gets all agents for a specific tenant
+    /// </summary>
+    /// <param name="tenantId">Tenant identifier</param>
+    /// <param name="ct">Cancellation token</param>
+    /// <returns>Async enumerable of agent authentication records</returns>
+    IAsyncEnumerable<AgentAuthDto> GetAgentsForTenantAsync(Guid tenantId, CancellationToken ct);
 }
