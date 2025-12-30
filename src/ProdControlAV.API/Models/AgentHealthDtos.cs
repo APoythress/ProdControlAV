@@ -37,7 +37,7 @@ public sealed class AgentHealthInfo
     /// <summary>
     /// Timestamp of last heartbeat or activity (UTC)
     /// </summary>
-    public DateTime? LastSeenUtc { get; set; }
+    public DateTimeOffset? LastSeenUtc { get; set; }
     
     /// <summary>
     /// Currently running agent version
@@ -83,7 +83,7 @@ public sealed class AgentErrorInfo
     /// <summary>
     /// Timestamp when the error occurred (UTC)
     /// </summary>
-    public DateTime Timestamp { get; set; }
+    public DateTimeOffset Timestamp { get; set; }
     
     /// <summary>
     /// Error message

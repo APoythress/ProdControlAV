@@ -111,7 +111,7 @@ public sealed class AgentHealthController : ControllerBase
                 .Take(5)
                 .Select(h => new AgentErrorInfo
                 {
-                    Timestamp = h.ExecutedUtc.DateTime,
+                    Timestamp = h.ExecutedUtc,
                     Message = h.ErrorMessage ?? "Unknown error"
                 })
                 .ToList();
@@ -124,7 +124,7 @@ public sealed class AgentHealthController : ControllerBase
                     AgentId = agent.AgentId.ToString(),
                     Name = agent.Name ?? agent.LastHostname ?? "Unknown Agent",
                     Version = agent.Version,
-                    LastSeenUtc = agent.LastSeenUtc?.DateTime
+                    LastSeenUtc = agent.LastSeenUtc
                 };
 
                 // Determine online/offline status based on last seen time

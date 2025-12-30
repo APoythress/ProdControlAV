@@ -314,11 +314,9 @@
         StateHasChanged();
     }
 
-    private string GetRelativeTime(DateTime dateTime)
+    private string GetRelativeTime(DateTimeOffset dateTime)
     {
-        // Convert to UTC DateTimeOffset for proper comparison
-        var dateTimeOffset = new DateTimeOffset(dateTime, TimeSpan.Zero);
-        var timeSpan = DateTimeOffset.UtcNow - dateTimeOffset;
+        var timeSpan = DateTimeOffset.UtcNow - dateTime;
 
         if (timeSpan.TotalMinutes < 1)
             return "just now";
@@ -329,7 +327,7 @@
         if (timeSpan.TotalDays < 7)
             return $"{(int)timeSpan.TotalDays}d ago";
         
-        return dateTime.ToString("MMM dd, yyyy");
+        return dateTime.DateTime.ToString("MMM dd, yyyy");
     }
 
     // DTOs matching the backend response
@@ -343,7 +341,7 @@
         public string AgentId { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public string Status { get; set; } = "offline";
-        public DateTime? LastSeenUtc { get; set; }
+        public DateTimeOffset? LastSeenUtc { get; set; }
         public string? Version { get; set; }
         public bool IsUpToDate { get; set; }
         public string? VersionAvailable { get; set; }
@@ -355,7 +353,7 @@
 
     public class AgentErrorInfo
     {
-        public DateTime Timestamp { get; set; }
+        public DateTimeOffset Timestamp { get; set; }
         public string Message { get; set; } = string.Empty;
     }
 }
