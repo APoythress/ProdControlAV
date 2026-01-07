@@ -259,4 +259,94 @@ public sealed class AgentHealthController : ControllerBase
         public string Version { get; set; } = string.Empty;
         public string ShortVersion { get; set; } = string.Empty;
     }
+    
+    /// <summary>
+    /// Trigger an agent to apply an available update
+    /// POST /api/agent/{agentId}/trigger-update
+    /// </summary>
+    [HttpPost("{agentId}/trigger-update")]
+    [ProducesResponseType(200)]
+    [ProducesResponseType(400)]
+    [ProducesResponseType(401)]
+    [ProducesResponseType(403)]
+    [ProducesResponseType(404)]
+    public async Task<ActionResult> TriggerAgentUpdate(string agentId, CancellationToken ct)
+    {
+        // Get tenant ID from authenticated user's claims
+        var tenantIdClaim = User.FindFirstValue("tenant_id");
+        if (!Guid.TryParse(tenantIdClaim, out var tenantId))
+        {
+            _logger.LogWarning("[TRIGGER-UPDATE] Invalid or missing tenant_id claim");
+            return Unauthorized(new { error = "invalid_tenant" });
+        }
+        
+        if (!Guid.TryParse(agentId, out var agentGuid))
+        {
+            _logger.LogWarning("[TRIGGER-UPDATE] Invalid agent ID format: {AgentId}", agentId);
+            return BadRequest(new { error = "invalid_agent_id" });
+        }
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        _logger.LogInformation("[TRIGGER-UPDATE] User {UserId} triggering update for agent {AgentId} in tenant {TenantId}", 
+            userId, agentId, tenantId);
+
+        try
+        {
+            // Verify agent exists and belongs to tenant
+            AgentAuthDto? agent = null;
+            await foreach (var a in _agentAuthStore.GetAgentsForTenantAsync(tenantId, ct))
+            {
+                if (a.AgentId == agentGuid)
+                {
+                    agent = a;
+                    break;
+                }
+            }
+            
+            if (agent == null)
+            {
+                _logger.LogWarning("[TRIGGER-UPDATE] Agent {AgentId} not found in tenant {TenantId}", agentId, tenantId);
+                return NotFound(new { error = "agent_not_found" });
+            }
+
+            // Create UPDATE command in CommandQueue
+            var commandId = Guid.NewGuid();
+            var updateCommand = new CommandQueueDto(
+                CommandId: commandId,
+                TenantId: tenantId,
+                DeviceId: Guid.Empty, // Not device-specific, agent-level command
+                CommandName: "Agent Update",
+                CommandType: "UPDATE",
+                CommandData: string.Empty,
+                HttpMethod: null,
+                RequestBody: null,
+                RequestHeaders: null,
+                QueuedUtc: DateTimeOffset.UtcNow,
+                QueuedByUserId: Guid.Parse(userId ?? Guid.Empty.ToString()),
+                DeviceIp: null,
+                DevicePort: null,
+                DeviceType: null,
+                MonitorRecordingStatus: false,
+                StatusEndpoint: null,
+                StatusPollingIntervalSeconds: 60,
+                Status: "Pending",
+                AttemptCount: 0
+            );
+
+            await _commandQueueStore.EnqueueAsync(updateCommand, ct);
+            
+            _logger.LogInformation("[TRIGGER-UPDATE] Update command {CommandId} enqueued for agent {AgentId}", commandId, agentId);
+
+            return Ok(new { 
+                success = true, 
+                commandId = commandId,
+                message = "Update command has been sent to the agent. The agent will apply the update and restart automatically."
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[TRIGGER-UPDATE] Error triggering update for agent {AgentId}", agentId);
+            return StatusCode(500, new { error = "failed_to_trigger_update", details = ex.Message });
+        }
+    }
 }

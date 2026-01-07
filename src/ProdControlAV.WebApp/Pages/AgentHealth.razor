@@ -156,8 +156,20 @@
                                                     @if (!agent.IsUpToDate && !string.IsNullOrEmpty(agent.VersionAvailable))
                                                     {
                                                         <span class="badge bg-warning text-dark ms-2" title="Update available: @agent.VersionAvailable">
-                                                            <i class="bi bi-arrow-up-circle"></i>
+                                                            <i class="bi bi-arrow-up-circle"></i> @agent.VersionAvailable
                                                         </span>
+                                                        <button class="btn btn-sm btn-warning ms-2" @onclick="() => TriggerUpdate(agent)" disabled="@(isUpdating == agent.AgentId)">
+                                                            @if (isUpdating == agent.AgentId)
+                                                            {
+                                                                <span class="spinner-border spinner-border-sm me-1"></span>
+                                                                <span>Applying...</span>
+                                                            }
+                                                            else
+                                                            {
+                                                                <i class="bi bi-cloud-download me-1"></i>
+                                                                <span>Apply Update</span>
+                                                            }
+                                                        </button>
                                                     }
                                                 }
                                                 else
@@ -257,6 +269,53 @@
                         </div>
                     </div>
                 }
+                
+                <!-- Update Confirmation Modal -->
+                @if (showUpdateModal && agentToUpdate != null)
+                {
+                    <div class="modal show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+                        <div class="modal-dialog">
+                            <div class="modal-content bg-dark text-white">
+                                <div class="modal-header border-secondary">
+                                    <h5 class="modal-title">
+                                        <i class="bi bi-cloud-download me-2"></i>Confirm Agent Update
+                                    </h5>
+                                    <button type="button" class="btn-close btn-close-white" @onclick="CancelUpdate"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <p>Are you sure you want to update <strong>@agentToUpdate.Name</strong>?</p>
+                                    <div class="alert alert-warning">
+                                        <i class="bi bi-exclamation-triangle me-2"></i>
+                                        <strong>Important:</strong>
+                                        <ul class="mb-0 mt-2">
+                                            <li>Current version: <strong>@agentToUpdate.Version</strong></li>
+                                            <li>New version: <strong>@agentToUpdate.VersionAvailable</strong></li>
+                                            <li>The agent will automatically create a backup</li>
+                                            <li>The agent will restart after applying the update</li>
+                                            <li>This process takes approximately 1-2 minutes</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="modal-footer border-secondary">
+                                    <button type="button" class="btn btn-secondary" @onclick="CancelUpdate">Cancel</button>
+                                    <button type="button" class="btn btn-warning" @onclick="ConfirmUpdate">
+                                        <i class="bi bi-cloud-download me-1"></i>Apply Update
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+                
+                <!-- Update Status Message -->
+                @if (!string.IsNullOrEmpty(updateMessage))
+                {
+                    <div class="alert alert-info alert-dismissible fade show mt-3" role="alert">
+                        <i class="bi bi-info-circle me-2"></i>
+                        @updateMessage
+                        <button type="button" class="btn-close" @onclick="() => updateMessage = null"></button>
+                    </div>
+                }
             }
         </div>
     </div>
@@ -267,6 +326,10 @@
     private string? errorMessage = null;
     private AgentHealthDashboardResponse? healthData = null;
     private AgentHealthInfo? selectedAgent = null;
+    private string? isUpdating = null;
+    private string? updateMessage = null;
+    private bool showUpdateModal = false;
+    private AgentHealthInfo? agentToUpdate = null;
 
     protected override async Task OnInitializedAsync()
     {
@@ -300,6 +363,64 @@
             isLoading = false;
             StateHasChanged();
         }
+    }
+    
+    private void TriggerUpdate(AgentHealthInfo agent)
+    {
+        agentToUpdate = agent;
+        showUpdateModal = true;
+        StateHasChanged();
+    }
+    
+    private async Task ConfirmUpdate()
+    {
+        if (agentToUpdate == null)
+            return;
+            
+        showUpdateModal = false;
+        isUpdating = agentToUpdate.AgentId;
+        updateMessage = null;
+        StateHasChanged();
+        
+        try
+        {
+            var response = await Http.PostAsync($"/api/agent/{agentToUpdate.AgentId}/trigger-update", null);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                updateMessage = $"Update successfully triggered for {agentToUpdate.Name}. The agent will apply the update and restart automatically.";
+                
+                // Refresh data after a delay
+                await Task.Delay(3000);
+                await LoadHealthData();
+            }
+            else
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                updateMessage = $"Failed to trigger update: {errorContent}";
+            }
+        }
+        catch (Exception ex)
+        {
+            updateMessage = $"Error triggering update: {ex.Message}";
+        }
+        finally
+        {
+            isUpdating = null;
+            StateHasChanged();
+            
+            // Clear message after 10 seconds
+            await Task.Delay(10000);
+            updateMessage = null;
+            StateHasChanged();
+        }
+    }
+    
+    private void CancelUpdate()
+    {
+        showUpdateModal = false;
+        agentToUpdate = null;
+        StateHasChanged();
     }
 
     private void ShowErrors(AgentHealthInfo agent)
