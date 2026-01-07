@@ -186,6 +186,19 @@ public class CommandService : ICommandService
                     message = "Telnet commands not yet implemented";
                     _logger.LogWarning("Telnet command execution not yet implemented");
                 }
+                else if (commandType == "UPDATE")
+                {
+                    // Trigger agent update
+                    _logger.LogInformation("Received UPDATE command, triggering agent update...");
+                    message = "Update command received and will be processed by UpdateService";
+                    success = true;
+                    
+                    // Signal update service to check and apply updates
+                    // This is done via file system signal since we can't inject UpdateService
+                    var updateSignalFile = Path.Combine(Path.GetTempPath(), "prodcontrolav-update-trigger");
+                    await File.WriteAllTextAsync(updateSignalFile, DateTime.UtcNow.ToString("O"), ct);
+                    _logger.LogInformation("Update trigger signal created at: {SignalFile}", updateSignalFile);
+                }
                 else
                 {
                     message = $"Unknown command type: {commandType}";
