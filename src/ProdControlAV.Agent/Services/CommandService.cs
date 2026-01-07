@@ -418,25 +418,23 @@ public class CommandService : ICommandService
 
                 using var res = await _http.SendAsync(req, ct);
                 
+                // Handle 401 Unauthorized - check if we're on the last attempt
+                if (res.StatusCode == System.Net.HttpStatusCode.Unauthorized && attempt >= maxRetries - 1)
+                {
+                    // Final attempt still got 401 - log and return instead of throwing
+                    _logger.LogError("Failed to record command history for {CommandId} after {MaxRetries} attempts - persistent 401 Unauthorized. This may indicate an authentication issue. Command was executed with Success={Success}", 
+                        commandId, maxRetries, success);
+                    return;
+                }
+                
                 if (res.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
-                    if (attempt < maxRetries - 1)
-                    {
-                        // 401 Unauthorized - force token refresh and retry
-                        _logger.LogWarning("Received 401 Unauthorized when recording command history, forcing token refresh (attempt {Attempt}/{MaxRetries})", 
-                            attempt + 1, maxRetries);
-                        await _jwtAuth.RefreshTokenAsync(ct);
-                        await Task.Delay(RetryDelayMs, ct);
-                        continue;
-                    }
-                    else
-                    {
-                        // Final attempt still got 401 - log and return instead of throwing
-                        _logger.LogError("Failed to record command history for {CommandId} after {MaxRetries} attempts - persistent 401 Unauthorized. " +
-                            "This may indicate an authentication issue. Command was executed with Success={Success}", 
-                            commandId, maxRetries, success);
-                        return;
-                    }
+                    // 401 Unauthorized - force token refresh and retry
+                    _logger.LogWarning("Received 401 Unauthorized when recording command history, forcing token refresh (attempt {Attempt}/{MaxRetries})", 
+                        attempt + 1, maxRetries);
+                    await _jwtAuth.RefreshTokenAsync(ct);
+                    await Task.Delay(RetryDelayMs, ct);
+                    continue;
                 }
                 
                 res.EnsureSuccessStatusCode();
