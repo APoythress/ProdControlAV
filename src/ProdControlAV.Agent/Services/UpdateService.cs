@@ -123,7 +123,9 @@ public sealed class UpdateService : BackgroundService
                 // Headless mode - no UI
                 UIFactory = null,
                 TmpDownloadFilePath = Path.Combine(Path.GetTempPath(), "prodcontrolav-update.zip"),
-                RelaunchAfterUpdate = false  // We handle restart via Environment.Exit(0) and systemd
+                RelaunchAfterUpdate = false,  // We handle restart via Environment.Exit(0) and systemd
+                // Configure JSON appcast generator (NetSparkle defaults to XML)
+                AppCastGenerator = new JsonAppCastGenerator()
             };
             
             // NetSparkle reads the version from the reference assembly using AssemblyInformationalVersion.
