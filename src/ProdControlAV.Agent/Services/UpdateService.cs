@@ -19,6 +19,7 @@ public sealed class UpdateService : BackgroundService
     private readonly ILogger<UpdateService> _logger;
     private readonly UpdateOptions _updateOptions;
     private readonly string _currentVersion;
+    private readonly string _currentVersionRaw;
     private readonly string _agentDirectory;
     private readonly string _backupBaseDirectory;
     private SparkleUpdater? _sparkle;
@@ -33,15 +34,44 @@ public sealed class UpdateService : BackgroundService
         
         // Get the current agent version from assembly
         var assembly = Assembly.GetExecutingAssembly();
-        _currentVersion = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion 
+        _currentVersionRaw = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion 
             ?? assembly.GetName().Version?.ToString() 
             ?? "0.0.0";
+        
+        // Strip build metadata (+<hash>) for NetSparkle version comparison
+        // SemVer format: major.minor.patch[-prerelease][+buildmetadata]
+        // NetSparkle needs the version without build metadata for proper comparison
+        _currentVersion = StripBuildMetadata(_currentVersionRaw);
             
         // Determine agent directory (where the agent is installed)
         _agentDirectory = Path.GetDirectoryName(assembly.Location) ?? "/opt/prodcontrolav/agent";
         
         // Backup directory
         _backupBaseDirectory = "/opt/prodcontrolav";
+    }
+    
+    /// <summary>
+    /// Strips build metadata from a semantic version string following SemVer 2.0.0 specification.
+    /// Build metadata is identified by a plus sign (+) and should be ignored for version precedence.
+    /// </summary>
+    /// <param name="version">The version string to process. Can be null or empty.</param>
+    /// <returns>
+    /// The version string with build metadata removed. Returns "0.0.0" if input is null or whitespace.
+    /// Examples:
+    /// - "1.0.51+8754e5a" -> "1.0.51"
+    /// - "1.0.0-beta+build" -> "1.0.0-beta" (preserves pre-release tag)
+    /// - "1.0.0" -> "1.0.0" (no change if no metadata)
+    /// - null or "" -> "0.0.0"
+    /// </returns>
+    internal static string StripBuildMetadata(string? version)
+    {
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            return "0.0.0";
+        }
+        
+        var plusIndex = version.IndexOf('+');
+        return plusIndex >= 0 ? version.Substring(0, plusIndex) : version;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -70,7 +100,8 @@ public sealed class UpdateService : BackgroundService
         {
             // Initialize NetSparkle with Ed25519 signature verification
             _logger.LogInformation("Initializing NetSparkle update system...");
-            _logger.LogInformation("Current agent version: {CurrentVersion}", _currentVersion);
+            _logger.LogInformation("Current agent version (raw): {CurrentVersionRaw}", _currentVersionRaw);
+            _logger.LogInformation("Current agent version (for comparison): {CurrentVersion}", _currentVersion);
             _logger.LogInformation("Agent directory: {AgentDirectory}", _agentDirectory);
             _logger.LogInformation("Backup directory: {BackupDirectory}", _backupBaseDirectory);
             _logger.LogInformation("Appcast URL: {AppcastUrl}", _updateOptions.AppcastUrl);
@@ -81,7 +112,8 @@ public sealed class UpdateService : BackgroundService
 
             _sparkle = new SparkleUpdater(
                 _updateOptions.AppcastUrl,
-                signatureVerifier)
+                signatureVerifier,
+                _currentVersion)  // Pass cleaned version without build metadata
             {
                 // Headless mode - no UI
                 UIFactory = null,
