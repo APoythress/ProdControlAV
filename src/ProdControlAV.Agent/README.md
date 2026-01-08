@@ -434,6 +434,40 @@ sudo journalctl -u prodcontrolav-agent -f
 sudo journalctl -u prodcontrolav-agent -p err
 ```
 
+### Update Service Logging
+
+The agent includes dedicated file logging for the UpdateService to track all update-related activity:
+
+**Log Location:** `/opt/prodcontrolav/agent/logs/updateService/`  
+**File Format:** `YYYY-MM-DD_UpdateServiceLog.txt` (daily rotation)
+
+**Features:**
+- Captures all UpdateService operations and NetSparkle library events
+- Detailed error logging with exception stack traces
+- Separate log files per day (UTC) for easy troubleshooting
+- Includes timestamps, log levels, and categorized messages
+- Automatically created on first agent startup
+
+**View Update Logs:**
+```bash
+# View today's update log
+cat /opt/prodcontrolav/agent/logs/updateService/$(date -u +%Y-%m-%d)_UpdateServiceLog.txt
+
+# Follow live update activity
+tail -f /opt/prodcontrolav/agent/logs/updateService/$(date -u +%Y-%m-%d)_UpdateServiceLog.txt
+
+# Search for errors in update logs
+grep -i "error\|warn" /opt/prodcontrolav/agent/logs/updateService/*.txt
+
+# View last 50 lines of today's update log
+tail -50 /opt/prodcontrolav/agent/logs/updateService/$(date -u +%Y-%m-%d)_UpdateServiceLog.txt
+```
+
+**Common Update Issues:**
+- **Timeout errors**: Check network connectivity and firewall settings for accessing update server
+- **Appcast download failures**: Verify the AppcastUrl in appsettings.json is correct and accessible
+- **Signature verification errors**: Ensure Ed25519PublicKey matches the update server's signing key
+
 ### Performance Monitoring
 ```bash
 # Check resource usage
