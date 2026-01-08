@@ -12,9 +12,7 @@
       "description": "Initial release with automatic update support",
       "size": 0,
       "type": "application/zip",
-      "signature": {
-        "ed25519": "BASE64_SIGNATURE_WILL_BE_GENERATED_BY_SIGN_SCRIPT"
-      },
+      "signature": "BASE64_SIGNATURE_WILL_BE_GENERATED_BY_SIGN_SCRIPT",
       "os": "linux",
       "critical_update": false,
       "min_system_version": "0.0.0"
