@@ -2,7 +2,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
 using ProdControlAV.Agent.Services;
-using System.Reflection;
 using Xunit;
 
 namespace ProdControlAV.Tests;
@@ -19,14 +18,8 @@ public class UpdateServiceTests
     [InlineData(null, "0.0.0")]
     public void StripBuildMetadata_HandlesVariousVersionFormats(string? input, string expected)
     {
-        // Arrange
-        var method = typeof(UpdateService).GetMethod("StripBuildMetadata", 
-            BindingFlags.NonPublic | BindingFlags.Static);
-        
-        Assert.NotNull(method);
-        
         // Act
-        var result = method.Invoke(null, new object?[] { input });
+        var result = UpdateService.StripBuildMetadata(input);
         
         // Assert
         Assert.Equal(expected, result);

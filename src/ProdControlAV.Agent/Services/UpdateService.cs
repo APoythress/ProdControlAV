@@ -51,10 +51,19 @@ public sealed class UpdateService : BackgroundService
     }
     
     /// <summary>
-    /// Strips build metadata from a semantic version string.
-    /// Example: "1.0.51+8754e5a" -> "1.0.51"
+    /// Strips build metadata from a semantic version string following SemVer 2.0.0 specification.
+    /// Build metadata is identified by a plus sign (+) and should be ignored for version precedence.
     /// </summary>
-    private static string StripBuildMetadata(string version)
+    /// <param name="version">The version string to process. Can be null or empty.</param>
+    /// <returns>
+    /// The version string with build metadata removed. Returns "0.0.0" if input is null or whitespace.
+    /// Examples:
+    /// - "1.0.51+8754e5a" -> "1.0.51"
+    /// - "1.0.0-beta+build" -> "1.0.0-beta" (preserves pre-release tag)
+    /// - "1.0.0" -> "1.0.0" (no change if no metadata)
+    /// - null or "" -> "0.0.0"
+    /// </returns>
+    internal static string StripBuildMetadata(string version)
     {
         if (string.IsNullOrWhiteSpace(version))
         {
