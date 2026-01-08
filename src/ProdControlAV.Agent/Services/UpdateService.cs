@@ -22,6 +22,7 @@ public sealed class UpdateService : BackgroundService
     private readonly string _currentVersionRaw;
     private readonly string _agentDirectory;
     private readonly string _backupBaseDirectory;
+    private readonly string _referenceAssembly;
     private SparkleUpdater? _sparkle;
     private readonly SemaphoreSlim _updateLock = new SemaphoreSlim(1, 1);
 
@@ -45,6 +46,9 @@ public sealed class UpdateService : BackgroundService
             
         // Determine agent directory (where the agent is installed)
         _agentDirectory = Path.GetDirectoryName(assembly.Location) ?? "/opt/prodcontrolav/agent";
+        
+        // Store reference assembly path for NetSparkle configuration
+        _referenceAssembly = assembly.Location;
         
         // Backup directory
         _backupBaseDirectory = "/opt/prodcontrolav";
@@ -102,6 +106,7 @@ public sealed class UpdateService : BackgroundService
             _logger.LogInformation("Initializing NetSparkle update system...");
             _logger.LogInformation("Current agent version (raw): {CurrentVersionRaw}", _currentVersionRaw);
             _logger.LogInformation("Current agent version (for comparison): {CurrentVersion}", _currentVersion);
+            _logger.LogInformation("Reference assembly: {ReferenceAssembly}", _referenceAssembly);
             _logger.LogInformation("Agent directory: {AgentDirectory}", _agentDirectory);
             _logger.LogInformation("Backup directory: {BackupDirectory}", _backupBaseDirectory);
             _logger.LogInformation("Appcast URL: {AppcastUrl}", _updateOptions.AppcastUrl);
@@ -113,12 +118,17 @@ public sealed class UpdateService : BackgroundService
             _sparkle = new SparkleUpdater(
                 _updateOptions.AppcastUrl,
                 signatureVerifier,
-                _currentVersion)  // Pass cleaned version without build metadata
+                _referenceAssembly)  // Pass reference assembly path for configuration storage
             {
                 // Headless mode - no UI
                 UIFactory = null,
-                TmpDownloadFilePath = Path.Combine(Path.GetTempPath(), "prodcontrolav-update.zip")
+                TmpDownloadFilePath = Path.Combine(Path.GetTempPath(), "prodcontrolav-update.zip"),
+                RelaunchAfterUpdate = false  // We handle restart via Environment.Exit(0) and systemd
             };
+            
+            // Note: NetSparkle will read the version from the reference assembly.
+            // It should properly handle SemVer build metadata (the +hash part) and ignore it for comparison.
+            // The cleaned version is logged above for diagnostic purposes.
 
             _logger.LogInformation("NetSparkle update system initialized successfully");
             _logger.LogInformation("Note: File logging for UpdateService is active in logs/updateService/ folder");
