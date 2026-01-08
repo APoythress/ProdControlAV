@@ -63,7 +63,7 @@ public sealed class UpdateService : BackgroundService
     /// - "1.0.0" -> "1.0.0" (no change if no metadata)
     /// - null or "" -> "0.0.0"
     /// </returns>
-    internal static string StripBuildMetadata(string version)
+    internal static string StripBuildMetadata(string? version)
     {
         if (string.IsNullOrWhiteSpace(version))
         {
