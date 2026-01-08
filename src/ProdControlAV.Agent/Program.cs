@@ -1,3 +1,4 @@
+using System.Reflection;
 using DotNetEnv;
 using Microsoft.Extensions.Options;
 using ProdControlAV.Agent.Services;
@@ -10,10 +11,18 @@ Env.Load(); // Loads .env from current working directory
 // Add environment variable configuration with specific prefix for security
 builder.Configuration.AddEnvironmentVariables("PRODCONTROL_");
 
+// Determine agent directory for file logging
+var assembly = Assembly.GetExecutingAssembly();
+var agentDirectory = Path.GetDirectoryName(assembly.Location) ?? "/opt/prodcontrolav/agent";
+
 // Configure logging from configuration and add console provider
 builder.Logging.ClearProviders();
 builder.Logging.AddConfiguration(builder.Configuration.GetSection("Logging"));
 builder.Logging.AddConsole();
+
+// Add dedicated file logging for UpdateService
+builder.Logging.Services.AddSingleton<ILoggerProvider>(sp => 
+    new UpdateServiceFileLoggerProvider(agentDirectory));
 
 // Bind options
 builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("Polling"));

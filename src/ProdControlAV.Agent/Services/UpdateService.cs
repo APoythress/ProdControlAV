@@ -89,6 +89,7 @@ public sealed class UpdateService : BackgroundService
             };
 
             _logger.LogInformation("NetSparkle update system initialized successfully");
+            _logger.LogInformation("Note: File logging for UpdateService is active in logs/updateService/ folder");
 
             // Run the update check loop
             while (!stoppingToken.IsCancellationRequested)
@@ -116,8 +117,32 @@ public sealed class UpdateService : BackgroundService
                         _logger.LogDebug("Checking for updates (current version: {CurrentVersion})...", _currentVersion);
                     }
                     
-                    // Check for updates
-                    var updateInfo = await _sparkle.CheckForUpdatesQuietly();
+                    // Check for updates with detailed logging
+                    _logger.LogDebug("Attempting to download appcast from: {AppcastUrl}", _updateOptions.AppcastUrl);
+                    
+                    UpdateInfo updateInfo;
+                    try
+                    {
+                        updateInfo = await _sparkle.CheckForUpdatesQuietly();
+                        _logger.LogDebug("Appcast check completed with status: {Status}", updateInfo.Status);
+                    }
+                    catch (System.Net.WebException webEx)
+                    {
+                        _logger.LogError(webEx, "Network error while downloading appcast. Status: {Status}", webEx.Status);
+                        _logger.LogError("This may be caused by: slow network connection, timeout (default 100s), DNS issues, or firewall blocking access");
+                        continue; // Skip to next iteration
+                    }
+                    catch (TaskCanceledException tcEx)
+                    {
+                        _logger.LogError(tcEx, "Timeout while downloading appcast. The operation exceeded the configured timeout period.");
+                        _logger.LogError("Consider checking network speed and connectivity to: {AppcastUrl}", _updateOptions.AppcastUrl);
+                        continue; // Skip to next iteration
+                    }
+                    catch (HttpRequestException httpEx)
+                    {
+                        _logger.LogError(httpEx, "HTTP error while downloading appcast");
+                        continue; // Skip to next iteration
+                    }
                     
                     if (updateInfo.Status == UpdateStatus.UpdateAvailable)
                     {
@@ -157,6 +182,12 @@ public sealed class UpdateService : BackgroundService
                     else if (updateInfo.Status == UpdateStatus.CouldNotDetermine)
                     {
                         _logger.LogWarning("Could not determine update status. Check appcast URL and network connectivity.");
+                        _logger.LogWarning("Appcast URL being used: {AppcastUrl}", _updateOptions.AppcastUrl);
+                        _logger.LogWarning("Ensure the URL is accessible and the appcast.json file exists at that location.");
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Unknown update status: {Status}", updateInfo.Status);
                     }
                 }
                 catch (Exception ex)
