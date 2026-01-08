@@ -126,8 +126,9 @@ public sealed class UpdateService : BackgroundService
                 RelaunchAfterUpdate = false  // We handle restart via Environment.Exit(0) and systemd
             };
             
-            // Note: NetSparkle will read the version from the reference assembly.
-            // It should properly handle SemVer build metadata (the +hash part) and ignore it for comparison.
+            // NetSparkle reads the version from the reference assembly using AssemblyInformationalVersion.
+            // Per SemVer 2.0.0 spec, build metadata (the +hash part) should be ignored for version precedence.
+            // NetSparkle uses the Chaos.NaCl.Ed25519 library which handles SemVer comparisons.
             // The cleaned version is logged above for diagnostic purposes.
 
             _logger.LogInformation("NetSparkle update system initialized successfully");
