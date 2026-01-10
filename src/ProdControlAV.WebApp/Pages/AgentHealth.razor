@@ -388,11 +388,67 @@
             
             if (response.IsSuccessStatusCode)
             {
-                updateMessage = $"Update successfully triggered for {agentToUpdate.Name}. The agent will apply the update and restart automatically.";
+                updateMessage = $"Update successfully triggered for {agentToUpdate.Name}. Monitoring update progress...";
+                StateHasChanged();
                 
-                // Refresh data after a delay
-                await Task.Delay(3000);
-                await LoadHealthData();
+                // Poll for update completion (agent will restart and report new version)
+                // or timeout after 5 minutes
+                var startTime = DateTime.UtcNow;
+                var timeout = TimeSpan.FromMinutes(5);
+                var currentVersion = agentToUpdate.Version;
+                var agentId = agentToUpdate.AgentId;
+                
+                while (DateTime.UtcNow - startTime < timeout)
+                {
+                    await Task.Delay(10000); // Poll every 10 seconds
+                    
+                    try
+                    {
+                        // Refresh agent data
+                        var latestData = await Http.GetFromJsonAsync<AgentHealthDashboardResponse>("/api/agent/health-dashboard");
+                        var updatedAgent = latestData?.Agents.FirstOrDefault(a => a.AgentId == agentId);
+                        
+                        if (updatedAgent != null)
+                        {
+                            // Check if version changed
+                            if (!string.IsNullOrEmpty(updatedAgent.Version) && 
+                                updatedAgent.Version != currentVersion)
+                            {
+                                updateMessage = $"Update completed successfully! {agentToUpdate.Name} is now running version {updatedAgent.Version}.";
+                                
+                                // Final refresh to show updated data
+                                await Task.Delay(2000);
+                                await LoadHealthData();
+                                break;
+                            }
+                            
+                            // Check if agent went offline (expected during restart) then came back
+                            if (updatedAgent.Status == "online" && 
+                                (DateTime.UtcNow - startTime) > TimeSpan.FromSeconds(30))
+                            {
+                                // Agent is online after 30+ seconds - check if update is no longer available
+                                if (updatedAgent.IsUpToDate)
+                                {
+                                    updateMessage = $"Update appears complete. {agentToUpdate.Name} is running version {updatedAgent.Version} and is up to date.";
+                                    await Task.Delay(2000);
+                                    await LoadHealthData();
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore polling errors and continue
+                    }
+                }
+                
+                // If we timed out, show timeout message
+                if (DateTime.UtcNow - startTime >= timeout)
+                {
+                    updateMessage = $"Update monitoring timed out after 5 minutes. Please check the agent status manually.";
+                    await LoadHealthData();
+                }
             }
             else
             {
@@ -409,8 +465,8 @@
             isUpdating = null;
             StateHasChanged();
             
-            // Clear message after 10 seconds
-            await Task.Delay(10000);
+            // Clear message after 15 seconds
+            await Task.Delay(15000);
             updateMessage = null;
             StateHasChanged();
         }
