@@ -164,6 +164,13 @@ public sealed class UpdateService : BackgroundService
                 LogWriter = new NetSparkleLoggerBridge(_logger)
             };
             
+            // Also enable logging on the AppCastDataDownloader if it's a WebRequestAppCastDataDownloader
+            if (_sparkle.AppCastDataDownloader is NetSparkleUpdater.Downloaders.WebRequestAppCastDataDownloader webDownloader)
+            {
+                webDownloader.LogWriter = new NetSparkleLoggerBridge(_logger);
+                _logger.LogDebug("Enabled diagnostic logging on WebRequestAppCastDataDownloader");
+            }
+            
             // NetSparkle reads the version from the reference assembly using AssemblyInformationalVersion.
             // Per SemVer 2.0.0 spec, build metadata (the +hash part) should be ignored for version precedence.
             // NetSparkle uses the Chaos.NaCl.Ed25519 library which handles SemVer comparisons.
