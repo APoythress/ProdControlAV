@@ -437,9 +437,15 @@
                             }
                         }
                     }
-                    catch
+                    catch (HttpRequestException)
                     {
-                        // Ignore polling errors and continue
+                        // Ignore HTTP errors during polling - agent may be restarting
+                        // Continue polling
+                    }
+                    catch (Exception)
+                    {
+                        // Ignore other polling errors and continue
+                        // This prevents transient errors from stopping the update monitoring
                     }
                 }
                 

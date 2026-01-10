@@ -165,77 +165,13 @@ public sealed class UpdateService : BackgroundService
                     // Check for updates with detailed logging and retry logic
                     _logger.LogDebug("Attempting to download appcast from: {AppcastUrl}", _updateOptions.AppcastUrl);
                     
-                    UpdateInfo? updateInfo = null;
-                    const int maxRetries = 3;
-                    var retryDelay = TimeSpan.FromSeconds(5);
-                    var retryAttempt = 0;
-                    bool updateCheckSucceeded = false;
-                    
-                    while (retryAttempt < maxRetries)
-                    {
-                        try
-                        {
-                            updateInfo = await _sparkle.CheckForUpdatesQuietly();
-                            _logger.LogDebug("Appcast check completed with status: {Status}", updateInfo.Status);
-                            updateCheckSucceeded = true;
-                            break; // Success - exit retry loop
-                        }
-                        catch (System.Net.WebException webEx) when (retryAttempt < maxRetries - 1)
-                        {
-                            retryAttempt++;
-                            _logger.LogWarning(webEx, "Network error while downloading appcast (attempt {Attempt}/{MaxRetries}). Status: {Status}. Retrying in {Delay} seconds...", 
-                                retryAttempt, maxRetries, webEx.Status, retryDelay.TotalSeconds);
-                            await Task.Delay(retryDelay, stoppingToken);
-                            retryDelay = TimeSpan.FromSeconds(retryDelay.TotalSeconds * 2); // Exponential backoff
-                            continue;
-                        }
-                        catch (System.Net.WebException webEx)
-                        {
-                            _logger.LogError(webEx, "Network error while downloading appcast after {MaxRetries} attempts. Status: {Status}", maxRetries, webEx.Status);
-                            _logger.LogError("This may be caused by: slow network connection, timeout (default 100s), DNS issues, or firewall blocking access");
-                            goto NextIteration; // Skip to next iteration
-                        }
-                        catch (TaskCanceledException tcEx) when (retryAttempt < maxRetries - 1 && !stoppingToken.IsCancellationRequested)
-                        {
-                            retryAttempt++;
-                            _logger.LogWarning(tcEx, "Timeout while downloading appcast (attempt {Attempt}/{MaxRetries}). Retrying in {Delay} seconds...", 
-                                retryAttempt, maxRetries, retryDelay.TotalSeconds);
-                            await Task.Delay(retryDelay, stoppingToken);
-                            retryDelay = TimeSpan.FromSeconds(retryDelay.TotalSeconds * 2); // Exponential backoff
-                            continue;
-                        }
-                        catch (TaskCanceledException tcEx) when (stoppingToken.IsCancellationRequested)
-                        {
-                            // Service is shutting down
-                            throw;
-                        }
-                        catch (TaskCanceledException tcEx)
-                        {
-                            _logger.LogError(tcEx, "Timeout while downloading appcast after {MaxRetries} attempts. The operation exceeded the configured timeout period.", maxRetries);
-                            _logger.LogError("Consider checking network speed and connectivity to: {AppcastUrl}", _updateOptions.AppcastUrl);
-                            goto NextIteration; // Skip to next iteration
-                        }
-                        catch (HttpRequestException httpEx) when (retryAttempt < maxRetries - 1)
-                        {
-                            retryAttempt++;
-                            _logger.LogWarning(httpEx, "HTTP error while downloading appcast (attempt {Attempt}/{MaxRetries}). Retrying in {Delay} seconds...", 
-                                retryAttempt, maxRetries, retryDelay.TotalSeconds);
-                            await Task.Delay(retryDelay, stoppingToken);
-                            retryDelay = TimeSpan.FromSeconds(retryDelay.TotalSeconds * 2); // Exponential backoff
-                            continue;
-                        }
-                        catch (HttpRequestException httpEx)
-                        {
-                            _logger.LogError(httpEx, "HTTP error while downloading appcast after {MaxRetries} attempts", maxRetries);
-                            goto NextIteration; // Skip to next iteration
-                        }
-                    }
+                    UpdateInfo? updateInfo = await CheckForUpdatesWithRetryAsync(stoppingToken);
                     
                     // If all retries failed, skip to next iteration
-                    if (!updateCheckSucceeded || updateInfo == null)
+                    if (updateInfo == null)
                     {
-                        _logger.LogError("Failed to check for updates after {MaxRetries} attempts. Will retry in next check interval.", maxRetries);
-                        goto NextIteration;
+                        // Error already logged in CheckForUpdatesWithRetryAsync
+                        continue;
                     }
                     
                     if (updateInfo.Status == UpdateStatus.UpdateAvailable)
@@ -289,8 +225,7 @@ public sealed class UpdateService : BackgroundService
                     _logger.LogError(ex, "Error checking for updates");
                 }
 
-                NextIteration:
-                // Wait for the next check interval (or shorter if manual trigger to check again soon)
+                // Wait for the next check interval
                 await Task.Delay(TimeSpan.FromSeconds(_updateOptions.CheckIntervalSeconds), stoppingToken);
             }
         }
@@ -302,6 +237,79 @@ public sealed class UpdateService : BackgroundService
         {
             _logger.LogError(ex, "Failed to initialize update system");
         }
+    }
+
+    /// <summary>
+    /// Checks for updates with retry logic and exponential backoff
+    /// </summary>
+    /// <returns>UpdateInfo if successful, null if all retries failed</returns>
+    private async Task<UpdateInfo?> CheckForUpdatesWithRetryAsync(CancellationToken stoppingToken)
+    {
+        const int maxRetries = 3;
+        var retryDelay = TimeSpan.FromSeconds(5);
+        var retryAttempt = 0;
+        
+        while (retryAttempt < maxRetries)
+        {
+            try
+            {
+                var updateInfo = await _sparkle.CheckForUpdatesQuietly();
+                _logger.LogDebug("Appcast check completed with status: {Status}", updateInfo.Status);
+                return updateInfo;
+            }
+            catch (System.Net.WebException webEx) when (retryAttempt < maxRetries - 1)
+            {
+                retryAttempt++;
+                _logger.LogWarning(webEx, "Network error while downloading appcast (attempt {Attempt}/{MaxRetries}). Status: {Status}. Retrying in {Delay} seconds...", 
+                    retryAttempt, maxRetries, webEx.Status, retryDelay.TotalSeconds);
+                await Task.Delay(retryDelay, stoppingToken);
+                retryDelay = TimeSpan.FromSeconds(retryDelay.TotalSeconds * 2); // Exponential backoff
+                continue;
+            }
+            catch (System.Net.WebException webEx)
+            {
+                _logger.LogError(webEx, "Network error while downloading appcast after {MaxRetries} attempts. Status: {Status}", maxRetries, webEx.Status);
+                _logger.LogError("This may be caused by: slow network connection, timeout (default 100s), DNS issues, or firewall blocking access");
+                return null;
+            }
+            catch (TaskCanceledException tcEx) when (retryAttempt < maxRetries - 1 && !stoppingToken.IsCancellationRequested)
+            {
+                retryAttempt++;
+                _logger.LogWarning(tcEx, "Timeout while downloading appcast (attempt {Attempt}/{MaxRetries}). Retrying in {Delay} seconds...", 
+                    retryAttempt, maxRetries, retryDelay.TotalSeconds);
+                await Task.Delay(retryDelay, stoppingToken);
+                retryDelay = TimeSpan.FromSeconds(retryDelay.TotalSeconds * 2); // Exponential backoff
+                continue;
+            }
+            catch (TaskCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                // Service is shutting down - re-throw
+                throw;
+            }
+            catch (TaskCanceledException tcEx)
+            {
+                _logger.LogError(tcEx, "Timeout while downloading appcast after {MaxRetries} attempts. The operation exceeded the configured timeout period.", maxRetries);
+                _logger.LogError("Consider checking network speed and connectivity to: {AppcastUrl}", _updateOptions.AppcastUrl);
+                return null;
+            }
+            catch (HttpRequestException httpEx) when (retryAttempt < maxRetries - 1)
+            {
+                retryAttempt++;
+                _logger.LogWarning(httpEx, "HTTP error while downloading appcast (attempt {Attempt}/{MaxRetries}). Retrying in {Delay} seconds...", 
+                    retryAttempt, maxRetries, retryDelay.TotalSeconds);
+                await Task.Delay(retryDelay, stoppingToken);
+                retryDelay = TimeSpan.FromSeconds(retryDelay.TotalSeconds * 2); // Exponential backoff
+                continue;
+            }
+            catch (HttpRequestException httpEx)
+            {
+                _logger.LogError(httpEx, "HTTP error while downloading appcast after {MaxRetries} attempts", maxRetries);
+                return null;
+            }
+        }
+        
+        _logger.LogError("Failed to check for updates after {MaxRetries} attempts. Will retry in next check interval.", maxRetries);
+        return null;
     }
 
     /// <summary>
