@@ -233,6 +233,7 @@ public sealed class AgentHealthController : ControllerBase
 
     /// <summary>
     /// Parses a version string into a comparable Version object
+    /// Strips SemVer 2.0.0 build metadata (e.g., +hash) for proper comparison
     /// </summary>
     private Version ParseVersion(string? versionString)
     {
@@ -241,6 +242,22 @@ public sealed class AgentHealthController : ControllerBase
 
         // Remove 'v' prefix if present
         versionString = versionString.TrimStart('v', 'V');
+        
+        // Strip SemVer 2.0.0 build metadata (everything after +)
+        // This ensures "1.0.6+abc123" is treated as "1.0.6" for comparison
+        var plusIndex = versionString.IndexOf('+');
+        if (plusIndex >= 0)
+        {
+            versionString = versionString.Substring(0, plusIndex);
+        }
+        
+        // Also strip pre-release info (everything after -) for Version parsing
+        // but keep it for semantic comparison if needed in future
+        var dashIndex = versionString.IndexOf('-');
+        if (dashIndex >= 0)
+        {
+            versionString = versionString.Substring(0, dashIndex);
+        }
         
         if (Version.TryParse(versionString, out var version))
             return version;
