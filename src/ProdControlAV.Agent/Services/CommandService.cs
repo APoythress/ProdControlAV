@@ -588,6 +588,18 @@ public class CommandService : ICommandService
         }
     }
     
+    /// <summary>
+    /// Executes an ATEM command from the payload.
+    /// 
+    /// Note: This implementation uses a stub approach where ATEM commands are executed
+    /// inline without injecting IAtemConnection. This is intentional because:
+    /// 1. ATEM connections are device-specific (each ATEM device needs its own connection)
+    /// 2. The current architecture doesn't support device-specific service instances
+    /// 3. Future enhancement: Create a device registry that maps device IDs to IAtemConnection instances
+    /// 
+    /// For production use with real ATEM hardware, replace TODO sections with actual
+    /// LibAtem API calls via a device-specific connection manager.
+    /// </summary>
     private async Task<AtemCommandResult> ExecuteAtemCommandAsync(JsonElement payload, CancellationToken ct)
     {
         try
@@ -603,8 +615,10 @@ public class CommandService : ICommandService
                 case "CUT_TO_PROGRAM":
                 {
                     var inputId = payload.GetProperty("inputId").GetInt32();
-                    // TODO: Execute via IAtemConnection when integrated
-                    // await _atemConnection.CutToProgramAsync(inputId, ct);
+                    // TODO: Execute via device-specific IAtemConnection instance
+                    // var deviceId = payload.GetProperty("deviceId").GetString();
+                    // var atemConnection = _deviceConnectionRegistry.GetAtemConnection(deviceId);
+                    // await atemConnection.CutToProgramAsync(inputId, ct);
                     
                     return new AtemCommandResult
                     {
@@ -623,8 +637,10 @@ public class CommandService : ICommandService
                         transitionRate = rateProp.GetInt32();
                     }
                     
-                    // TODO: Execute via IAtemConnection when integrated
-                    // await _atemConnection.FadeToProgramAsync(inputId, transitionRate, ct);
+                    // TODO: Execute via device-specific IAtemConnection instance
+                    // var deviceId = payload.GetProperty("deviceId").GetString();
+                    // var atemConnection = _deviceConnectionRegistry.GetAtemConnection(deviceId);
+                    // await atemConnection.FadeToProgramAsync(inputId, transitionRate, ct);
                     
                     return new AtemCommandResult
                     {
@@ -637,8 +653,10 @@ public class CommandService : ICommandService
                 case "SET_PREVIEW":
                 {
                     var inputId = payload.GetProperty("inputId").GetInt32();
-                    // TODO: Execute via IAtemConnection when integrated
-                    // await _atemConnection.SetPreviewAsync(inputId, ct);
+                    // TODO: Execute via device-specific IAtemConnection instance
+                    // var deviceId = payload.GetProperty("deviceId").GetString();
+                    // var atemConnection = _deviceConnectionRegistry.GetAtemConnection(deviceId);
+                    // await atemConnection.SetPreviewAsync(inputId, ct);
                     
                     return new AtemCommandResult
                     {
@@ -650,8 +668,10 @@ public class CommandService : ICommandService
                 
                 case "LIST_MACROS":
                 {
-                    // TODO: Execute via IAtemConnection when integrated
-                    // var macros = await _atemConnection.ListMacrosAsync(ct);
+                    // TODO: Execute via device-specific IAtemConnection instance
+                    // var deviceId = payload.GetProperty("deviceId").GetString();
+                    // var atemConnection = _deviceConnectionRegistry.GetAtemConnection(deviceId);
+                    // var macros = await atemConnection.ListMacrosAsync(ct);
                     // var macrosJson = JsonSerializer.Serialize(macros, s_jsonOptions);
                     
                     return new AtemCommandResult
@@ -665,8 +685,10 @@ public class CommandService : ICommandService
                 case "RUN_MACRO":
                 {
                     var macroId = payload.GetProperty("macroId").GetInt32();
-                    // TODO: Execute via IAtemConnection when integrated
-                    // await _atemConnection.RunMacroAsync(macroId, ct);
+                    // TODO: Execute via device-specific IAtemConnection instance
+                    // var deviceId = payload.GetProperty("deviceId").GetString();
+                    // var atemConnection = _deviceConnectionRegistry.GetAtemConnection(deviceId);
+                    // await atemConnection.RunMacroAsync(macroId, ct);
                     
                     return new AtemCommandResult
                     {

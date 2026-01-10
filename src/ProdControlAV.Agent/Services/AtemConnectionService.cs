@@ -479,9 +479,8 @@ public class AtemConnectionService : IAtemConnection, IDisposable
         var exponentialDelay = baseDelay * Math.Pow(2, Math.Min(attempt, 5));
         var delay = Math.Min(exponentialDelay, maxDelay);
         
-        // Add jitter (±20%)
-        var random = new Random();
-        var jitter = delay * 0.2 * (random.NextDouble() * 2 - 1);
+        // Add jitter (±20%) using Random.Shared for better randomness
+        var jitter = delay * 0.2 * (Random.Shared.NextDouble() * 2 - 1);
         
         return (int)Math.Max(baseDelay, delay + jitter);
     }
