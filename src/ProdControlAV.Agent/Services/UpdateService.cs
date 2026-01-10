@@ -6,8 +6,42 @@ using NetSparkleUpdater;
 using NetSparkleUpdater.Enums;
 using NetSparkleUpdater.SignatureVerifiers;
 using NetSparkleUpdater.AppCastHandlers;
+using NetSparkleUpdater.Interfaces;
 
 namespace ProdControlAV.Agent.Services;
+
+/// <summary>
+/// Logging bridge to capture NetSparkle's internal diagnostic messages
+/// and forward them to the application's ILogger instance.
+/// </summary>
+internal class NetSparkleLoggerBridge : NetSparkleUpdater.Interfaces.ILogger
+{
+    private readonly Microsoft.Extensions.Logging.ILogger<UpdateService> _logger;
+
+    public NetSparkleLoggerBridge(Microsoft.Extensions.Logging.ILogger<UpdateService> logger)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    public void PrintMessage(string message, params object[]? parameters)
+    {
+        try
+        {
+            // Format the message with parameters if provided
+            var formattedMessage = parameters != null && parameters.Length > 0
+                ? string.Format(message, parameters)
+                : message;
+            
+            // Log at Debug level by default (NetSparkle doesn't provide log level in this interface)
+            _logger.LogDebug("[NetSparkle] {Message}", formattedMessage);
+        }
+        catch (Exception ex)
+        {
+            // Fallback if formatting fails
+            _logger.LogDebug(ex, "[NetSparkle] {RawMessage}", message);
+        }
+    }
+}
 
 /// <summary>
 /// Background service that checks for and applies updates using NetSparkle.
@@ -125,7 +159,9 @@ public sealed class UpdateService : BackgroundService
                 TmpDownloadFilePath = Path.Combine(Path.GetTempPath(), "prodcontrolav-update.zip"),
                 RelaunchAfterUpdate = false,  // We handle restart via Environment.Exit(0) and systemd
                 // Configure JSON appcast generator (NetSparkle defaults to XML)
-                AppCastGenerator = new JsonAppCastGenerator()
+                AppCastGenerator = new JsonAppCastGenerator(),
+                // Enable NetSparkle internal diagnostic logging
+                LogWriter = new NetSparkleLoggerBridge(_logger)
             };
             
             // NetSparkle reads the version from the reference assembly using AssemblyInformationalVersion.
@@ -213,7 +249,10 @@ public sealed class UpdateService : BackgroundService
                     {
                         _logger.LogWarning("Could not determine update status. Check appcast URL and network connectivity.");
                         _logger.LogWarning("Appcast URL being used: {AppcastUrl}", _updateOptions.AppcastUrl);
+                        _logger.LogWarning("Current version: {CurrentVersion} (raw: {CurrentVersionRaw})", _currentVersion, _currentVersionRaw);
                         _logger.LogWarning("Ensure the URL is accessible and the appcast.json file exists at that location.");
+                        _logger.LogWarning("Common causes: network issues, invalid JSON format, signature verification failure, or incorrect appcast structure.");
+                        _logger.LogWarning("Check the [NetSparkle] debug logs above for detailed diagnostic information.");
                     }
                     else
                     {
