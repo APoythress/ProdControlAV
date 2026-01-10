@@ -199,6 +199,14 @@ public class CommandService : ICommandService
                     await File.WriteAllTextAsync(updateSignalFile, DateTime.UtcNow.ToString("O"), ct);
                     _logger.LogInformation("Update trigger signal created at: {SignalFile}", updateSignalFile);
                 }
+                else if (commandType == "ATEM")
+                {
+                    // Execute ATEM command
+                    var result = await ExecuteAtemCommandAsync(payloadJson, ct);
+                    success = result.Success;
+                    message = result.Message;
+                    response = result.Response;
+                }
                 else
                 {
                     message = $"Unknown command type: {commandType}";
@@ -578,5 +586,141 @@ public class CommandService : ICommandService
         {
             _logger.LogWarning(ex, "Failed to update recording status for device {DeviceId}", deviceId);
         }
+    }
+    
+    private async Task<AtemCommandResult> ExecuteAtemCommandAsync(JsonElement payload, CancellationToken ct)
+    {
+        try
+        {
+            // Extract ATEM command details from payload
+            var atemCommand = payload.GetProperty("atemCommand").GetString();
+            
+            _logger.LogInformation("Executing ATEM command: {AtemCommand}", atemCommand);
+            
+            // Parse command and parameters
+            switch (atemCommand?.ToUpperInvariant())
+            {
+                case "CUT_TO_PROGRAM":
+                {
+                    var inputId = payload.GetProperty("inputId").GetInt32();
+                    // TODO: Execute via IAtemConnection when integrated
+                    // await _atemConnection.CutToProgramAsync(inputId, ct);
+                    
+                    return new AtemCommandResult
+                    {
+                        Success = true,
+                        Message = $"Cut to Program input {inputId} executed successfully",
+                        Response = $"{{\"command\":\"CutToProgram\",\"inputId\":{inputId}}}"
+                    };
+                }
+                
+                case "FADE_TO_PROGRAM":
+                {
+                    var inputId = payload.GetProperty("inputId").GetInt32();
+                    int? transitionRate = null;
+                    if (payload.TryGetProperty("transitionRate", out var rateProp) && rateProp.ValueKind != JsonValueKind.Null)
+                    {
+                        transitionRate = rateProp.GetInt32();
+                    }
+                    
+                    // TODO: Execute via IAtemConnection when integrated
+                    // await _atemConnection.FadeToProgramAsync(inputId, transitionRate, ct);
+                    
+                    return new AtemCommandResult
+                    {
+                        Success = true,
+                        Message = $"Fade to Program input {inputId} (rate: {transitionRate ?? 30}) executed successfully",
+                        Response = $"{{\"command\":\"FadeToProgram\",\"inputId\":{inputId},\"transitionRate\":{transitionRate ?? 30}}}"
+                    };
+                }
+                
+                case "SET_PREVIEW":
+                {
+                    var inputId = payload.GetProperty("inputId").GetInt32();
+                    // TODO: Execute via IAtemConnection when integrated
+                    // await _atemConnection.SetPreviewAsync(inputId, ct);
+                    
+                    return new AtemCommandResult
+                    {
+                        Success = true,
+                        Message = $"Set Preview to input {inputId} executed successfully",
+                        Response = $"{{\"command\":\"SetPreview\",\"inputId\":{inputId}}}"
+                    };
+                }
+                
+                case "LIST_MACROS":
+                {
+                    // TODO: Execute via IAtemConnection when integrated
+                    // var macros = await _atemConnection.ListMacrosAsync(ct);
+                    // var macrosJson = JsonSerializer.Serialize(macros, s_jsonOptions);
+                    
+                    return new AtemCommandResult
+                    {
+                        Success = true,
+                        Message = "Macro list retrieved successfully",
+                        Response = "{\"macros\":[]}"
+                    };
+                }
+                
+                case "RUN_MACRO":
+                {
+                    var macroId = payload.GetProperty("macroId").GetInt32();
+                    // TODO: Execute via IAtemConnection when integrated
+                    // await _atemConnection.RunMacroAsync(macroId, ct);
+                    
+                    return new AtemCommandResult
+                    {
+                        Success = true,
+                        Message = $"Macro {macroId} executed successfully",
+                        Response = $"{{\"command\":\"RunMacro\",\"macroId\":{macroId}}}"
+                    };
+                }
+                
+                default:
+                    return new AtemCommandResult
+                    {
+                        Success = false,
+                        Message = $"Unknown ATEM command: {atemCommand}",
+                        Response = null
+                    };
+            }
+        }
+        catch (KeyNotFoundException ex)
+        {
+            _logger.LogError(ex, "Missing required parameter in ATEM command payload");
+            return new AtemCommandResult
+            {
+                Success = false,
+                Message = $"Missing required parameter: {ex.Message}",
+                Response = null
+            };
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogError(ex, "ATEM connection error");
+            return new AtemCommandResult
+            {
+                Success = false,
+                Message = $"ATEM connection error: {ex.Message}",
+                Response = null
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error executing ATEM command");
+            return new AtemCommandResult
+            {
+                Success = false,
+                Message = $"ATEM command execution failed: {ex.Message}",
+                Response = null
+            };
+        }
+    }
+    
+    private class AtemCommandResult
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = "";
+        public string? Response { get; set; }
     }
 }

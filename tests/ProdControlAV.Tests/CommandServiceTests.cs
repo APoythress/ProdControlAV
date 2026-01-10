@@ -212,4 +212,234 @@ public class CommandServiceTests
         Assert.True(headers.ContainsKey("Authorization"));
         Assert.Equal("Bearer token", headers["Authorization"]);
     }
+    
+    [Fact]
+    public async Task ExecuteCommandAsync_WithAtemCutCommand_CompletesSuccessfully()
+    {
+        // Arrange
+        var mockLogger = new Mock<ILogger<CommandService>>();
+        var mockHttpClient = new Mock<HttpClient>();
+        var mockJwtAuth = new Mock<IJwtAuthService>();
+        var apiOptions = new ApiOptions
+        {
+            BaseUrl = "https://test.com/api",
+            DevicesEndpoint = "/agents/devices",
+            StatusEndpoint = "/agents/status",
+            ApiKey = "test-key-with-at-least-32-characters-for-security"
+        };
+
+        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object);
+
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            commandType = "ATEM",
+            atemCommand = "CUT_TO_PROGRAM",
+            inputId = 1
+        });
+
+        var command = new CommandEnvelope
+        {
+            CommandId = Guid.NewGuid(),
+            DeviceId = Guid.NewGuid(),
+            Verb = "ATEM_COMMAND",
+            Payload = payload
+        };
+
+        // Act
+        await service.ExecuteCommandAsync(command, CancellationToken.None);
+
+        // Assert - Should log the ATEM command execution
+        mockLogger.Verify(
+            x => x.Log(
+                LogLevel.Information,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Executing ATEM command")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+    
+    [Fact]
+    public async Task ExecuteCommandAsync_WithAtemFadeCommand_CompletesSuccessfully()
+    {
+        // Arrange
+        var mockLogger = new Mock<ILogger<CommandService>>();
+        var mockHttpClient = new Mock<HttpClient>();
+        var mockJwtAuth = new Mock<IJwtAuthService>();
+        var apiOptions = new ApiOptions
+        {
+            BaseUrl = "https://test.com/api",
+            DevicesEndpoint = "/agents/devices",
+            StatusEndpoint = "/agents/status",
+            ApiKey = "test-key-with-at-least-32-characters-for-security"
+        };
+
+        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object);
+
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            commandType = "ATEM",
+            atemCommand = "FADE_TO_PROGRAM",
+            inputId = 2,
+            transitionRate = 45
+        });
+
+        var command = new CommandEnvelope
+        {
+            CommandId = Guid.NewGuid(),
+            DeviceId = Guid.NewGuid(),
+            Verb = "ATEM_COMMAND",
+            Payload = payload
+        };
+
+        // Act
+        await service.ExecuteCommandAsync(command, CancellationToken.None);
+
+        // Assert
+        mockLogger.Verify(
+            x => x.Log(
+                LogLevel.Information,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("ATEM command")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+    
+    [Fact]
+    public async Task ExecuteCommandAsync_WithAtemSetPreviewCommand_CompletesSuccessfully()
+    {
+        // Arrange
+        var mockLogger = new Mock<ILogger<CommandService>>();
+        var mockHttpClient = new Mock<HttpClient>();
+        var mockJwtAuth = new Mock<IJwtAuthService>();
+        var apiOptions = new ApiOptions
+        {
+            BaseUrl = "https://test.com/api",
+            DevicesEndpoint = "/agents/devices",
+            StatusEndpoint = "/agents/status",
+            ApiKey = "test-key-with-at-least-32-characters-for-security"
+        };
+
+        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object);
+
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            commandType = "ATEM",
+            atemCommand = "SET_PREVIEW",
+            inputId = 3
+        });
+
+        var command = new CommandEnvelope
+        {
+            CommandId = Guid.NewGuid(),
+            DeviceId = Guid.NewGuid(),
+            Verb = "ATEM_COMMAND",
+            Payload = payload
+        };
+
+        // Act
+        await service.ExecuteCommandAsync(command, CancellationToken.None);
+
+        // Assert
+        mockLogger.Verify(
+            x => x.Log(
+                LogLevel.Information,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("ATEM command")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+    
+    [Fact]
+    public async Task ExecuteCommandAsync_WithAtemListMacrosCommand_CompletesSuccessfully()
+    {
+        // Arrange
+        var mockLogger = new Mock<ILogger<CommandService>>();
+        var mockHttpClient = new Mock<HttpClient>();
+        var mockJwtAuth = new Mock<IJwtAuthService>();
+        var apiOptions = new ApiOptions
+        {
+            BaseUrl = "https://test.com/api",
+            DevicesEndpoint = "/agents/devices",
+            StatusEndpoint = "/agents/status",
+            ApiKey = "test-key-with-at-least-32-characters-for-security"
+        };
+
+        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object);
+
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            commandType = "ATEM",
+            atemCommand = "LIST_MACROS"
+        });
+
+        var command = new CommandEnvelope
+        {
+            CommandId = Guid.NewGuid(),
+            DeviceId = Guid.NewGuid(),
+            Verb = "ATEM_COMMAND",
+            Payload = payload
+        };
+
+        // Act
+        await service.ExecuteCommandAsync(command, CancellationToken.None);
+
+        // Assert
+        mockLogger.Verify(
+            x => x.Log(
+                LogLevel.Information,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("ATEM command")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+    
+    [Fact]
+    public async Task ExecuteCommandAsync_WithAtemRunMacroCommand_CompletesSuccessfully()
+    {
+        // Arrange
+        var mockLogger = new Mock<ILogger<CommandService>>();
+        var mockHttpClient = new Mock<HttpClient>();
+        var mockJwtAuth = new Mock<IJwtAuthService>();
+        var apiOptions = new ApiOptions
+        {
+            BaseUrl = "https://test.com/api",
+            DevicesEndpoint = "/agents/devices",
+            StatusEndpoint = "/agents/status",
+            ApiKey = "test-key-with-at-least-32-characters-for-security"
+        };
+
+        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object);
+
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            commandType = "ATEM",
+            atemCommand = "RUN_MACRO",
+            macroId = 5
+        });
+
+        var command = new CommandEnvelope
+        {
+            CommandId = Guid.NewGuid(),
+            DeviceId = Guid.NewGuid(),
+            Verb = "ATEM_COMMAND",
+            Payload = payload
+        };
+
+        // Act
+        await service.ExecuteCommandAsync(command, CancellationToken.None);
+
+        // Assert
+        mockLogger.Verify(
+            x => x.Log(
+                LogLevel.Information,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("ATEM command")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
 }
