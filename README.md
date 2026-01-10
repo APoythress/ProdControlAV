@@ -54,6 +54,16 @@ Configure individual monitoring intervals for each device to optimize database c
 
 See [Ping Frequency Optimization Guide](docs/PING_FREQUENCY_OPTIMIZATION.md) for details.
 
+#### 🎬 ATEM Video Switcher Control (NEW)
+Full integration with Blackmagic Design ATEM video switchers:
+- **Program Control**: Cut or fade transitions to any input
+- **Preview Control**: Independent preview input management
+- **Macro Execution**: List and run ATEM macros remotely
+- **State Monitoring**: Real-time tracking of program/preview sources
+- **Auto-Reconnect**: Resilient connection with exponential backoff
+
+See [ATEM Integration Guide](src/ProdControlAV.Agent/docs/ATEM-INTEGRATION.md) for setup and usage.
+
 #### 🔍 Real-Time Device Monitoring
 - ICMP ping and TCP probe support for comprehensive device health checks
 - Automatic state change detection with configurable thresholds
