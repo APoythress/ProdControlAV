@@ -75,9 +75,7 @@ def create_appcast_item(version, url, signature, size, description, pub_date, cr
         "description": description,
         "size": int(size),
         "type": "application/zip",
-        "signature": {
-            "ed25519": signature
-        },
+        "signature": signature,  # NetSparkle expects signature as a string, not an object
         "os": "linux",
         "critical_update": critical,
         "min_system_version": "0.0.0"
