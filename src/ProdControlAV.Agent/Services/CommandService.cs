@@ -422,8 +422,20 @@ public class CommandService : ICommandService
                 if (res.StatusCode == System.Net.HttpStatusCode.Unauthorized && attempt >= maxRetries - 1)
                 {
                     // Final attempt still got 401 - log and return instead of throwing
-                    _logger.LogError("Failed to record command history for {CommandId} after {MaxRetries} attempts - persistent 401 Unauthorized. This may indicate an authentication issue. Command was executed with Success={Success}", 
-                        commandId, maxRetries, success);
+                    // Note: The command itself was already executed successfully (Success={Success})
+                    // This only affects history recording, not command execution
+                    if (success)
+                    {
+                        _logger.LogWarning("Command {CommandId} executed successfully, but failed to record history after {MaxRetries} attempts due to 401 Unauthorized. " +
+                            "This is a non-critical issue - the command completed successfully. History recording will be skipped.", 
+                            commandId, maxRetries);
+                    }
+                    else
+                    {
+                        _logger.LogError("Command {CommandId} failed execution, and also failed to record failure history after {MaxRetries} attempts due to 401 Unauthorized. " +
+                            "This may indicate an authentication issue. The command failure was not recorded in history.", 
+                            commandId, maxRetries);
+                    }
                     return;
                 }
                 
@@ -452,9 +464,19 @@ public class CommandService : ICommandService
                 }
                 else
                 {
-                    _logger.LogError(ex, "Failed to record command history for {CommandId} after {MaxRetries} attempts. " +
-                        "This may cause the command to remain in the queue. Command was executed with Success={Success}", 
-                        commandId, maxRetries, success);
+                    // Log with appropriate severity based on command success
+                    if (success)
+                    {
+                        _logger.LogWarning(ex, "Command {CommandId} executed successfully, but failed to record history after {MaxRetries} attempts. " +
+                            "This is a non-critical issue - the command completed successfully. Error: {Error}", 
+                            commandId, maxRetries, ex.Message);
+                    }
+                    else
+                    {
+                        _logger.LogError(ex, "Command {CommandId} failed execution, and also failed to record failure history after {MaxRetries} attempts. " +
+                            "The command failure was not recorded in history. Error: {Error}", 
+                            commandId, maxRetries, ex.Message);
+                    }
                 }
             }
         }
