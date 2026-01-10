@@ -246,6 +246,7 @@ public sealed class UpdateService : BackgroundService
     private async Task<UpdateInfo?> CheckForUpdatesWithRetryAsync(CancellationToken stoppingToken)
     {
         const int maxRetries = 3;
+        const int maxDelaySeconds = 60; // Cap retry delay at 60 seconds
         var retryDelay = TimeSpan.FromSeconds(5);
         var retryAttempt = 0;
         
@@ -263,7 +264,7 @@ public sealed class UpdateService : BackgroundService
                 _logger.LogWarning(webEx, "Network error while downloading appcast (attempt {Attempt}/{MaxRetries}). Status: {Status}. Retrying in {Delay} seconds...", 
                     retryAttempt, maxRetries, webEx.Status, retryDelay.TotalSeconds);
                 await Task.Delay(retryDelay, stoppingToken);
-                retryDelay = TimeSpan.FromSeconds(retryDelay.TotalSeconds * 2); // Exponential backoff
+                retryDelay = TimeSpan.FromSeconds(Math.Min(retryDelay.TotalSeconds * 2, maxDelaySeconds)); // Exponential backoff with cap
                 continue;
             }
             catch (System.Net.WebException webEx)
@@ -278,7 +279,7 @@ public sealed class UpdateService : BackgroundService
                 _logger.LogWarning(tcEx, "Timeout while downloading appcast (attempt {Attempt}/{MaxRetries}). Retrying in {Delay} seconds...", 
                     retryAttempt, maxRetries, retryDelay.TotalSeconds);
                 await Task.Delay(retryDelay, stoppingToken);
-                retryDelay = TimeSpan.FromSeconds(retryDelay.TotalSeconds * 2); // Exponential backoff
+                retryDelay = TimeSpan.FromSeconds(Math.Min(retryDelay.TotalSeconds * 2, maxDelaySeconds)); // Exponential backoff with cap
                 continue;
             }
             catch (TaskCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -298,7 +299,7 @@ public sealed class UpdateService : BackgroundService
                 _logger.LogWarning(httpEx, "HTTP error while downloading appcast (attempt {Attempt}/{MaxRetries}). Retrying in {Delay} seconds...", 
                     retryAttempt, maxRetries, retryDelay.TotalSeconds);
                 await Task.Delay(retryDelay, stoppingToken);
-                retryDelay = TimeSpan.FromSeconds(retryDelay.TotalSeconds * 2); // Exponential backoff
+                retryDelay = TimeSpan.FromSeconds(Math.Min(retryDelay.TotalSeconds * 2, maxDelaySeconds)); // Exponential backoff with cap
                 continue;
             }
             catch (HttpRequestException httpEx)

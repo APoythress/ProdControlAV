@@ -400,7 +400,7 @@
                 
                 while (DateTime.UtcNow - startTime < timeout)
                 {
-                    await Task.Delay(10000); // Poll every 10 seconds
+                    await Task.Delay(15000); // Poll every 15 seconds (20 polls over 5 minutes)
                     
                     try
                     {
@@ -442,10 +442,13 @@
                         // Ignore HTTP errors during polling - agent may be restarting
                         // Continue polling
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
-                        // Ignore other polling errors and continue
+                        // Log but ignore other polling errors and continue
                         // This prevents transient errors from stopping the update monitoring
+                        // Note: Using JSRuntime to log to console since we're in Blazor WASM
+                        // The exception is expected during agent restart
+                        Console.WriteLine($"Update polling error (expected during restart): {ex.GetType().Name}");
                     }
                 }
                 
