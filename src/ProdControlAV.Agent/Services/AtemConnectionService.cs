@@ -396,18 +396,25 @@ public class AtemConnectionService : IAtemConnection, IDisposable
     
     private async void PublishPendingState(object? state)
     {
-        await _stateLock.WaitAsync();
         try
         {
-            if (_pendingState != null)
+            await _stateLock.WaitAsync();
+            try
             {
-                EmitState(_pendingState);
-                _pendingState = null;
+                if (_pendingState != null)
+                {
+                    EmitState(_pendingState);
+                    _pendingState = null;
+                }
+            }
+            finally
+            {
+                _stateLock.Release();
             }
         }
-        finally
+        catch (Exception ex)
         {
-            _stateLock.Release();
+            _logger.LogError(ex, "Error publishing pending ATEM state");
         }
     }
     

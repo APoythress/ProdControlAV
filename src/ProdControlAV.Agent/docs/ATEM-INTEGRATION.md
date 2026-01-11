@@ -97,8 +97,6 @@ The Agent's `appsettings.json` contains system-wide ATEM policies and fallback d
 
 **Note:** The `Ip`, `Port`, and `Name` settings in appsettings.json are legacy single-device configurations. For multi-tenant deployments, these should be left empty or removed, and all device configuration should be done through the Devices table.
 
-**Note:** The `Ip`, `Port`, and `Name` settings in appsettings.json are legacy single-device configurations. For multi-tenant deployments, these should be left empty or removed, and all device configuration should be done through the Devices table.
-
 ### Agent Configuration Options
 
 | Option | Type | Default | Description |
