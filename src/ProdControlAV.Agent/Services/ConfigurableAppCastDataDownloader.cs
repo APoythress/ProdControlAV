@@ -59,13 +59,13 @@ internal class ConfigurableAppCastDataDownloader : IAppCastDataDownloader
         
         // Set User-Agent to identify the agent
         _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("ProdControlAV-Agent/1.0");
-        
-        _logWriter?.PrintMessage("ConfigurableAppCastDataDownloader initialized with {0} second timeout", timeout.TotalSeconds);
     }
 
     /// <summary>
     /// Downloads the appcast data from the specified URL synchronously.
     /// Required by IAppCastDataDownloader interface.
+    /// Note: This method blocks on async operations which is required by the interface.
+    /// NetSparkle's SparkleUpdater calls this in a background thread, so blocking is acceptable.
     /// </summary>
     /// <param name="url">The URL to download from.</param>
     /// <returns>The appcast data as a string, or empty string if download fails.</returns>
@@ -76,7 +76,11 @@ internal class ConfigurableAppCastDataDownloader : IAppCastDataDownloader
             _logWriter?.PrintMessage("Downloading appcast from: {0}", url);
             _logWriter?.PrintMessage("HTTP client timeout configured: {0} seconds", _httpClient.Timeout.TotalSeconds);
             
-            var response = _httpClient.GetAsync(url).GetAwaiter().GetResult();
+            // Using GetAwaiter().GetResult() here is safe because:
+            // 1. This method is called by NetSparkle in a background thread (not UI thread)
+            // 2. The interface requires a synchronous method
+            // 3. There's no synchronization context to deadlock against
+            using var response = _httpClient.GetAsync(url).GetAwaiter().GetResult();
             
             _logWriter?.PrintMessage("Response status: {0} {1}", (int)response.StatusCode, response.StatusCode);
             
@@ -121,7 +125,7 @@ internal class ConfigurableAppCastDataDownloader : IAppCastDataDownloader
             _logWriter?.PrintMessage("Downloading appcast from: {0}", url);
             _logWriter?.PrintMessage("HTTP client timeout configured: {0} seconds", _httpClient.Timeout.TotalSeconds);
             
-            var response = await _httpClient.GetAsync(url).ConfigureAwait(false);
+            using var response = await _httpClient.GetAsync(url).ConfigureAwait(false);
             
             _logWriter?.PrintMessage("Response status: {0} {1}", (int)response.StatusCode, response.StatusCode);
             
