@@ -604,8 +604,18 @@ public class CommandService : ICommandService
     {
         try
         {
-            // Extract ATEM command details from payload
-            var atemCommand = payload.GetProperty("atemCommand").GetString();
+            // Extract ATEM command details from payload with validation
+            if (!payload.TryGetProperty("atemCommand", out var atemCommandProp))
+            {
+                return new AtemCommandResult
+                {
+                    Success = false,
+                    Message = "Missing required property: atemCommand",
+                    Response = null
+                };
+            }
+            
+            var atemCommand = atemCommandProp.GetString();
             
             _logger.LogInformation("Executing ATEM command: {AtemCommand}", atemCommand);
             
@@ -614,7 +624,17 @@ public class CommandService : ICommandService
             {
                 case "CUT_TO_PROGRAM":
                 {
-                    var inputId = payload.GetProperty("inputId").GetInt32();
+                    if (!payload.TryGetProperty("inputId", out var inputIdProp))
+                    {
+                        return new AtemCommandResult
+                        {
+                            Success = false,
+                            Message = "Missing required property: inputId",
+                            Response = null
+                        };
+                    }
+                    
+                    var inputId = inputIdProp.GetInt32();
                     // TODO: Execute via device-specific IAtemConnection instance
                     // var deviceId = payload.GetProperty("deviceId").GetString();
                     // var atemConnection = _deviceConnectionRegistry.GetAtemConnection(deviceId);
@@ -630,7 +650,17 @@ public class CommandService : ICommandService
                 
                 case "FADE_TO_PROGRAM":
                 {
-                    var inputId = payload.GetProperty("inputId").GetInt32();
+                    if (!payload.TryGetProperty("inputId", out var inputIdProp))
+                    {
+                        return new AtemCommandResult
+                        {
+                            Success = false,
+                            Message = "Missing required property: inputId",
+                            Response = null
+                        };
+                    }
+                    
+                    var inputId = inputIdProp.GetInt32();
                     int? transitionRate = null;
                     if (payload.TryGetProperty("transitionRate", out var rateProp) && rateProp.ValueKind != JsonValueKind.Null)
                     {
@@ -652,7 +682,17 @@ public class CommandService : ICommandService
                 
                 case "SET_PREVIEW":
                 {
-                    var inputId = payload.GetProperty("inputId").GetInt32();
+                    if (!payload.TryGetProperty("inputId", out var inputIdProp))
+                    {
+                        return new AtemCommandResult
+                        {
+                            Success = false,
+                            Message = "Missing required property: inputId",
+                            Response = null
+                        };
+                    }
+                    
+                    var inputId = inputIdProp.GetInt32();
                     // TODO: Execute via device-specific IAtemConnection instance
                     // var deviceId = payload.GetProperty("deviceId").GetString();
                     // var atemConnection = _deviceConnectionRegistry.GetAtemConnection(deviceId);
@@ -684,7 +724,17 @@ public class CommandService : ICommandService
                 
                 case "RUN_MACRO":
                 {
-                    var macroId = payload.GetProperty("macroId").GetInt32();
+                    if (!payload.TryGetProperty("macroId", out var macroIdProp))
+                    {
+                        return new AtemCommandResult
+                        {
+                            Success = false,
+                            Message = "Missing required property: macroId",
+                            Response = null
+                        };
+                    }
+                    
+                    var macroId = macroIdProp.GetInt32();
                     // TODO: Execute via device-specific IAtemConnection instance
                     // var deviceId = payload.GetProperty("deviceId").GetString();
                     // var atemConnection = _deviceConnectionRegistry.GetAtemConnection(deviceId);

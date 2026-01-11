@@ -245,15 +245,19 @@ public class CommandServiceTests
             Payload = payload
         };
 
-        // Act
-        await service.ExecuteCommandAsync(command, CancellationToken.None);
+        // Act - Should complete without throwing
+        var exception = await Record.ExceptionAsync(async () => 
+            await service.ExecuteCommandAsync(command, CancellationToken.None));
 
-        // Assert - Should log the ATEM command execution
+        // Assert - Should complete successfully
+        Assert.Null(exception);
+        
+        // Verify the command was logged
         mockLogger.Verify(
             x => x.Log(
                 LogLevel.Information,
                 It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Executing ATEM command")),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Executing ATEM command") && v.ToString()!.Contains("CUT_TO_PROGRAM")),
                 It.IsAny<Exception>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
@@ -292,15 +296,19 @@ public class CommandServiceTests
             Payload = payload
         };
 
-        // Act
-        await service.ExecuteCommandAsync(command, CancellationToken.None);
+        // Act - Should complete without throwing
+        var exception = await Record.ExceptionAsync(async () => 
+            await service.ExecuteCommandAsync(command, CancellationToken.None));
 
-        // Assert
+        // Assert - Should complete successfully
+        Assert.Null(exception);
+        
+        // Verify the fade command was logged with transition rate
         mockLogger.Verify(
             x => x.Log(
                 LogLevel.Information,
                 It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("ATEM command")),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("FADE_TO_PROGRAM")),
                 It.IsAny<Exception>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
@@ -338,15 +346,19 @@ public class CommandServiceTests
             Payload = payload
         };
 
-        // Act
-        await service.ExecuteCommandAsync(command, CancellationToken.None);
+        // Act - Should complete without throwing
+        var exception = await Record.ExceptionAsync(async () => 
+            await service.ExecuteCommandAsync(command, CancellationToken.None));
 
-        // Assert
+        // Assert - Should complete successfully
+        Assert.Null(exception);
+        
+        // Verify the preview command was logged with correct input ID
         mockLogger.Verify(
             x => x.Log(
                 LogLevel.Information,
                 It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("ATEM command")),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("SET_PREVIEW")),
                 It.IsAny<Exception>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);

@@ -189,7 +189,7 @@ public class AtemConnectionService : IAtemConnection, IDisposable
             await Task.Delay(50, ct);
             
             // Update local state optimistically
-            UpdateStateField(s => s.ProgramInputId = programInputId);
+            await UpdateStateField(s => s.ProgramInputId = programInputId);
         }
         finally
         {
@@ -220,7 +220,7 @@ public class AtemConnectionService : IAtemConnection, IDisposable
             await Task.Delay(100, ct);
             
             // Update local state
-            UpdateStateField(s =>
+            await UpdateStateField(s =>
             {
                 s.ProgramInputId = programInputId;
                 s.LastTransitionType = "mix";
@@ -250,7 +250,7 @@ public class AtemConnectionService : IAtemConnection, IDisposable
             await Task.Delay(50, ct);
             
             // Update local state
-            UpdateStateField(s => s.PreviewInputId = previewInputId);
+            await UpdateStateField(s => s.PreviewInputId = previewInputId);
         }
         finally
         {
@@ -329,7 +329,7 @@ public class AtemConnectionService : IAtemConnection, IDisposable
             Timestamp = DateTimeOffset.UtcNow
         };
         
-        UpdateState(state);
+        await UpdateState(state);
     }
     
     private void UpdateConnectionState(AtemConnectionState newState)
@@ -346,17 +346,17 @@ public class AtemConnectionService : IAtemConnection, IDisposable
         }
     }
     
-    private void UpdateStateField(Action<AtemState> updateAction)
+    private async Task UpdateStateField(Action<AtemState> updateAction)
     {
         var state = _currentState ?? new AtemState();
         updateAction(state);
         state.Timestamp = DateTimeOffset.UtcNow;
-        UpdateState(state);
+        await UpdateState(state);
     }
     
-    private void UpdateState(AtemState newState)
+    private async Task UpdateState(AtemState newState)
     {
-        _stateLock.Wait();
+        await _stateLock.WaitAsync();
         try
         {
             // Check if state actually changed
@@ -394,9 +394,9 @@ public class AtemConnectionService : IAtemConnection, IDisposable
         }
     }
     
-    private void PublishPendingState(object? state)
+    private async void PublishPendingState(object? state)
     {
-        _stateLock.Wait();
+        await _stateLock.WaitAsync();
         try
         {
             if (_pendingState != null)
@@ -427,7 +427,17 @@ public class AtemConnectionService : IAtemConnection, IDisposable
         }
         
         _reconnectCts = new CancellationTokenSource();
-        _reconnectTask = ReconnectLoopAsync(_reconnectCts.Token);
+        _reconnectTask = Task.Run(async () =>
+        {
+            try
+            {
+                await ReconnectLoopAsync(_reconnectCts.Token);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "ATEM reconnect loop terminated unexpectedly");
+            }
+        });
     }
     
     private async Task ReconnectLoopAsync(CancellationToken ct)
@@ -487,6 +497,20 @@ public class AtemConnectionService : IAtemConnection, IDisposable
     public void Dispose()
     {
         _reconnectCts?.Cancel();
+        
+        // Wait for reconnect task to complete with a timeout
+        if (_reconnectTask != null && !_reconnectTask.IsCompleted)
+        {
+            try
+            {
+                _reconnectTask.Wait(TimeSpan.FromSeconds(5));
+            }
+            catch (AggregateException)
+            {
+                // Task was cancelled or threw an exception, which is expected
+            }
+        }
+        
         _reconnectCts?.Dispose();
         _statePublishTimer?.Dispose();
         _stateLock.Dispose();
