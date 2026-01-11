@@ -360,14 +360,13 @@ public class AtemConnectionService : IAtemConnection, IDisposable
         try
         {
             // Check if state actually changed
-            if (_options.StateEmitOnChangeOnly && _currentState != null)
+            if (_options.StateEmitOnChangeOnly &&
+                _currentState != null &&
+                _currentState.ProgramInputId == newState.ProgramInputId &&
+                _currentState.PreviewInputId == newState.PreviewInputId &&
+                _currentState.InTransition == newState.InTransition)
             {
-                if (_currentState.ProgramInputId == newState.ProgramInputId &&
-                    _currentState.PreviewInputId == newState.PreviewInputId &&
-                    _currentState.InTransition == newState.InTransition)
-                {
-                    return; // No change
-                }
+                return; // No change
             }
             
             _currentState = newState;
