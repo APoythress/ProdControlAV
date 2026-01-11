@@ -36,4 +36,11 @@ public sealed class UpdateOptions
     /// When false, updates are only checked and logged (manual update required).
     /// </summary>
     public bool AutoInstall { get; init; } = true;
+
+    /// <summary>
+    /// Timeout for downloading the appcast manifest (in seconds). Default: 30 seconds.
+    /// Increase this value if experiencing timeout errors on slow network connections.
+    /// The default NetSparkle timeout of 100 seconds is too long and can cause issues.
+    /// </summary>
+    public int AppcastTimeoutSeconds { get; init; } = 30;
 }
