@@ -308,6 +308,8 @@ public sealed class UpdateService : BackgroundService
     /// <returns>True if DNS resolution succeeds, false otherwise</returns>
     private async Task<bool> VerifyAppcastUrlAccessibilityAsync()
     {
+        const int DnsTimeoutSeconds = 5;
+        
         try
         {
             var uri = new Uri(_updateOptions.AppcastUrl);
@@ -316,29 +318,26 @@ public sealed class UpdateService : BackgroundService
             _logger.LogDebug("Verifying DNS resolution for appcast host: {Hostname}", hostname);
             
             // Attempt DNS resolution with a short timeout
-            var dnsTask = Dns.GetHostAddressesAsync(hostname);
-            var timeoutTask = Task.Delay(TimeSpan.FromSeconds(5));
-            var completedTask = await Task.WhenAny(dnsTask, timeoutTask);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(DnsTimeoutSeconds));
+            var addresses = await Dns.GetHostAddressesAsync(hostname, cts.Token);
             
-            if (completedTask == timeoutTask)
-            {
-                _logger.LogError("DNS resolution timeout for {Hostname}. The domain could not be resolved within 5 seconds.", hostname);
-                _logger.LogError("This indicates a network or DNS configuration issue. Check:");
-                _logger.LogError("  1. Network connectivity: Can the agent reach the internet?");
-                _logger.LogError("  2. DNS server configuration: Is DNS properly configured?");
-                _logger.LogError("  3. Firewall rules: Is DNS traffic (UDP port 53) allowed?");
-                _logger.LogError("  4. Azure Blob Storage domain: Does '{Hostname}' exist?", hostname);
-                _logger.LogError("Manual test: ping {Hostname} or nslookup {Hostname}", hostname, hostname);
-                return false;
-            }
-            
-            var addresses = await dnsTask;
             if (addresses == null || addresses.Length == 0)
             {
                 _logger.LogError("DNS resolution failed for {Hostname}. No IP addresses returned.", hostname);
                 _logger.LogError("The configured AppcastUrl uses a domain name that does not exist or cannot be resolved.");
                 _logger.LogError("Common causes:");
-                _logger.LogError("  1. The Azure Storage account '{StorageAccount}' does not exist", hostname.Split('.')[0]);
+                
+                // Extract storage account name safely
+                var hostParts = hostname.Split('.');
+                if (hostParts.Length > 0 && hostname.Contains("blob.core.windows.net"))
+                {
+                    _logger.LogError("  1. The Azure Storage account '{StorageAccount}' does not exist", hostParts[0]);
+                }
+                else
+                {
+                    _logger.LogError("  1. The domain '{Domain}' does not exist or is unreachable", hostname);
+                }
+                
                 _logger.LogError("  2. The domain name is misspelled in appsettings.json");
                 _logger.LogError("  3. The storage account has been deleted or renamed");
                 _logger.LogError("Current AppcastUrl: {AppcastUrl}", _updateOptions.AppcastUrl);
@@ -349,6 +348,19 @@ public sealed class UpdateService : BackgroundService
             _logger.LogDebug("DNS resolution successful for {Hostname}: {IpAddresses}", 
                 hostname, string.Join(", ", addresses.Select(a => a.ToString())));
             return true;
+        }
+        catch (TaskCanceledException)
+        {
+            var uri = new Uri(_updateOptions.AppcastUrl);
+            _logger.LogError("DNS resolution timeout for {Hostname}. The domain could not be resolved within {Timeout} seconds.", 
+                uri.Host, DnsTimeoutSeconds);
+            _logger.LogError("This indicates a network or DNS configuration issue. Check:");
+            _logger.LogError("  1. Network connectivity: Can the agent reach the internet?");
+            _logger.LogError("  2. DNS server configuration: Is DNS properly configured?");
+            _logger.LogError("  3. Firewall rules: Is DNS traffic (UDP port 53) allowed?");
+            _logger.LogError("  4. Azure Blob Storage domain: Does '{Hostname}' exist?", uri.Host);
+            _logger.LogError("Manual test: ping {Hostname} or nslookup {Hostname}", uri.Host, uri.Host);
+            return false;
         }
         catch (SocketException sockEx)
         {
