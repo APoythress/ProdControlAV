@@ -4,10 +4,13 @@ using NetSparkleUpdater.Interfaces;
 namespace ProdControlAV.Agent.Services;
 
 /// <summary>
-/// Custom AppCast data downloader that allows configuring the HTTP timeout.
-/// NetSparkle's default WebRequestAppCastDataDownloader uses a 100-second timeout
-/// which can be too long for Raspberry Pi deployments with unreliable network connectivity.
-/// This implementation allows configuring a shorter timeout to fail faster and retry sooner.
+/// Custom AppCast data downloader that allows configuring the HTTP timeout and handler settings.
+/// NetSparkle's default WebRequestAppCastDataDownloader uses a 100-second timeout and default
+/// HttpClient configuration which may have proxy issues or connection pooling problems.
+/// This implementation configures an optimized HttpClient with:
+/// - Configurable timeout (default: 30 seconds)
+/// - No proxy (direct connection)
+/// - Proper connection pooling for better performance
 /// </summary>
 internal class ConfigurableAppCastDataDownloader : WebRequestAppCastDataDownloader
 {
@@ -23,21 +26,42 @@ internal class ConfigurableAppCastDataDownloader : WebRequestAppCastDataDownload
     }
 
     /// <summary>
-    /// Creates an HttpClient with the configured timeout.
-    /// This overrides the base class method to inject our custom timeout.
+    /// Creates an HttpClient with optimized configuration for direct Azure Blob Storage access.
+    /// This overrides the base class method to:
+    /// - Set custom timeout
+    /// - Bypass system proxy (use direct connection)
+    /// - Configure proper connection pooling
+    /// - Set connection limits for better performance
     /// </summary>
     protected override HttpClient CreateHttpClient()
     {
-        var client = base.CreateHttpClient();
-        try
+        // Use SocketsHttpHandler for better performance and control
+        var handler = new SocketsHttpHandler
         {
-            client.Timeout = _timeout;
-            return client;
-        }
-        catch
+            // Bypass any system proxy - connect directly to Azure Blob Storage
+            // This prevents proxy-related timeouts and connection issues
+            UseProxy = false,
+            Proxy = null,
+            
+            // Connection pooling settings
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+            PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
+            
+            // Allow multiple connections for parallel requests
+            MaxConnectionsPerServer = 10,
+            
+            // Enable automatic decompression for better performance
+            AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
+        };
+        
+        var client = new HttpClient(handler, disposeHandler: true)
         {
-            client.Dispose();
-            throw;
-        }
+            Timeout = _timeout
+        };
+        
+        // Set User-Agent to identify the agent
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("ProdControlAV-Agent/1.0");
+        
+        return client;
     }
 }

@@ -1,8 +1,6 @@
 using System.Reflection;
 using System.IO.Compression;
 using System.Diagnostics;
-using System.Net;
-using System.Net.Sockets;
 using Microsoft.Extensions.Options;
 using NetSparkleUpdater;
 using NetSparkleUpdater.Enums;
@@ -176,6 +174,7 @@ public sealed class UpdateService : BackgroundService
             // Enable logging on the custom AppCastDataDownloader
             appcastDownloader.LogWriter = new NetSparkleLoggerBridge(_logger);
             _logger.LogDebug("Configured custom AppCastDataDownloader with {Timeout}-second timeout", _updateOptions.AppcastTimeoutSeconds);
+            _logger.LogDebug("HTTP client configured for direct connection (proxy bypassed) to Azure Blob Storage");
             
             // NetSparkle reads the version from the reference assembly using AssemblyInformationalVersion.
             // Per SemVer 2.0.0 spec, build metadata (the +hash part) should be ignored for version precedence.
@@ -211,17 +210,9 @@ public sealed class UpdateService : BackgroundService
                         _logger.LogDebug("Checking for updates (current version: {CurrentVersion})...", _currentVersion);
                     }
                     
-                    // Pre-check: Verify the appcast URL's domain is resolvable before attempting download
-                    // This provides fast failure with clear error messages for DNS/network issues
+                    // Log connection details for diagnostics
                     _logger.LogDebug("Attempting to download appcast from: {AppcastUrl}", _updateOptions.AppcastUrl);
-                    
-                    bool isDnsAccessible = await VerifyAppcastUrlAccessibilityAsync();
-                    if (!isDnsAccessible)
-                    {
-                        _logger.LogError("Skipping update check due to DNS resolution failure. Will retry on next interval.");
-                        _logger.LogError("This is typically caused by incorrect AppcastUrl configuration or network issues.");
-                        continue;
-                    }
+                    _logger.LogDebug("Using direct connection (proxy bypassed) with {Timeout}s timeout", _updateOptions.AppcastTimeoutSeconds);
                     
                     // Check for updates with detailed logging and retry logic
                     UpdateInfo? updateInfo = await CheckForUpdatesWithRetryAsync(stoppingToken);
@@ -298,82 +289,6 @@ public sealed class UpdateService : BackgroundService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to initialize update system");
-        }
-    }
-
-    /// <summary>
-    /// Pre-checks if the appcast URL's domain is resolvable via DNS.
-    /// This helps detect network/DNS issues early before waiting for HTTP timeout.
-    /// </summary>
-    /// <returns>True if DNS resolution succeeds, false otherwise</returns>
-    private async Task<bool> VerifyAppcastUrlAccessibilityAsync()
-    {
-        const int DnsTimeoutSeconds = 5;
-        
-        try
-        {
-            var uri = new Uri(_updateOptions.AppcastUrl);
-            var hostname = uri.Host;
-            
-            _logger.LogDebug("Verifying DNS resolution for appcast host: {Hostname}", hostname);
-            
-            // Attempt DNS resolution with a short timeout
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(DnsTimeoutSeconds));
-            var addresses = await Dns.GetHostAddressesAsync(hostname, cts.Token);
-            
-            if (addresses == null || addresses.Length == 0)
-            {
-                _logger.LogError("DNS resolution failed for {Hostname}. No IP addresses returned.", hostname);
-                _logger.LogError("The configured AppcastUrl uses a domain name that does not exist or cannot be resolved.");
-                _logger.LogError("Common causes:");
-                
-                // Extract storage account name safely
-                var hostParts = hostname.Split('.');
-                if (hostParts.Length > 0 && hostname.Contains("blob.core.windows.net"))
-                {
-                    _logger.LogError("  1. The Azure Storage account '{StorageAccount}' does not exist", hostParts[0]);
-                }
-                else
-                {
-                    _logger.LogError("  1. The domain '{Domain}' does not exist or is unreachable", hostname);
-                }
-                
-                _logger.LogError("  2. The domain name is misspelled in appsettings.json");
-                _logger.LogError("  3. The storage account has been deleted or renamed");
-                _logger.LogError("Current AppcastUrl: {AppcastUrl}", _updateOptions.AppcastUrl);
-                _logger.LogError("Verify the correct storage account name in Azure Portal and update appsettings.json");
-                return false;
-            }
-            
-            _logger.LogDebug("DNS resolution successful for {Hostname}: {IpAddresses}", 
-                hostname, string.Join(", ", addresses.Select(a => a.ToString())));
-            return true;
-        }
-        catch (TaskCanceledException)
-        {
-            var uri = new Uri(_updateOptions.AppcastUrl);
-            _logger.LogError("DNS resolution timeout for {Hostname}. The domain could not be resolved within {Timeout} seconds.", 
-                uri.Host, DnsTimeoutSeconds);
-            _logger.LogError("This indicates a network or DNS configuration issue. Check:");
-            _logger.LogError("  1. Network connectivity: Can the agent reach the internet?");
-            _logger.LogError("  2. DNS server configuration: Is DNS properly configured?");
-            _logger.LogError("  3. Firewall rules: Is DNS traffic (UDP port 53) allowed?");
-            _logger.LogError("  4. Azure Blob Storage domain: Does '{Hostname}' exist?", uri.Host);
-            _logger.LogError("Manual test: ping {Hostname} or nslookup {Hostname}", uri.Host, uri.Host);
-            return false;
-        }
-        catch (SocketException sockEx)
-        {
-            var uri = new Uri(_updateOptions.AppcastUrl);
-            _logger.LogError(sockEx, "DNS resolution failed with socket error for {Hostname}", uri.Host);
-            _logger.LogError("Socket error code: {ErrorCode}. This typically indicates DNS server is unreachable or misconfigured.", sockEx.ErrorCode);
-            _logger.LogError("Check network connectivity and DNS server configuration on this device.");
-            return false;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Unexpected error during DNS pre-check for appcast URL: {AppcastUrl}", _updateOptions.AppcastUrl);
-            return false;
         }
     }
 
