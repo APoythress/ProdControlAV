@@ -29,7 +29,15 @@ internal class ConfigurableAppCastDataDownloader : WebRequestAppCastDataDownload
     protected override HttpClient CreateHttpClient()
     {
         var client = base.CreateHttpClient();
-        client.Timeout = _timeout;
-        return client;
+        try
+        {
+            client.Timeout = _timeout;
+            return client;
+        }
+        catch
+        {
+            client.Dispose();
+            throw;
+        }
     }
 }
