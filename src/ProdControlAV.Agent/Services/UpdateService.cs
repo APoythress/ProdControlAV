@@ -146,8 +146,13 @@ public sealed class UpdateService : BackgroundService
             _logger.LogInformation("Appcast URL: {AppcastUrl}", _updateOptions.AppcastUrl);
             _logger.LogInformation("Check interval: {Interval} seconds", _updateOptions.CheckIntervalSeconds);
             _logger.LogInformation("Auto-install: {AutoInstall}", _updateOptions.AutoInstall);
+            _logger.LogInformation("Appcast timeout: {Timeout} seconds", _updateOptions.AppcastTimeoutSeconds);
 
             var signatureVerifier = new Ed25519Checker(SecurityMode.Strict, _updateOptions.Ed25519PublicKey);
+            
+            // Create custom appcast downloader with configurable timeout
+            var appcastDownloader = new ConfigurableAppCastDataDownloader(
+                TimeSpan.FromSeconds(_updateOptions.AppcastTimeoutSeconds));
 
             _sparkle = new SparkleUpdater(
                 _updateOptions.AppcastUrl,
@@ -161,15 +166,15 @@ public sealed class UpdateService : BackgroundService
                 // Configure JSON appcast generator (NetSparkle defaults to XML)
                 AppCastGenerator = new JsonAppCastGenerator(),
                 // Enable NetSparkle internal diagnostic logging
-                LogWriter = new NetSparkleLoggerBridge(_logger)
+                LogWriter = new NetSparkleLoggerBridge(_logger),
+                // Use custom downloader with configurable timeout
+                AppCastDataDownloader = appcastDownloader
             };
             
-            // Also enable logging on the AppCastDataDownloader if it's a WebRequestAppCastDataDownloader
-            if (_sparkle.AppCastDataDownloader is NetSparkleUpdater.Downloaders.WebRequestAppCastDataDownloader webDownloader)
-            {
-                webDownloader.LogWriter = new NetSparkleLoggerBridge(_logger);
-                _logger.LogDebug("Enabled diagnostic logging on WebRequestAppCastDataDownloader");
-            }
+            // Enable logging on the custom AppCastDataDownloader
+            appcastDownloader.LogWriter = new NetSparkleLoggerBridge(_logger);
+            _logger.LogDebug("Configured custom AppCastDataDownloader with {Timeout}-second timeout", _updateOptions.AppcastTimeoutSeconds);
+            _logger.LogDebug("HTTP client configured for direct connection (proxy bypassed) to Azure Blob Storage");
             
             // NetSparkle reads the version from the reference assembly using AssemblyInformationalVersion.
             // Per SemVer 2.0.0 spec, build metadata (the +hash part) should be ignored for version precedence.
@@ -205,9 +210,11 @@ public sealed class UpdateService : BackgroundService
                         _logger.LogDebug("Checking for updates (current version: {CurrentVersion})...", _currentVersion);
                     }
                     
-                    // Check for updates with detailed logging and retry logic
+                    // Log connection details for diagnostics
                     _logger.LogDebug("Attempting to download appcast from: {AppcastUrl}", _updateOptions.AppcastUrl);
+                    _logger.LogDebug("Using direct connection (proxy bypassed) with {Timeout}s timeout", _updateOptions.AppcastTimeoutSeconds);
                     
+                    // Check for updates with detailed logging and retry logic
                     UpdateInfo? updateInfo = await CheckForUpdatesWithRetryAsync(stoppingToken);
                     
                     // If all retries failed, skip to next iteration
@@ -322,8 +329,8 @@ public sealed class UpdateService : BackgroundService
             catch (TaskCanceledException tcEx) when (retryAttempt < maxRetries - 1 && !stoppingToken.IsCancellationRequested)
             {
                 retryAttempt++;
-                _logger.LogWarning(tcEx, "Timeout while downloading appcast (attempt {Attempt}/{MaxRetries}). Retrying in {Delay} seconds...", 
-                    retryAttempt, maxRetries, retryDelay.TotalSeconds);
+                _logger.LogWarning(tcEx, "Timeout while downloading appcast (attempt {Attempt}/{MaxRetries}). Configured timeout: {Timeout}s. Retrying in {Delay} seconds...", 
+                    retryAttempt, maxRetries, _updateOptions.AppcastTimeoutSeconds, retryDelay.TotalSeconds);
                 await Task.Delay(retryDelay, stoppingToken);
                 retryDelay = TimeSpan.FromSeconds(Math.Min(retryDelay.TotalSeconds * 2, maxDelaySeconds)); // Exponential backoff with cap
                 continue;
@@ -335,8 +342,10 @@ public sealed class UpdateService : BackgroundService
             }
             catch (TaskCanceledException tcEx)
             {
-                _logger.LogError(tcEx, "Timeout while downloading appcast after {MaxRetries} attempts. The operation exceeded the configured timeout period.", maxRetries);
-                _logger.LogError("Consider checking network speed and connectivity to: {AppcastUrl}", _updateOptions.AppcastUrl);
+                _logger.LogError(tcEx, "Timeout while downloading appcast after {MaxRetries} attempts. The operation exceeded the configured timeout of {Timeout} seconds.", 
+                    maxRetries, _updateOptions.AppcastTimeoutSeconds);
+                _logger.LogError("Consider increasing AppcastTimeoutSeconds in appsettings.json or checking network connectivity to: {AppcastUrl}", _updateOptions.AppcastUrl);
+                _logger.LogError("Current timeout setting: {Timeout} seconds. Try increasing to 60-120 seconds for slow connections.", _updateOptions.AppcastTimeoutSeconds);
                 return null;
             }
             catch (HttpRequestException httpEx) when (retryAttempt < maxRetries - 1)
