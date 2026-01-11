@@ -6,6 +6,27 @@ This document provides setup and usage instructions for the Blackmagic Design AT
 
 The Agent supports control of ATEM Television Studios and compatible Blackmagic Design video switchers over the same LAN. The implementation uses the LibAtem library (LGPL-3.0) to communicate with ATEM devices via their proprietary UDP protocol.
 
+## Multi-Tenant Architecture
+
+**Important:** ATEM configuration follows the multi-tenant architecture of ProdControlAV:
+
+- **Device-Specific Settings** (IP, Port, Name): Stored in the Devices table per tenant
+  - Set `Type` to indicate ATEM capability (e.g., "ATEM" or "Video")
+  - Set `AtemEnabled=true` to enable ATEM control for the device
+  - Configure `Ip` and `Port` (default 9910) for the ATEM device
+  - Optionally set `AtemTransitionDefaultRate` and `AtemTransitionDefaultType` per device
+
+- **Agent-Level Settings** (appsettings.json): Global reconnection policies and defaults
+  - Connection timeouts and reconnect backoff policies
+  - State publishing intervals and coalescing settings
+  - System-wide fallback defaults (used when device settings not specified)
+
+This approach allows:
+- Multiple tenants to manage their own ATEM devices independently
+- Per-device ATEM configuration and monitoring
+- Centralized management through the web interface
+- Agent-level reliability policies consistent across all devices
+
 ## Supported Features
 
 ### Program/Preview Switching
@@ -24,16 +45,43 @@ The Agent supports control of ATEM Television Studios and compatible Blackmagic 
 
 ## Configuration
 
-### appsettings.json
+### Device Configuration (Per-Tenant, in Database)
 
-Add or modify the `Atem` section in your Agent's `appsettings.json`:
+ATEM devices should be configured through the web interface in the Devices table:
+
+**Required Fields:**
+- `Name`: Friendly name for the device (e.g., "Production ATEM")
+- `Type`: Set to "ATEM" or "Video" to indicate ATEM capability
+- `Ip`: IPv4 address of the ATEM device (e.g., "192.168.1.240")
+- `Port`: ATEM port, typically 9910
+- `TenantId`: Associated tenant ID
+
+**ATEM-Specific Fields:**
+- `AtemEnabled`: Set to `true` to enable ATEM control (default: false)
+- `AtemTransitionDefaultType`: Default transition type ("mix" or "cut")
+- `AtemTransitionDefaultRate`: Default transition rate in frames (e.g., 30 = 1 second @ 30fps)
+
+**Example Device Configuration (via API/Web UI):**
+```json
+{
+  "name": "Production ATEM",
+  "type": "ATEM",
+  "ip": "192.168.1.240",
+  "port": 9910,
+  "tenantId": "tenant-guid-here",
+  "atemEnabled": true,
+  "atemTransitionDefaultType": "mix",
+  "atemTransitionDefaultRate": 30
+}
+```
+
+### Agent Configuration (System-Wide, in appsettings.json)
+
+The Agent's `appsettings.json` contains system-wide ATEM policies and fallback defaults:
 
 ```json
 {
   "Atem": {
-    "Ip": "192.168.1.240",
-    "Port": 9910,
-    "Name": "Production ATEM",
     "ConnectAuto": false,
     "ReconnectEnabled": true,
     "ReconnectMinDelaySeconds": 2,
@@ -47,22 +95,35 @@ Add or modify the `Atem` section in your Agent's `appsettings.json`:
 }
 ```
 
-### Configuration Options
+**Note:** The `Ip`, `Port`, and `Name` settings in appsettings.json are legacy single-device configurations. For multi-tenant deployments, these should be left empty or removed, and all device configuration should be done through the Devices table.
+
+**Note:** The `Ip`, `Port`, and `Name` settings in appsettings.json are legacy single-device configurations. For multi-tenant deployments, these should be left empty or removed, and all device configuration should be done through the Devices table.
+
+### Agent Configuration Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `Ip` | string | *required* | IPv4 address or hostname of the ATEM device |
-| `Port` | int | 9910 | UDP port for ATEM protocol (9910 is standard) |
-| `Name` | string | null | Friendly name for logs and telemetry |
-| `ConnectAuto` | bool | false | Automatically connect on agent startup |
+| `ConnectAuto` | bool | false | Automatically connect on agent startup (applies to all ATEM devices) |
 | `ReconnectEnabled` | bool | true | Enable automatic reconnection on failure |
 | `ReconnectMinDelaySeconds` | int | 2 | Minimum wait before reconnect attempt |
 | `ReconnectMaxDelaySeconds` | int | 60 | Maximum wait between reconnect attempts (exponential backoff cap) |
 | `ConnectTimeoutSeconds` | int | 10 | Connection timeout |
 | `StatePublishIntervalMs` | int | 500 | Minimum interval for publishing state updates (coalescing) |
 | `StateEmitOnChangeOnly` | bool | true | Only emit state updates when values change |
-| `TransitionDefaultType` | string | "mix" | Default transition type ("mix" or "cut") |
-| `TransitionDefaultRate` | int | 30 | Default transition rate in frames (30 frames @ 30fps = 1 second) |
+| `TransitionDefaultType` | string | "mix" | System-wide fallback default transition type ("mix" or "cut") |
+| `TransitionDefaultRate` | int | 30 | System-wide fallback default transition rate in frames (30 frames @ 30fps = 1 second) |
+
+### Device Configuration Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `Name` | string | Friendly name for the ATEM device |
+| `Type` | string | Set to "ATEM" or "Video" to indicate capability |
+| `Ip` | string | IPv4 address of the ATEM device |
+| `Port` | int | UDP port for ATEM protocol (typically 9910) |
+| `AtemEnabled` | bool | Enable ATEM control for this device |
+| `AtemTransitionDefaultType` | string? | Device-specific default transition type (overrides agent setting) |
+| `AtemTransitionDefaultRate` | int? | Device-specific default transition rate (overrides agent setting) |
 
 ## Command Contracts
 
