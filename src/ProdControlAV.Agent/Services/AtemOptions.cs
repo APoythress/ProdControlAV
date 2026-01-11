@@ -21,9 +21,9 @@ public class AtemOptions
     public string? Name { get; set; }
     
     /// <summary>
-    /// Enable automatic connection on service startup.
+    /// Enable automatic connection on service startup (default: false).
     /// </summary>
-    public bool ConnectAuto { get; set; } = true;
+    public bool ConnectAuto { get; set; } = false;
     
     /// <summary>
     /// Enable automatic reconnection on connection failure.
