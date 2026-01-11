@@ -33,7 +33,7 @@ public class AtemConnectionService : IAtemConnection, IDisposable
     // State coalescing
     private readonly SemaphoreSlim _stateLock = new(1, 1);
     private AtemState? _pendingState;
-    private Timer? _statePublishTimer;
+    private readonly Timer _statePublishTimer;
     
     // Command serialization
     private readonly SemaphoreSlim _commandLock = new(1, 1);
