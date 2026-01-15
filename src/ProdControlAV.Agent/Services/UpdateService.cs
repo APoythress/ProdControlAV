@@ -59,6 +59,7 @@ public sealed class UpdateService : BackgroundService
     private readonly string _referenceAssembly;
     private SparkleUpdater? _sparkle;
     private readonly SemaphoreSlim _updateLock = new SemaphoreSlim(1, 1);
+    private string? _safeTempDirectory; // Cached safe temp directory
 
     public UpdateService(
         ILogger<UpdateService> logger,
@@ -86,6 +87,101 @@ public sealed class UpdateService : BackgroundService
         
         // Backup directory
         _backupBaseDirectory = "/opt/prodcontrolav";
+    }
+    
+    /// <summary>
+    /// Gets a safe temporary directory path with fallback options.
+    /// On Linux/Raspberry Pi, Path.GetTempPath() may fail when running as systemd service
+    /// or when environment variables are not set correctly.
+    /// </summary>
+    /// <returns>A writable temporary directory path.</returns>
+    private string GetSafeTempDirectory()
+    {
+        // Return cached value if already determined
+        if (_safeTempDirectory != null)
+        {
+            return _safeTempDirectory;
+        }
+        
+        // Try standard temp path first
+        try
+        {
+            var tempPath = Path.GetTempPath();
+            if (!string.IsNullOrWhiteSpace(tempPath) && Directory.Exists(tempPath))
+            {
+                // Verify we can write to it
+                var testFile = Path.Combine(tempPath, $".prodcontrolav-test-{Guid.NewGuid()}");
+                try
+                {
+                    File.WriteAllText(testFile, "test");
+                    File.Delete(testFile);
+                    _logger.LogDebug("Using system temp directory: {TempPath}", tempPath);
+                    _safeTempDirectory = tempPath;
+                    return _safeTempDirectory;
+                }
+                catch
+                {
+                    _logger.LogWarning("System temp directory not writable: {TempPath}", tempPath);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to get system temp directory");
+        }
+        
+        // Fallback 1: /tmp (standard Linux temp directory)
+        try
+        {
+            var tmpDir = "/tmp";
+            if (Directory.Exists(tmpDir))
+            {
+                var testFile = Path.Combine(tmpDir, $".prodcontrolav-test-{Guid.NewGuid()}");
+                try
+                {
+                    File.WriteAllText(testFile, "test");
+                    File.Delete(testFile);
+                    _logger.LogInformation("Using fallback temp directory: {TempPath}", tmpDir);
+                    _safeTempDirectory = tmpDir;
+                    return _safeTempDirectory;
+                }
+                catch
+                {
+                    _logger.LogWarning("Fallback temp directory not writable: {TempPath}", tmpDir);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to access /tmp directory");
+        }
+        
+        // Fallback 2: Create temp directory in agent directory
+        try
+        {
+            var agentTempDir = Path.Combine(_agentDirectory, "temp");
+            if (!Directory.Exists(agentTempDir))
+            {
+                Directory.CreateDirectory(agentTempDir);
+            }
+            
+            var testFile = Path.Combine(agentTempDir, $".prodcontrolav-test-{Guid.NewGuid()}");
+            File.WriteAllText(testFile, "test");
+            File.Delete(testFile);
+            _logger.LogInformation("Using agent temp directory: {TempPath}", agentTempDir);
+            _safeTempDirectory = agentTempDir;
+            return _safeTempDirectory;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create temp directory in agent directory");
+        }
+        
+        // Last resort: use current directory
+        var currentDir = Directory.GetCurrentDirectory();
+        _logger.LogWarning("Using current directory as temp: {TempPath}", currentDir);
+        _safeTempDirectory = currentDir;
+        return _safeTempDirectory;
     }
     
     /// <summary>
@@ -154,6 +250,11 @@ public sealed class UpdateService : BackgroundService
             var appcastDownloader = new ConfigurableAppCastDataDownloader(
                 TimeSpan.FromSeconds(_updateOptions.AppcastTimeoutSeconds));
 
+            // Get safe temp directory with fallback options
+            var safeTempDir = GetSafeTempDirectory();
+            var tmpDownloadPath = Path.Combine(safeTempDir, "prodcontrolav-update.zip");
+            _logger.LogInformation("Update download path: {DownloadPath}", tmpDownloadPath);
+
             _sparkle = new SparkleUpdater(
                 _updateOptions.AppcastUrl,
                 signatureVerifier,
@@ -161,7 +262,7 @@ public sealed class UpdateService : BackgroundService
             {
                 // Headless mode - no UI
                 UIFactory = null,
-                TmpDownloadFilePath = Path.Combine(Path.GetTempPath(), "prodcontrolav-update.zip"),
+                TmpDownloadFilePath = tmpDownloadPath,
                 RelaunchAfterUpdate = false,  // We handle restart via Environment.Exit(0) and systemd
                 // Configure JSON appcast generator (NetSparkle defaults to XML)
                 AppCastGenerator = new JsonAppCastGenerator(),
@@ -190,7 +291,7 @@ public sealed class UpdateService : BackgroundService
                 try
                 {
                     // Check for manual update trigger signal
-                    var updateSignalFile = Path.Combine(Path.GetTempPath(), "prodcontrolav-update-trigger");
+                    var updateSignalFile = Path.Combine(GetSafeTempDirectory(), "prodcontrolav-update-trigger");
                     var manualTrigger = File.Exists(updateSignalFile);
                     
                     if (manualTrigger)
@@ -401,7 +502,7 @@ public sealed class UpdateService : BackgroundService
             try
             {
                 // Step 2: Download the update
-                var downloadPath = Path.Combine(Path.GetTempPath(), $"prodcontrolav-update-{version}.zip");
+                var downloadPath = Path.Combine(GetSafeTempDirectory(), $"prodcontrolav-update-{version}.zip");
                 _logger.LogInformation("Downloading update to: {DownloadPath}", downloadPath);
                 
                 using (var httpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(10) })
@@ -425,7 +526,7 @@ public sealed class UpdateService : BackgroundService
                 _logger.LogInformation("Extracting update to agent directory: {AgentDirectory}", _agentDirectory);
                 
                 // Extract to temporary directory first to ensure extraction succeeds
-                var extractTempPath = Path.Combine(Path.GetTempPath(), $"prodcontrolav-extract-{version}");
+                var extractTempPath = Path.Combine(GetSafeTempDirectory(), $"prodcontrolav-extract-{version}");
                 if (Directory.Exists(extractTempPath))
                 {
                     Directory.Delete(extractTempPath, true);
