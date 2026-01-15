@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using NetSparkleUpdater.Interfaces;
 
@@ -10,12 +11,14 @@ namespace ProdControlAV.Agent.Services;
 /// This implementation creates an optimized HttpClient with:
 /// - Configurable timeout (e.g., 30 seconds instead of 100)
 /// - No proxy (direct connection to Azure Blob Storage)
+/// - Fallback to curl if HttpClient fails (for network connectivity issues)
 /// - Proper connection pooling for better performance
 /// - Full control over HTTP behavior
 /// </summary>
 internal class ConfigurableAppCastDataDownloader : IAppCastDataDownloader
 {
     private readonly HttpClient _httpClient;
+    private readonly TimeSpan _timeout;
     private NetSparkleUpdater.Interfaces.ILogger? _logWriter;
 
     /// <summary>
@@ -33,6 +36,8 @@ internal class ConfigurableAppCastDataDownloader : IAppCastDataDownloader
     /// <param name="timeout">The timeout for HTTP requests.</param>
     public ConfigurableAppCastDataDownloader(TimeSpan timeout)
     {
+        _timeout = timeout;
+        
         // Create HttpClient with optimized configuration for Azure Blob Storage
         var handler = new SocketsHttpHandler
         {
@@ -198,8 +203,8 @@ internal class ConfigurableAppCastDataDownloader : IAppCastDataDownloader
             var elapsedTime = (DateTime.UtcNow - startTime).TotalSeconds;
             _logWriter?.PrintMessage("Timeout after {0:F2} seconds (configured: {1}s): {2}", 
                 elapsedTime, _httpClient.Timeout.TotalSeconds, ex.Message);
-            _logWriter?.PrintMessage("Network may be slow or DNS resolution failed. Consider increasing AppcastTimeoutSeconds to 150-180 seconds.");
-            return string.Empty;
+            _logWriter?.PrintMessage("FALLBACK: Attempting download with curl as HttpClient failed...");
+            return await TryDownloadWithCurlAsync(url);
         }
         catch (HttpRequestException ex)
         {
@@ -212,7 +217,17 @@ internal class ConfigurableAppCastDataDownloader : IAppCastDataDownloader
                 _logWriter?.PrintMessage("Inner exception: {0}", ex.InnerException.Message);
             }
             
-            if (ex.Message.Contains("Name or service not known") || ex.Message.Contains("No such host"))
+            // Check for connection timeout specifically
+            if (ex.Message.Contains("Connection timed out") || ex.InnerException?.Message.Contains("Connection timed out") == true)
+            {
+                _logWriter?.PrintMessage("TCP connection timed out - network cannot reach Azure Blob Storage.");
+                _logWriter?.PrintMessage("SOLUTION 1: Check firewall rules - ensure port 443 to *.blob.core.windows.net is allowed");
+                _logWriter?.PrintMessage("SOLUTION 2: Check routing table - ensure proper route to Azure IPs");
+                _logWriter?.PrintMessage("SOLUTION 3: Try alternative DNS - configure 8.8.8.8 or 1.1.1.1");
+                _logWriter?.PrintMessage("FALLBACK: Attempting download with curl as HttpClient failed...");
+                return await TryDownloadWithCurlAsync(url);
+            }
+            else if (ex.Message.Contains("Name or service not known") || ex.Message.Contains("No such host"))
             {
                 _logWriter?.PrintMessage("DNS resolution failed. Check network connectivity and DNS configuration.");
             }
@@ -232,6 +247,65 @@ internal class ConfigurableAppCastDataDownloader : IAppCastDataDownloader
             var elapsedTime = (DateTime.UtcNow - startTime).TotalSeconds;
             _logWriter?.PrintMessage("Unexpected error after {0:F2} seconds: {1}", elapsedTime, ex.Message);
             _logWriter?.PrintMessage("Exception type: {0}", ex.GetType().Name);
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Fallback method to download appcast using curl command.
+    /// This is used when HttpClient fails due to network connectivity issues.
+    /// Curl often works when HttpClient doesn't due to different network stack implementation.
+    /// </summary>
+    private async Task<string> TryDownloadWithCurlAsync(string url)
+    {
+        try
+        {
+            _logWriter?.PrintMessage("Attempting download with curl...");
+            
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "curl",
+                Arguments = $"--silent --show-error --max-time {(int)_timeout.TotalSeconds} --location \"{url}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            
+            using var process = new Process { StartInfo = startInfo };
+            var outputBuilder = new StringBuilder();
+            var errorBuilder = new StringBuilder();
+            
+            process.OutputDataReceived += (sender, e) => { if (e.Data != null) outputBuilder.AppendLine(e.Data); };
+            process.ErrorDataReceived += (sender, e) => { if (e.Data != null) errorBuilder.AppendLine(e.Data); };
+            
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            
+            await process.WaitForExitAsync().ConfigureAwait(false);
+            
+            if (process.ExitCode == 0)
+            {
+                var content = outputBuilder.ToString().Trim();
+                _logWriter?.PrintMessage("SUCCESS: curl downloaded appcast ({0} bytes)", content.Length);
+                _logWriter?.PrintMessage("RECOMMENDATION: HttpClient is failing but curl works - this indicates a .NET/OpenSSL compatibility issue");
+                _logWriter?.PrintMessage("PERMANENT FIX: Update to latest .NET runtime or install libssl1.1 on Raspberry Pi");
+                return content;
+            }
+            else
+            {
+                var error = errorBuilder.ToString().Trim();
+                _logWriter?.PrintMessage("curl also failed with exit code {0}: {1}", process.ExitCode, error);
+                _logWriter?.PrintMessage("CRITICAL: Both HttpClient and curl are failing - this is a fundamental network connectivity issue");
+                _logWriter?.PrintMessage("ACTION REQUIRED: Verify network connectivity with: ping pcavstore.blob.core.windows.net");
+                return string.Empty;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logWriter?.PrintMessage("curl fallback failed: {0}", ex.Message);
+            _logWriter?.PrintMessage("curl may not be installed. Install with: sudo apt-get install curl");
             return string.Empty;
         }
     }
