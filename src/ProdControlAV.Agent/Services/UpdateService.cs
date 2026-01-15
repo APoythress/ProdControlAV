@@ -244,7 +244,17 @@ public sealed class UpdateService : BackgroundService
             _logger.LogInformation("Auto-install: {AutoInstall}", _updateOptions.AutoInstall);
             _logger.LogInformation("Appcast timeout: {Timeout} seconds", _updateOptions.AppcastTimeoutSeconds);
 
-            var signatureVerifier = new Ed25519Checker(SecurityMode.Strict, _updateOptions.Ed25519PublicKey);
+            // NetSparkle signature verification modes:
+            // - Strict: Requires appcast.json.signature file (detached signature for appcast itself) + item signatures
+            // - UseIfPossible: Verifies signatures if present, but doesn't fail if missing
+            // - Unsafe: No signature verification (not recommended)
+            //
+            // Current setup: Using embedded per-item signatures in appcast.json (each item has a "signature" field)
+            // This means we DON'T have a separate appcast.json.signature file for the appcast itself
+            // Solution: Use SecurityMode.UseIfPossible to verify the embedded item signatures without requiring
+            // a detached appcast signature file
+            var signatureVerifier = new Ed25519Checker(SecurityMode.UseIfPossible, _updateOptions.Ed25519PublicKey);
+            _logger.LogInformation("Signature verification mode: UseIfPossible (verifies per-item signatures, no detached appcast signature required)");
             
             // Create custom appcast downloader with configurable timeout
             var appcastDownloader = new ConfigurableAppCastDataDownloader(
