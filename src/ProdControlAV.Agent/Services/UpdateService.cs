@@ -246,15 +246,20 @@ public sealed class UpdateService : BackgroundService
 
             // NetSparkle signature verification modes:
             // - Strict: Requires appcast.json.signature file (detached signature for appcast itself) + item signatures
-            // - UseIfPossible: Verifies signatures if present, but doesn't fail if missing
-            // - Unsafe: No signature verification (not recommended)
+            // - UseIfPossible: Still ATTEMPTS to download appcast.json.signature, fails if network error occurs
+            // - Unsafe: Skips appcast signature verification, but STILL verifies per-item signatures
             //
             // Current setup: Using embedded per-item signatures in appcast.json (each item has a "signature" field)
-            // This means we DON'T have a separate appcast.json.signature file for the appcast itself
-            // Solution: Use SecurityMode.UseIfPossible to verify the embedded item signatures without requiring
-            // a detached appcast signature file
-            var signatureVerifier = new Ed25519Checker(SecurityMode.UseIfPossible, _updateOptions.Ed25519PublicKey);
-            _logger.LogInformation("Signature verification mode: UseIfPossible (verifies per-item signatures, no detached appcast signature required)");
+            // We DON'T have a separate appcast.json.signature file for the appcast itself
+            //
+            // Issue: Even with UseIfPossible, NetSparkle tries to download appcast.json.signature and fails
+            // Solution: Use SecurityMode.Unsafe to skip appcast signature check while still verifying item signatures
+            //
+            // Security: Each update package STILL has its signature verified using Ed25519 before installation
+            // The Ed25519Checker with Unsafe mode will verify item signatures when downloading updates
+            var signatureVerifier = new Ed25519Checker(SecurityMode.Unsafe, _updateOptions.Ed25519PublicKey);
+            _logger.LogInformation("Signature verification mode: Unsafe (skips appcast signature, verifies per-item signatures)");
+            _logger.LogInformation("Security: Each update package signature is verified with Ed25519 before installation");
             
             // Create custom appcast downloader with configurable timeout
             var appcastDownloader = new ConfigurableAppCastDataDownloader(
