@@ -51,12 +51,11 @@ internal class ConfigurableAppCastDataDownloader : IAppCastDataDownloader
             // Enable automatic decompression for better performance
             AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate,
             
-            // Increase timeouts for slow/unreliable network connections
-            // ConnectTimeout specifically for the TCP connection handshake
-            ConnectTimeout = TimeSpan.FromSeconds(30),
+            // IMPORTANT: Do not set ConnectTimeout here as it overrides HttpClient.Timeout
+            // The HttpClient.Timeout below will control all phases of the connection
+            // ConnectTimeout = TimeSpan.FromSeconds(30),  // <-- Removed! This was causing 30s timeouts
             
-            // Allow more time for DNS resolution and initial connection
-            // This is critical for Raspberry Pi devices with slow/unstable networks
+            // Allow more time for response cleanup
             ResponseDrainTimeout = TimeSpan.FromSeconds(10)
         };
         
@@ -87,7 +86,7 @@ internal class ConfigurableAppCastDataDownloader : IAppCastDataDownloader
         {
             _logWriter?.PrintMessage("Starting appcast download from: {0}", url);
             _logWriter?.PrintMessage("HTTP client timeout configured: {0} seconds", _httpClient.Timeout.TotalSeconds);
-            _logWriter?.PrintMessage("Connect timeout: 30 seconds, DNS resolution included in request timeout");
+            _logWriter?.PrintMessage("Connect timeout: HttpClient.Timeout ({0}s) applies to entire request", _httpClient.Timeout.TotalSeconds);
             
             // Using GetAwaiter().GetResult() here is safe because:
             // 1. This method is called by NetSparkle in a background thread (not UI thread)
@@ -160,18 +159,24 @@ internal class ConfigurableAppCastDataDownloader : IAppCastDataDownloader
     /// <summary>
     /// Downloads the appcast data from the specified URL asynchronously.
     /// Required by IAppCastDataDownloader interface.
+    /// This is the method NetSparkle actually calls in practice.
     /// </summary>
     /// <param name="url">The URL to download from.</param>
     /// <returns>The appcast data as a string, or empty string if download fails.</returns>
     public async Task<string> DownloadAndGetAppCastDataAsync(string url)
     {
+        var startTime = DateTime.UtcNow;
         try
         {
-            _logWriter?.PrintMessage("Downloading appcast from: {0}", url);
+            _logWriter?.PrintMessage("Starting appcast download (async) from: {0}", url);
             _logWriter?.PrintMessage("HTTP client timeout configured: {0} seconds", _httpClient.Timeout.TotalSeconds);
+            _logWriter?.PrintMessage("No separate connect timeout - using full timeout for entire request");
             
+            _logWriter?.PrintMessage("Initiating HTTP GET request...");
             using var response = await _httpClient.GetAsync(url).ConfigureAwait(false);
             
+            var connectionTime = (DateTime.UtcNow - startTime).TotalSeconds;
+            _logWriter?.PrintMessage("Connection established in {0:F2} seconds", connectionTime);
             _logWriter?.PrintMessage("Response status: {0} {1}", (int)response.StatusCode, response.StatusCode);
             
             if (!response.IsSuccessStatusCode)
@@ -180,24 +185,53 @@ internal class ConfigurableAppCastDataDownloader : IAppCastDataDownloader
                 return string.Empty;
             }
             
+            _logWriter?.PrintMessage("Reading response content...");
             var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-            _logWriter?.PrintMessage("Successfully downloaded appcast ({0} bytes)", content?.Length ?? 0);
+            
+            var totalTime = (DateTime.UtcNow - startTime).TotalSeconds;
+            _logWriter?.PrintMessage("Successfully downloaded appcast ({0} bytes) in {1:F2} seconds", content?.Length ?? 0, totalTime);
             
             return content ?? string.Empty;
         }
         catch (TaskCanceledException ex)
         {
-            _logWriter?.PrintMessage("Timeout downloading appcast after {0} seconds: {1}", _httpClient.Timeout.TotalSeconds, ex.Message);
+            var elapsedTime = (DateTime.UtcNow - startTime).TotalSeconds;
+            _logWriter?.PrintMessage("Timeout after {0:F2} seconds (configured: {1}s): {2}", 
+                elapsedTime, _httpClient.Timeout.TotalSeconds, ex.Message);
+            _logWriter?.PrintMessage("Network may be slow or DNS resolution failed. Consider increasing AppcastTimeoutSeconds to 150-180 seconds.");
             return string.Empty;
         }
         catch (HttpRequestException ex)
         {
-            _logWriter?.PrintMessage("HTTP error downloading appcast: {0}", ex.Message);
+            var elapsedTime = (DateTime.UtcNow - startTime).TotalSeconds;
+            _logWriter?.PrintMessage("HTTP error after {0:F2} seconds: {1}", elapsedTime, ex.Message);
+            
+            // Provide specific guidance based on the error
+            if (ex.InnerException != null)
+            {
+                _logWriter?.PrintMessage("Inner exception: {0}", ex.InnerException.Message);
+            }
+            
+            if (ex.Message.Contains("Name or service not known") || ex.Message.Contains("No such host"))
+            {
+                _logWriter?.PrintMessage("DNS resolution failed. Check network connectivity and DNS configuration.");
+            }
+            else if (ex.Message.Contains("Connection refused"))
+            {
+                _logWriter?.PrintMessage("Connection refused. Check if firewall is blocking access to Azure Blob Storage.");
+            }
+            else if (ex.Message.Contains("SSL") || ex.Message.Contains("TLS"))
+            {
+                _logWriter?.PrintMessage("SSL/TLS error. Check certificate configuration and system time.");
+            }
+            
             return string.Empty;
         }
         catch (Exception ex)
         {
-            _logWriter?.PrintMessage("Unexpected error downloading appcast: {0}", ex.Message);
+            var elapsedTime = (DateTime.UtcNow - startTime).TotalSeconds;
+            _logWriter?.PrintMessage("Unexpected error after {0:F2} seconds: {1}", elapsedTime, ex.Message);
+            _logWriter?.PrintMessage("Exception type: {0}", ex.GetType().Name);
             return string.Empty;
         }
     }
