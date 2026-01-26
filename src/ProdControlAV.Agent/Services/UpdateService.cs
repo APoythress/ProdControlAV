@@ -466,22 +466,26 @@ public sealed class UpdateService : BackgroundService
                 // If an update is available, check if the versions are actually equal after stripping build metadata.
                 if (updateInfo.Status == UpdateStatus.UpdateAvailable && updateInfo.Updates?.Count > 0)
                 {
-                    var latestUpdate = updateInfo.Updates.First();
-                    var latestVersion = latestUpdate.Version;
-                    var strippedLatestVersion = StripBuildMetadata(latestVersion);
-                    var strippedCurrentVersion = StripBuildMetadata(_currentVersionRaw);
-                    
-                    if (strippedLatestVersion == strippedCurrentVersion)
+                    var latestUpdate = updateInfo.Updates.FirstOrDefault();
+                    if (latestUpdate != null)
                     {
-                        _logger.LogInformation(
-                            "NetSparkle reported update available, but versions are equal after stripping build metadata: " +
-                            "Current={CurrentVersionRaw} (stripped: {StrippedCurrent}), " +
-                            "Latest={LatestVersion} (stripped: {StrippedLatest}). " +
-                            "No update needed per SemVer 2.0.0 specification.",
-                            _currentVersionRaw, strippedCurrentVersion, latestVersion, strippedLatestVersion);
+                        var latestVersion = latestUpdate.Version;
+                        var strippedLatestVersion = StripBuildMetadata(latestVersion);
+                        var strippedCurrentVersion = StripBuildMetadata(_currentVersionRaw);
                         
-                        // Return UpdateNotAvailable to prevent unnecessary update attempt
-                        return new UpdateInfo(UpdateStatus.UpdateNotAvailable);
+                        // Use ordinal comparison for version strings to ensure consistent behavior across cultures
+                        if (string.Equals(strippedLatestVersion, strippedCurrentVersion, StringComparison.Ordinal))
+                        {
+                            _logger.LogInformation(
+                                "NetSparkle reported update available, but versions are equal after stripping build metadata: " +
+                                "Current={CurrentVersionRaw} (stripped: {StrippedCurrent}), " +
+                                "Latest={LatestVersion} (stripped: {StrippedLatest}). " +
+                                "No update needed per SemVer 2.0.0 specification.",
+                                _currentVersionRaw, strippedCurrentVersion, latestVersion, strippedLatestVersion);
+                            
+                            // Return UpdateNotAvailable to prevent unnecessary update attempt
+                            return new UpdateInfo(UpdateStatus.UpdateNotAvailable);
+                        }
                     }
                 }
                 
