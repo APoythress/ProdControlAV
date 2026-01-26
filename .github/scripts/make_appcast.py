@@ -69,16 +69,16 @@ def create_appcast_item(version, url, signature, size, description, pub_date, cr
     return {
         "title": f"Version {version}",
         "version": version,
-        "short_version": version,
-        "pub_date": pub_date,
+        "shortVersion": version,
+        "pubDate": pub_date,
         "url": url,
         "description": description,
         "size": int(size),
         "type": "application/zip",
         "signature": signature,  # NetSparkle expects signature as a string, not an object
         "os": "linux",
-        "critical_update": critical,
-        "min_system_version": "0.0.0"
+        "criticalUpdate": critical,
+        "minSystemVersion": "0.0.0"
     }
 
 
@@ -88,9 +88,9 @@ def update_appcast(template, new_item, keep_history=True, max_history=10):
     
     Args:
         template: The appcast template/existing manifest
-        new_item: The new release item to add
-        keep_history: Whether to keep old versions in the manifest
-        max_history: Maximum number of historical versions to keep
+        newItem: The new release item to add
+        keepHistory: Whether to keep old versions in the manifest
+        maxHistory: Maximum number of historical versions to keep
     
     Returns:
         Updated appcast dictionary
@@ -142,10 +142,10 @@ def main():
     parser.add_argument("--size", help="Size of ZIP file in bytes")
     parser.add_argument("--output", required=True, help="Path to output appcast.json")
     parser.add_argument("--description", help="Release description")
-    parser.add_argument("--pub-date", help="Publication date in ISO format")
+    parser.add_argument("--pubDate", help="Publication date in ISO format")
     parser.add_argument("--critical", action="store_true", help="Mark as critical update")
-    parser.add_argument("--no-history", action="store_true", help="Don't keep version history")
-    parser.add_argument("--max-history", type=int, default=10, help="Maximum versions to keep (default: 10)")
+    parser.add_argument("--noHistory", action="store_true", help="Don't keep version history")
+    parser.add_argument("--maxHistory", type=int, default=10, help="Maximum versions to keep (default: 10)")
     
     args = parser.parse_args()
     
@@ -183,16 +183,16 @@ def main():
         signature=signature,
         size=size,
         description=description,
-        pub_date=pub_date,
+        pubDate=pubDate,
         critical=args.critical
     )
     
     # Update appcast
     appcast = update_appcast(
         template=template,
-        new_item=new_item,
-        keep_history=not args.no_history,
-        max_history=args.max_history
+        newItem=newItem,
+        keepHistory=not args.noHistory,
+        maxHistory=args.maxHistory
     )
     
     # Save to file
