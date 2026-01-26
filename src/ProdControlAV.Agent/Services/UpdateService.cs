@@ -44,6 +44,40 @@ internal class NetSparkleLoggerBridge : NetSparkleUpdater.Interfaces.ILogger
 }
 
 /// <summary>
+/// Custom assembly accessor that wraps another accessor and strips SemVer build metadata
+/// from the version string. This ensures that versions like "1.0.8+buildmetadata" and "1.0.8"
+/// are treated as equal per SemVer 2.0.0 specification.
+/// </summary>
+internal class StrippedVersionAssemblyAccessor : IAssemblyAccessor
+{
+    private readonly IAssemblyAccessor _innerAccessor;
+
+    public StrippedVersionAssemblyAccessor(IAssemblyAccessor innerAccessor)
+    {
+        _innerAccessor = innerAccessor ?? throw new ArgumentNullException(nameof(innerAccessor));
+    }
+
+    public string AssemblyCompany => _innerAccessor.AssemblyCompany;
+    public string AssemblyCopyright => _innerAccessor.AssemblyCopyright;
+    public string AssemblyDescription => _innerAccessor.AssemblyDescription;
+    public string AssemblyTitle => _innerAccessor.AssemblyTitle;
+    public string AssemblyProduct => _innerAccessor.AssemblyProduct;
+    
+    /// <summary>
+    /// Returns the assembly version with SemVer build metadata stripped.
+    /// This ensures proper version comparison per SemVer 2.0.0 spec.
+    /// </summary>
+    public string AssemblyVersion
+    {
+        get
+        {
+            var version = _innerAccessor.AssemblyVersion;
+            return UpdateService.StripBuildMetadata(version);
+        }
+    }
+}
+
+/// <summary>
 /// Background service that checks for and applies updates using NetSparkle.
 /// Runs in headless mode for automatic updates on Raspberry Pi deployment.
 /// Supports automatic and manual update triggering with backup and rollback capabilities.
@@ -294,8 +328,9 @@ public sealed class UpdateService : BackgroundService
             
             // NetSparkle reads the version from the reference assembly using AssemblyInformationalVersion.
             // Per SemVer 2.0.0 spec, build metadata (the +hash part) should be ignored for version precedence.
-            // NetSparkle uses the Chaos.NaCl.Ed25519 library which handles SemVer comparisons.
-            // The cleaned version is logged above for diagnostic purposes.
+            // However, NetSparkle may treat versions with different build metadata as different versions.
+            // We handle this by checking versions after CheckForUpdatesQuietly() and filtering out
+            // "updates" that are actually the same version with different build metadata.
 
             _logger.LogInformation("NetSparkle update system initialized successfully");
             _logger.LogInformation("Note: File logging for UpdateService is active in logs/updateService/ folder");
@@ -425,6 +460,31 @@ public sealed class UpdateService : BackgroundService
             {
                 var updateInfo = await _sparkle.CheckForUpdatesQuietly();
                 _logger.LogDebug("Appcast check completed with status: {Status}", updateInfo.Status);
+                
+                // NetSparkle may consider versions with different build metadata as different versions
+                // even though SemVer 2.0.0 states build metadata should be ignored for precedence.
+                // If an update is available, check if the versions are actually equal after stripping build metadata.
+                if (updateInfo.Status == UpdateStatus.UpdateAvailable && updateInfo.Updates?.Count > 0)
+                {
+                    var latestUpdate = updateInfo.Updates.First();
+                    var latestVersion = latestUpdate.Version;
+                    var strippedLatestVersion = StripBuildMetadata(latestVersion);
+                    var strippedCurrentVersion = StripBuildMetadata(_currentVersionRaw);
+                    
+                    if (strippedLatestVersion == strippedCurrentVersion)
+                    {
+                        _logger.LogInformation(
+                            "NetSparkle reported update available, but versions are equal after stripping build metadata: " +
+                            "Current={CurrentVersionRaw} (stripped: {StrippedCurrent}), " +
+                            "Latest={LatestVersion} (stripped: {StrippedLatest}). " +
+                            "No update needed per SemVer 2.0.0 specification.",
+                            _currentVersionRaw, strippedCurrentVersion, latestVersion, strippedLatestVersion);
+                        
+                        // Return UpdateNotAvailable to prevent unnecessary update attempt
+                        return new UpdateInfo(UpdateStatus.UpdateNotAvailable);
+                    }
+                }
+                
                 return updateInfo;
             }
             catch (System.Net.WebException webEx) when (retryAttempt < maxRetries - 1)
