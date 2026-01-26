@@ -133,7 +133,8 @@ jobs:
             echo "ERROR: AZURE_BLOB_BASE_URL secret not set"
             exit 1
           fi
-          DOWNLOAD_URL="${BLOB_BASE_URL}/${{ env.AZURE_STORAGE_CONTAINER }}/ProdControlAV-Agent-${{ steps.version.outputs.version }}-linux-arm64.zip"
+          DOWNLOAD_URL="${BLOB_BASE_URL}/ProdControlAV-Agent-${{ steps.version.outputs.version }}-linux-arm64.zip"
+          
           
           # Generate appcast
           python .github/scripts/make_appcast.py \
