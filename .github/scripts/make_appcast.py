@@ -64,13 +64,13 @@ def load_template(template_path):
         sys.exit(1)
 
 
-def create_appcast_item(version, url, signature, size, description, pub_date, critical):
+def create_appcast_item(version, url, signature, size, description, pubDate, critical):
     """Create a new appcast item with the provided information."""
     return {
         "title": f"Version {version}",
         "version": version,
         "shortVersion": version,
-        "pubDate": pub_date,
+        "pubDate": pubDate,
         "url": url,
         "description": description,
         "size": int(size),
@@ -82,7 +82,7 @@ def create_appcast_item(version, url, signature, size, description, pub_date, cr
     }
 
 
-def update_appcast(template, new_item, keep_history=True, max_history=10):
+def update_appcast(template, newItem, keepHistory=True, maxHistory=10):
     """
     Update the appcast with a new item.
     
@@ -97,15 +97,15 @@ def update_appcast(template, new_item, keep_history=True, max_history=10):
     """
     appcast = template.copy()
     
-    if keep_history:
+    if keepHistory:
         # Add new item to the beginning of the list
-        existing_items = appcast.get("items", [])
+        existingItems = appcast.get("items", [])
         
         # Filter out any existing item with the same version
-        existing_items = [item for item in existing_items if item.get("version") != new_item["version"]]
+        existingItems = [item for item in existingItems if item.get("version") != newItem["version"]]
         
         # Add new item at the beginning
-        items = [new_item] + existing_items
+        items = [newItem] + existingItems
         
         # Keep only the most recent items
         items = items[:max_history]
@@ -113,17 +113,17 @@ def update_appcast(template, new_item, keep_history=True, max_history=10):
         appcast["items"] = items
     else:
         # Replace all items with just the new one
-        appcast["items"] = [new_item]
+        appcast["items"] = [newItem]
     
     return appcast
 
 
-def save_appcast(appcast, output_path):
+def save_appcast(appcast, outputPath):
     """Save the appcast to a file."""
     try:
-        with open(output_path, 'w') as f:
+        with open(outputPath, 'w') as f:
             json.dump(appcast, f, indent=2)
-        print(f"Appcast saved to: {output_path}", file=sys.stderr)
+        print(f"Appcast saved to: {outputPath}", file=sys.stderr)
     except Exception as e:
         print(f"ERROR: Failed to save appcast: {e}", file=sys.stderr)
         sys.exit(1)
@@ -171,13 +171,13 @@ def main():
     
     # Set defaults
     description = args.description or f"Release version {version}"
-    pub_date = args.pub_date or datetime.now(timezone.utc).isoformat()
+    pubDate = args.pubDate or datetime.now(timezone.utc).isoformat()
     
     # Load template
     template = load_template(args.template)
     
     # Create new item
-    new_item = create_appcast_item(
+    newItem = create_appcast_item(
         version=version,
         url=url,
         signature=signature,
