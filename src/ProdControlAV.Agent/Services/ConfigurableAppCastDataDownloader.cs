@@ -46,6 +46,28 @@ internal class ConfigurableAppCastDataDownloader : IAppCastDataDownloader
             UseProxy = false,
             Proxy = null,
             
+            // Force IPv4 only - this prevents issues with IPv6 connectivity on some networks
+            // Azure Blob Storage supports both IPv4 and IPv6, but some Raspberry Pi networks
+            // may have misconfigured or broken IPv6 that causes connection timeouts
+            ConnectCallback = async (context, cancellationToken) =>
+            {
+                var socket = new System.Net.Sockets.Socket(
+                    System.Net.Sockets.AddressFamily.InterNetwork,  // Force IPv4
+                    System.Net.Sockets.SocketType.Stream,
+                    System.Net.Sockets.ProtocolType.Tcp);
+                
+                try
+                {
+                    await socket.ConnectAsync(context.DnsEndPoint, cancellationToken).ConfigureAwait(false);
+                    return new System.Net.Sockets.NetworkStream(socket, ownsSocket: true);
+                }
+                catch
+                {
+                    socket.Dispose();
+                    throw;
+                }
+            },
+            
             // Connection pooling settings
             PooledConnectionLifetime = TimeSpan.FromMinutes(5),
             PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
@@ -91,6 +113,7 @@ internal class ConfigurableAppCastDataDownloader : IAppCastDataDownloader
         {
             _logWriter?.PrintMessage("Starting appcast download from: {0}", url);
             _logWriter?.PrintMessage("HTTP client timeout configured: {0} seconds", _httpClient.Timeout.TotalSeconds);
+            _logWriter?.PrintMessage("Using IPv4 only (IPv6 disabled to avoid connectivity issues)");
             _logWriter?.PrintMessage("Connect timeout: HttpClient.Timeout ({0}s) applies to entire request", _httpClient.Timeout.TotalSeconds);
             
             // Using GetAwaiter().GetResult() here is safe because:
@@ -175,6 +198,7 @@ internal class ConfigurableAppCastDataDownloader : IAppCastDataDownloader
         {
             _logWriter?.PrintMessage("Starting appcast download (async) from: {0}", url);
             _logWriter?.PrintMessage("HTTP client timeout configured: {0} seconds", _httpClient.Timeout.TotalSeconds);
+            _logWriter?.PrintMessage("Using IPv4 only (IPv6 disabled to avoid connectivity issues)");
             _logWriter?.PrintMessage("No separate connect timeout - using full timeout for entire request");
             
             _logWriter?.PrintMessage("Initiating HTTP GET request...");
