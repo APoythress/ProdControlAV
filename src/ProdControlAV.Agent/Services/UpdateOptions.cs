@@ -38,9 +38,10 @@ public sealed class UpdateOptions
     public bool AutoInstall { get; init; } = true;
 
     /// <summary>
-    /// Timeout for downloading the appcast manifest (in seconds). Default: 30 seconds.
-    /// Increase this value if experiencing timeout errors on slow network connections.
-    /// The default NetSparkle timeout of 100 seconds is too long and can cause issues.
+    /// Timeout for downloading the appcast manifest (in seconds). Default: 90 seconds.
+    /// This timeout includes DNS resolution, TCP connection, TLS handshake, and data transfer.
+    /// For Raspberry Pi devices on slow/unreliable networks, 90-120 seconds is recommended.
+    /// The previous default of 30 seconds was too aggressive for some network conditions.
     /// </summary>
-    public int AppcastTimeoutSeconds { get; init; } = 30;
+    public int AppcastTimeoutSeconds { get; init; } = 90;
 }
