@@ -108,7 +108,7 @@ def update_appcast(template, newItem, keepHistory=True, maxHistory=10):
         items = [newItem] + existingItems
         
         # Keep only the most recent items
-        items = items[:max_history]
+        items = items[:maxHistory]
         
         appcast["items"] = items
     else:
