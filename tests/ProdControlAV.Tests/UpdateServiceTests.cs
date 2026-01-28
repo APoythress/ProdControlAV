@@ -14,6 +14,7 @@ public class UpdateServiceTests
     [InlineData("2.5.3+build.2024", "2.5.3")]
     [InlineData("1.0.0", "1.0.0")]
     [InlineData("1.0.0-beta+build", "1.0.0-beta")]
+    [InlineData("1.0.8+504fcedbd2f7d92102d9baab965133dede46a595", "1.0.8")] // Issue scenario
     [InlineData("", "0.0.0")]
     [InlineData(null, "0.0.0")]
     public void StripBuildMetadata_HandlesVariousVersionFormats(string? input, string expected)
