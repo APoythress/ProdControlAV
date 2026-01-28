@@ -631,56 +631,9 @@ public sealed class UpdateService : BackgroundService
                 ZipFile.ExtractToDirectory(downloadPath, extractTempPath, overwriteFiles: true);
                 _logger.LogInformation("Update extracted to temporary directory: {TempPath}", extractTempPath);
 
-                // Step 5: Copy extracted files to agent directory (overwrite) but exclude `.env`
-                _logger.LogInformation("Copying files from temporary directory to agent directory (preserving `.env`)");
-
-                CopyDirectory(extractTempPath, _agentDirectory, overwrite: true, excludeFileNames: new[] { ".env" });
-
-                _logger.LogInformation("Update files copied successfully");
-
-                // Step 6: Clean up temporary files
-                try
-                {
-                    File.Delete(downloadPath);
-                    Directory.Delete(extractTempPath, true);
-                    _logger.LogDebug("Temporary update files cleaned up");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to clean up temporary files, but update succeeded");
-                }
-
-                // Step 6b: Restore `.env` backup if the file is missing after the update
-                try
-                {
-                    if (!string.IsNullOrEmpty(envBackupPath) && File.Exists(envBackupPath))
-                    {
-                        var envPath = Path.Combine(_agentDirectory, ".env");
-                        if (!File.Exists(envPath))
-                        {
-                            File.Move(envBackupPath, envPath);
-                            _logger.LogInformation(".env restored from backup after update");
-                        }
-                        else
-                        {
-                            // if destination already exists, remove the temp backup
-                            File.Delete(envBackupPath);
-                            _logger.LogDebug("Temp .env backup removed because destination already exists");
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to restore .env from backup after update");
-                }
-
-                // Step 7: Schedule restart
-                _logger.LogInformation("Update applied successfully. Initiating agent restart in 5 seconds...");
-                _logger.LogInformation("Backup available at: {BackupPath}", backupPath);
-
-                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
-                _logger.LogInformation("Exiting agent for restart. New version: {Version}", version);
-                Environment.Exit(0);
+                // Step 5: Launch external updater and exit
+                _logger.LogInformation("Launching external updater to apply update and restart agent");
+                LaunchExternalUpdaterAndExit(extractTempPath, backupPath, envBackupPath ?? "", "prodcontrolav-agent");
             }
             catch (Exception ex)
             {
@@ -721,6 +674,174 @@ public sealed class UpdateService : BackgroundService
             _updateLock.Release();
         }
     }
+    
+        // Call this from ApplyUpdateAsync after extraction and backup creation.
+        private void LaunchExternalUpdaterAndExit(string extractTempPath, string backupPath, string envBackupPath, string serviceName = "")
+        {
+            var currentExe = Path.GetFileName(Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName ?? string.Empty);
+            var pid = Environment.ProcessId;
+    
+            // Build script path
+            var scriptPath = Path.Combine(Path.GetTempPath(), $"prodcontrolav_updater_{Guid.NewGuid():N}.sh");
+    
+            // POSIX updater script. Waits for PID to exit, copies files (excluding .env and exe),
+            // attempts to restart via systemctl if serviceName provided, otherwise launches the binary.
+            var script = $@"#!/bin/bash
+                set -euo pipefail
+                EXTRACT=""{EscapeBashArg(extractTempPath)}""
+                AGENT_DIR=""{EscapeBashArg(_agentDirectory)}""
+                BACKUP=""{EscapeBashArg(backupPath)}""
+                PID={pid}
+                EXE_NAME=""{EscapeBashArg(currentExe)}""
+                ENV_BACKUP=""{EscapeBashArg(envBackupPath ?? string.Empty)}""
+                SERVICE_NAME=""{EscapeBashArg(serviceName ?? string.Empty)}""
+
+                log() {{ echo \""[updater] $$(date -u +'%Y-%m-%dT%H:%M:%SZ') $$1\""; }}
+
+                log \""Waiting for agent (PID $$PID) to stop...\""
+                for i in {{1..30}}; do
+                  if ! kill -0 $$PID 2>/dev/null; then
+                    log \""agent stopped\""
+                    break
+                  fi
+                  sleep 1
+                done
+
+                # final check: ensure agent is not running
+                if kill -0 $$PID 2>/dev/null; then
+                  log \""agent still running after timeout; aborting\""
+                  exit 1
+                fi
+                
+                log \""Applying update: copying files from $$EXTRACT to $$AGENT_DIR (preserve .env and $$EXE_NAME)\""
+                
+                # ensure destination exists
+                mkdir -p \""$$AGENT_DIR\""
+                
+                # Use rsync if available for robust copy, otherwise fallback to tar/cp
+                if command -v rsync >/dev/null 2>&1; then
+                  rsync -a --delete --exclude='.env' --exclude=\""$EXE_NAME\"" \""$$EXTRACT\""/ \""$$AGENT_DIR\""/
+                else
+                  # fallback: move files carefully
+                  (cd \""$$EXTRACT\"" && tar -cf - . --exclude='./.env' --exclude=\""./$$EXE_NAME\"") | (cd \""$$AGENT_DIR\"" && tar -xpf -)
+                fi
+                
+                # attempt restart
+                if [ -n \""$$SERVICE_NAME\"" ] && command -v systemctl >/dev/null 2>&1; then
+                  log \""Restarting service $$SERVICE_NAME via systemctl\""
+                  if ! systemctl restart \""$$SERVICE_NAME\""; then
+                    log \""service restart failed, restoring backup\""
+                    restore_and_exit 2
+                  fi
+                
+                  sleep 2
+                  if ! systemctl is-active --quiet \""$$SERVICE_NAME\""; then
+                    log \""service not active after restart, restoring backup\""
+                    restore_and_exit 3
+                  fi
+                  log \""service restarted successfully\""
+                  cleanup_and_exit 0
+                else
+                  # start binary directly in background
+                  TARGET_EXE=\""$AGENT_DIR/$$EXE_NAME\""
+                  if [ ! -x \""$$TARGET_EXE\"" ]; then
+                    chmod +x \""$$TARGET_EXE\"" || true
+                  fi
+                
+                  log \""Starting agent binary: $$TARGET_EXE\""
+                  nohup \""$$TARGET_EXE\"" >/dev/null 2>&1 &
+                
+                  sleep 3
+                  if pgrep -f \""$$TARGET_EXE\"" >/dev/null 2>&1; then
+                    log \""agent started successfully\""
+                    cleanup_and_exit 0
+                  else
+                    log \""agent failed to start, restoring backup\""
+                    restore_and_exit 4
+                  fi
+                fi
+                
+                restore_and_exit() {{
+                  rc=$$1
+                  log \""Restoring backup from $$BACKUP to $$AGENT_DIR\""
+                  # remove current files except .env
+                  find \""$$AGENT_DIR\"" -mindepth 1 -maxdepth 1 ! -name '.env' -exec rm -rf {{}} +
+                  # restore backup
+                  if command -v rsync >/dev/null 2>&1; then
+                    rsync -a --delete \""$$BACKUP\""/ \""$$AGENT_DIR\""/
+                  else
+                    (cd \""$$BACKUP\"" && tar -cf - .) | (cd \""$$AGENT_DIR\"" && tar -xpf -)
+                  fi
+                
+                  # restore .env from temporary backup if provided and missing
+                  if [ -n \""$$ENV_BACKUP\"" ] && [ -f \""$$ENV_BACKUP\"" ]; then
+                    if [ ! -f \""$$AGENT_DIR/.env\"" ]; then
+                      mv \""$$ENV_BACKUP\"" \""$$AGENT_DIR/.env\"" || true
+                    else
+                      rm -f \""$$ENV_BACKUP\"" || true
+                    fi
+                  fi
+                
+                  log \""Backup restored. Exiting with $$rc\""
+                  exit $$rc
+                }}
+                
+                cleanup_and_exit() {{
+                  rc=$$1
+                  # remove temp extract and env backup if present
+                  rm -rf \""{EscapeBashArg(extractTempPath)}\"" || true
+                  if [ -n \""$$ENV_BACKUP\"" ] && [ -f \""$$ENV_BACKUP\"" ]; then
+                    rm -f \""$$ENV_BACKUP\"" || true
+                  fi
+                  log \""Update applied and cleaned up. Exiting with $$rc\""
+                  exit $$rc
+                }}";
+    
+            // Write script
+            File.WriteAllText(scriptPath, script);
+            // ensure executable
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "/bin/chmod",
+                    Arguments = $"+x {EscapeShellArg(scriptPath)}",
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                })?.Dispose();
+            }
+            catch { /* best-effort */ }
+    
+            // Launch detached updater
+            var psi = new ProcessStartInfo
+            {
+                FileName = "/bin/bash",
+                Arguments = $"{EscapeShellArg(scriptPath)}",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = false,
+                RedirectStandardError = false
+            };
+    
+            // Start the updater and do not wait; exit the agent so updater can replace files
+            var proc = Process.Start(psi);
+            _logger.LogInformation("Launched external updater (pid={Pid}) and exiting agent to allow file replacement", proc?.Id);
+            Environment.Exit(0);
+        }
+    
+        private static string EscapeBashArg(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return string.Empty;
+            return s.Replace("\"", "\\\"");
+        }
+    
+        private static string EscapeShellArg(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "''";
+            return "'" + s.Replace("'", "'\"'\"'") + "'";
+        }
+    
+    
     
     /// <summary>
     /// Creates a backup of the current agent directory with timestamp.
