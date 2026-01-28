@@ -554,7 +554,9 @@ public sealed class UpdateService : BackgroundService
     private async Task ApplyUpdateAsync(UpdateInfo updateInfo, CancellationToken stoppingToken)
     {
         await _updateLock.WaitAsync(stoppingToken);
-        
+
+        string? envBackupPath = null;
+
         try
         {
             var updateItem = updateInfo.Updates?.FirstOrDefault();
@@ -566,9 +568,25 @@ public sealed class UpdateService : BackgroundService
 
             var version = updateItem.Version;
             var downloadUrl = updateItem.DownloadLink;
-            
+
             _logger.LogInformation("Starting update process for version {Version}", version);
             _logger.LogInformation("Download URL: {DownloadUrl}", downloadUrl);
+
+            // Step 0: Preserve existing `.env` before any destructive work
+            try
+            {
+                var envPath = Path.Combine(_agentDirectory, ".env");
+                if (File.Exists(envPath))
+                {
+                    envBackupPath = Path.Combine(GetSafeTempDirectory(), $"prodcontrolav-env-backup-{Guid.NewGuid()}.env");
+                    File.Copy(envPath, envBackupPath, overwrite: true);
+                    _logger.LogDebug("Backed up existing .env to: {EnvBackup}", envBackupPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to back up .env before update. Proceeding but .env may be lost if overwritten.");
+            }
 
             // Step 1: Create backup of current version
             var backupPath = CreateBackup();
@@ -583,42 +601,41 @@ public sealed class UpdateService : BackgroundService
                 // Step 2: Download the update
                 var downloadPath = Path.Combine(GetSafeTempDirectory(), $"prodcontrolav-update-{version}.zip");
                 _logger.LogInformation("Downloading update to: {DownloadPath}", downloadPath);
-                
+
                 using (var httpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(10) })
                 {
                     var response = await httpClient.GetAsync(downloadUrl, stoppingToken);
                     response.EnsureSuccessStatusCode();
-                    
+
                     await using var fileStream = File.Create(downloadPath);
                     await response.Content.CopyToAsync(fileStream, stoppingToken);
                 }
-                
+
                 _logger.LogInformation("Update downloaded successfully");
 
-                // Step 3: Verify signature (NetSparkle already verified, but double-check file exists)
                 if (!File.Exists(downloadPath))
                 {
                     throw new FileNotFoundException("Downloaded update file not found", downloadPath);
                 }
 
-                // Step 4: Extract update to agent directory
+                // Step 4: Extract update to temporary directory
                 _logger.LogInformation("Extracting update to agent directory: {AgentDirectory}", _agentDirectory);
-                
-                // Extract to temporary directory first to ensure extraction succeeds
+
                 var extractTempPath = Path.Combine(GetSafeTempDirectory(), $"prodcontrolav-extract-{version}");
                 if (Directory.Exists(extractTempPath))
                 {
                     Directory.Delete(extractTempPath, true);
                 }
                 Directory.CreateDirectory(extractTempPath);
-                
+
                 ZipFile.ExtractToDirectory(downloadPath, extractTempPath, overwriteFiles: true);
                 _logger.LogInformation("Update extracted to temporary directory: {TempPath}", extractTempPath);
 
-                // Step 5: Copy extracted files to agent directory (overwrite)
-                _logger.LogInformation("Copying files from temporary directory to agent directory");
-                CopyDirectory(extractTempPath, _agentDirectory, overwrite: true);
-                
+                // Step 5: Copy extracted files to agent directory (overwrite) but exclude `.env`
+                _logger.LogInformation("Copying files from temporary directory to agent directory (preserving `.env`)");
+
+                CopyDirectory(extractTempPath, _agentDirectory, overwrite: true, excludeFileNames: new[] { ".env" });
+
                 _logger.LogInformation("Update files copied successfully");
 
                 // Step 6: Clean up temporary files
@@ -633,32 +650,69 @@ public sealed class UpdateService : BackgroundService
                     _logger.LogWarning(ex, "Failed to clean up temporary files, but update succeeded");
                 }
 
+                // Step 6b: Restore `.env` backup if the file is missing after the update
+                try
+                {
+                    if (!string.IsNullOrEmpty(envBackupPath) && File.Exists(envBackupPath))
+                    {
+                        var envPath = Path.Combine(_agentDirectory, ".env");
+                        if (!File.Exists(envPath))
+                        {
+                            File.Move(envBackupPath, envPath);
+                            _logger.LogInformation(".env restored from backup after update");
+                        }
+                        else
+                        {
+                            // if destination already exists, remove the temp backup
+                            File.Delete(envBackupPath);
+                            _logger.LogDebug("Temp .env backup removed because destination already exists");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to restore .env from backup after update");
+                }
+
                 // Step 7: Schedule restart
                 _logger.LogInformation("Update applied successfully. Initiating agent restart in 5 seconds...");
                 _logger.LogInformation("Backup available at: {BackupPath}", backupPath);
-                
-                // Give time for log to be written
+
                 await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
-                
-                // Exit the process - systemd will restart the agent
                 _logger.LogInformation("Exiting agent for restart. New version: {Version}", version);
                 Environment.Exit(0);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Update failed. Attempting rollback from backup: {BackupPath}", backupPath);
-                
+
                 // Attempt rollback
                 try
                 {
                     RollbackFromBackup(backupPath);
                     _logger.LogInformation("Rollback completed successfully");
+
+                    // After rollback, restore `.env` backup (if any) to ensure it's preserved
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(envBackupPath) && File.Exists(envBackupPath))
+                        {
+                            var envPath = Path.Combine(_agentDirectory, ".env");
+                            File.Copy(envBackupPath, envPath, overwrite: true);
+                            File.Delete(envBackupPath);
+                            _logger.LogInformation(".env restored from temp backup after rollback");
+                        }
+                    }
+                    catch (Exception restoreEx)
+                    {
+                        _logger.LogWarning(restoreEx, "Failed to restore .env from temp backup after rollback");
+                    }
                 }
                 catch (Exception rollbackEx)
                 {
                     _logger.LogCritical(rollbackEx, "CRITICAL: Rollback failed. Manual intervention required. Backup location: {BackupPath}", backupPath);
                 }
-                
+
                 throw;
             }
         }
@@ -667,7 +721,7 @@ public sealed class UpdateService : BackgroundService
             _updateLock.Release();
         }
     }
-
+    
     /// <summary>
     /// Creates a backup of the current agent directory with timestamp.
     /// </summary>
@@ -710,36 +764,58 @@ public sealed class UpdateService : BackgroundService
         }
 
         _logger.LogInformation("Rolling back from backup: {BackupPath}", backupPath);
-        
-        // Delete current agent directory contents (except backup directory itself)
+
+        // Delete current agent directory contents but preserve `.env`
         foreach (var file in Directory.GetFiles(_agentDirectory))
         {
-            File.Delete(file);
+            try
+            {
+                if (string.Equals(Path.GetFileName(file), ".env", StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogDebug("Preserving .env during rollback: {File}", file);
+                    continue;
+                }
+
+                File.Delete(file);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to delete file {File} during rollback", file);
+                throw;
+            }
         }
+
         foreach (var dir in Directory.GetDirectories(_agentDirectory))
         {
-            if (!dir.StartsWith(_backupBaseDirectory))
+            if (!dir.StartsWith(_backupBaseDirectory, StringComparison.OrdinalIgnoreCase))
             {
                 Directory.Delete(dir, true);
             }
         }
-        
-        // Restore from backup
+
+        // Restore from backup (this will overwrite files except `.env` if you preserved it above)
         CopyDirectory(backupPath, _agentDirectory, overwrite: true);
-        
+
         _logger.LogInformation("Rollback completed successfully from: {BackupPath}", backupPath);
     }
-
+    
     /// <summary>
     /// Recursively copies a directory and its contents.
     /// </summary>
-    private void CopyDirectory(string sourceDir, string destDir, bool overwrite)
+    private void CopyDirectory(string sourceDir, string destDir, bool overwrite, IEnumerable<string>? excludeFileNames = null)
     {
         var dir = new DirectoryInfo(sourceDir);
-        
+
         if (!dir.Exists)
         {
             throw new DirectoryNotFoundException($"Source directory not found: {sourceDir}");
+        }
+
+        // Normalize exclude names for quick lookup
+        HashSet<string>? excludeSet = null;
+        if (excludeFileNames != null)
+        {
+            excludeSet = new HashSet<string>(excludeFileNames, StringComparer.OrdinalIgnoreCase);
         }
 
         // Create destination directory if it doesn't exist
@@ -748,6 +824,13 @@ public sealed class UpdateService : BackgroundService
         // Copy files
         foreach (var file in dir.GetFiles())
         {
+            // Skip excluded files (like `.env`)
+            if (excludeSet != null && excludeSet.Contains(file.Name))
+            {
+                _logger.LogDebug("Skipping excluded file during copy: {FileName}", file.Name);
+                continue;
+            }
+
             var destFile = Path.Combine(destDir, file.Name);
             try
             {
@@ -764,10 +847,10 @@ public sealed class UpdateService : BackgroundService
         foreach (var subDir in dir.GetDirectories())
         {
             var destSubDir = Path.Combine(destDir, subDir.Name);
-            CopyDirectory(subDir.FullName, destSubDir, overwrite);
+            CopyDirectory(subDir.FullName, destSubDir, overwrite, excludeFileNames);
         }
     }
-
+    
     public override void Dispose()
     {
         _sparkle?.Dispose();
