@@ -354,12 +354,20 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
                         commandId = updateCommand.Id;
                         try
                         {
-                            using var httpClient = new HttpClient();
-                            httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_updateOptions.ApiKey}");
-                            var response = await httpClient.PutAsync($"{_updateOptions.ApiBaseUrl}/api/commands/{commandId}/status?status=processed", null, stoppingToken);
-                            response.EnsureSuccessStatusCode();
-                            _logger.LogInformation("Command {CommandId} marked as processed", commandId);
-                            manualTrigger = true;
+                            if (string.IsNullOrWhiteSpace(_updateOptions.ApiBaseUrl) || string.IsNullOrWhiteSpace(_updateOptions.ApiKey))
+                            {
+                                _logger.LogWarning("API configuration not set (ApiBaseUrl or ApiKey missing). Cannot mark command as processed.");
+                            }
+                            else
+                            {
+                                using var httpClient = new HttpClient();
+                                httpClient.BaseAddress = new Uri(_updateOptions.ApiBaseUrl);
+                                httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_updateOptions.ApiKey}");
+                                var response = await httpClient.PutAsync($"api/commands/{commandId}/status?status=processed", null, stoppingToken);
+                                response.EnsureSuccessStatusCode();
+                                _logger.LogInformation("Command {CommandId} marked as processed", commandId);
+                                manualTrigger = true;
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -529,11 +537,18 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     // New method to poll for pending commands
     private async Task<List<PendingCommand>> PollForPendingCommandsAsync(CancellationToken stoppingToken)
     {
+        if (string.IsNullOrWhiteSpace(_updateOptions.ApiBaseUrl) || string.IsNullOrWhiteSpace(_updateOptions.ApiKey))
+        {
+            _logger.LogDebug("API configuration not set (ApiBaseUrl or ApiKey missing). Skipping command polling.");
+            return new List<PendingCommand>();
+        }
+
         try
         {
             using var httpClient = new HttpClient();
+            httpClient.BaseAddress = new Uri(_updateOptions.ApiBaseUrl);
             httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_updateOptions.ApiKey}");
-            var response = await httpClient.GetAsync($"{_updateOptions.ApiBaseUrl}/api/commands/pending?agentId={_updateOptions.AgentId}", stoppingToken); // Assume AgentId in UpdateOptions
+            var response = await httpClient.GetAsync($"api/commands/pending?agentId={_updateOptions.AgentId}", stoppingToken);
             response.EnsureSuccessStatusCode();
             var commands = await response.Content.ReadFromJsonAsync<List<PendingCommand>>(cancellationToken: stoppingToken);
             return commands ?? new List<PendingCommand>();
