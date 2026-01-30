@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.IO.Compression;
 using System.Diagnostics;
+using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
 using NetSparkleUpdater;
 using NetSparkleUpdater.Enums;
@@ -242,7 +243,7 @@ public sealed class UpdateService : BackgroundService
         return plusIndex >= 0 ? version.Substring(0, plusIndex) : version;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // Check if updates are enabled
         if (!_updateOptions.Enabled)
@@ -250,20 +251,20 @@ public sealed class UpdateService : BackgroundService
             _logger.LogInformation("Automatic updates are disabled in configuration");
             return;
         }
-
+    
         // Validate configuration
         if (string.IsNullOrWhiteSpace(_updateOptions.AppcastUrl))
         {
             _logger.LogWarning("Update appcast URL is not configured. Automatic updates disabled.");
             return;
         }
-
+    
         if (string.IsNullOrWhiteSpace(_updateOptions.Ed25519PublicKey))
         {
             _logger.LogWarning("Update Ed25519 public key is not configured. Automatic updates disabled for security.");
             return;
         }
-
+    
         try
         {
             // Initialize NetSparkle with Ed25519 signature verification
@@ -277,7 +278,7 @@ public sealed class UpdateService : BackgroundService
             _logger.LogInformation("Check interval: {Interval} seconds", _updateOptions.CheckIntervalSeconds);
             _logger.LogInformation("Auto-install: {AutoInstall}", _updateOptions.AutoInstall);
             _logger.LogInformation("Appcast timeout: {Timeout} seconds", _updateOptions.AppcastTimeoutSeconds);
-
+    
             // NetSparkle signature verification modes:
             // - Strict: Requires appcast.json.signature file (detached signature for appcast itself) + item signatures
             // - UseIfPossible: Still ATTEMPTS to download appcast.json.signature, fails if network error occurs
@@ -294,16 +295,16 @@ public sealed class UpdateService : BackgroundService
             var signatureVerifier = new Ed25519Checker(SecurityMode.Unsafe, _updateOptions.Ed25519PublicKey);
             _logger.LogInformation("Signature verification mode: Unsafe (skips appcast signature, verifies per-item signatures)");
             _logger.LogInformation("Security: Each update package signature is verified with Ed25519 before installation");
-            
+    
             // Create custom appcast downloader with configurable timeout
             var appcastDownloader = new ConfigurableAppCastDataDownloader(
                 TimeSpan.FromSeconds(_updateOptions.AppcastTimeoutSeconds));
-
+    
             // Get safe temp directory with fallback options
             var safeTempDir = GetSafeTempDirectory();
             var tmpDownloadPath = Path.Combine(safeTempDir, "prodcontrolav-update.zip");
             _logger.LogInformation("Update download path: {DownloadPath}", tmpDownloadPath);
-
+    
             _sparkle = new SparkleUpdater(
                 _updateOptions.AppcastUrl,
                 signatureVerifier,
@@ -320,108 +321,190 @@ public sealed class UpdateService : BackgroundService
                 // Use custom downloader with configurable timeout
                 AppCastDataDownloader = appcastDownloader
             };
-            
+    
             // Enable logging on the custom AppCastDataDownloader
             appcastDownloader.LogWriter = new NetSparkleLoggerBridge(_logger);
             _logger.LogDebug("Configured custom AppCastDataDownloader with {Timeout}-second timeout", _updateOptions.AppcastTimeoutSeconds);
             _logger.LogDebug("HTTP client configured for direct connection (proxy bypassed) to Azure Blob Storage");
-            
+    
             // NetSparkle reads the version from the reference assembly using AssemblyInformationalVersion.
             // Per SemVer 2.0.0 spec, build metadata (the +hash part) should be ignored for version precedence.
             // However, NetSparkle may treat versions with different build metadata as different versions.
             // We handle this by checking versions after CheckForUpdatesQuietly() and filtering out
             // "updates" that are actually the same version with different build metadata.
-
+    
             _logger.LogInformation("NetSparkle update system initialized successfully");
             _logger.LogInformation("Note: File logging for UpdateService is active in logs/updateService/ folder");
-
+    
             // Run the update check loop
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
                 {
-                    // Check for manual update trigger signal
+                    // Define update signal file path once
                     var updateSignalFile = Path.Combine(GetSafeTempDirectory(), "prodcontrolav-update-trigger");
-                    var manualTrigger = File.Exists(updateSignalFile);
-                    
-                    if (manualTrigger)
+
+                    // Poll for pending commands from API
+                    var pendingCommands = await PollForPendingCommandsAsync(stoppingToken);
+                    var updateCommand = pendingCommands.FirstOrDefault(c => c.Type == "update");
+                    bool manualTrigger = false;
+                    string? commandId = null;
+                    if (updateCommand != null)
                     {
-                        _logger.LogInformation("Manual update trigger detected, checking for updates immediately...");
+                        commandId = updateCommand.Id;
                         try
                         {
-                            File.Delete(updateSignalFile);
+                            using var httpClient = new HttpClient();
+                            httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_updateOptions.ApiKey}");
+                            var response = await httpClient.PutAsync($"{_updateOptions.ApiBaseUrl}/api/commands/{commandId}/status?status=processed", null, stoppingToken);
+                            response.EnsureSuccessStatusCode();
+                            _logger.LogInformation("Command {CommandId} marked as processed", commandId);
+                            manualTrigger = true;
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogWarning(ex, "Failed to delete update trigger file");
+                            _logger.LogWarning(ex, "Failed to mark command {CommandId} as processed, skipping update processing", commandId);
+                        }
+                    }
+
+                    if (manualTrigger)
+                    {
+                        _logger.LogInformation("Manual update command detected via polling, processing...");
+
+                        // Create trigger file for existing logic
+                        try
+                        {
+                            File.WriteAllText(updateSignalFile, "");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to create update trigger file");
                         }
                     }
                     else
                     {
                         _logger.LogDebug("Checking for updates (current version: {CurrentVersion})...", _currentVersion);
                     }
-                    
-                    // Log connection details for diagnostics
-                    _logger.LogDebug("Attempting to download appcast from: {AppcastUrl}", _updateOptions.AppcastUrl);
-                    _logger.LogDebug("Using direct connection (proxy bypassed) with {Timeout}s timeout", _updateOptions.AppcastTimeoutSeconds);
-                    
-                    // Check for updates with detailed logging and retry logic
-                    UpdateInfo? updateInfo = await CheckForUpdatesWithRetryAsync(stoppingToken);
-                    
-                    // If all retries failed, skip to next iteration
-                    if (updateInfo == null)
-                    {
-                        // Error already logged in CheckForUpdatesWithRetryAsync
-                        continue;
-                    }
-                    
-                    if (updateInfo.Status == UpdateStatus.UpdateAvailable)
-                    {
-                        var latestVersion = updateInfo.Updates?.FirstOrDefault()?.Version ?? "unknown";
-                        _logger.LogInformation(
-                            "Update available: Version {LatestVersion} (current: {CurrentVersion})",
-                            latestVersion, _currentVersion);
 
-                        if (_updateOptions.AutoInstall || manualTrigger)
+                    // Check for manual update trigger signal (file-based, for backward compatibility)
+                    var fileTrigger = File.Exists(updateSignalFile);
+
+                    if (fileTrigger || manualTrigger)
+                    {
+                        if (fileTrigger)
                         {
-                            if (manualTrigger)
+                            _logger.LogInformation("Manual update trigger detected via file, checking for updates immediately...");
+                            try
                             {
-                                _logger.LogInformation("Manual update trigger - applying update immediately...");
+                                File.Delete(updateSignalFile);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex, "Failed to delete update trigger file");
+                            }
+                        }
+
+                        // Check for updates with detailed logging and retry logic
+                        UpdateInfo? updateInfo = await CheckForUpdatesWithRetryAsync(stoppingToken);
+
+                        // If all retries failed, skip to next iteration
+                        if (updateInfo == null)
+                        {
+                            // Error already logged in CheckForUpdatesWithRetryAsync
+                            continue;
+                        }
+
+                        if (updateInfo.Status == UpdateStatus.UpdateAvailable)
+                        {
+                            var latestVersion = updateInfo.Updates?.FirstOrDefault()?.Version ?? "unknown";
+                            _logger.LogInformation(
+                                "Update available: Version {LatestVersion} (current: {CurrentVersion})",
+                                latestVersion, _currentVersion);
+
+                            if (_updateOptions.AutoInstall || manualTrigger || fileTrigger)
+                            {
+                                if (manualTrigger || fileTrigger)
+                                {
+                                    _logger.LogInformation("Manual update trigger - applying update immediately...");
+                                }
+                                else
+                                {
+                                    _logger.LogInformation("Auto-install is enabled. Applying update...");
+                                }
+                                await ApplyUpdateAsync(updateInfo, stoppingToken);
                             }
                             else
                             {
-                                _logger.LogInformation("Auto-install is enabled. Applying update...");
+                                _logger.LogInformation("Auto-install is disabled. Manual update trigger required from dashboard.");
                             }
-                            await ApplyUpdateAsync(updateInfo, stoppingToken);
+                        }
+                        else if (updateInfo.Status == UpdateStatus.UpdateNotAvailable)
+                        {
+                            if (manualTrigger || fileTrigger)
+                            {
+                                _logger.LogInformation("Manual update triggered but no updates available. Current version {CurrentVersion} is up to date.", _currentVersion);
+                            }
+                            else
+                            {
+                                _logger.LogDebug("No updates available. Current version {CurrentVersion} is up to date.", _currentVersion);
+                            }
+                        }
+                        else if (updateInfo.Status == UpdateStatus.CouldNotDetermine)
+                        {
+                            _logger.LogWarning("Could not determine update status. Check appcast URL and network connectivity.");
+                            _logger.LogWarning("Appcast URL being used: {AppcastUrl}", _updateOptions.AppcastUrl);
+                            _logger.LogWarning("Current version: {CurrentVersion} (raw: {CurrentVersionRaw})", _currentVersion, _currentVersionRaw);
+                            _logger.LogWarning("Ensure the URL is accessible and the appcast.json file exists at that location.");
+                            _logger.LogWarning("Common causes: network issues, invalid JSON format, signature verification failure, or incorrect appcast structure.");
+                            _logger.LogWarning("Check the [NetSparkle] debug logs above for detailed diagnostic information.");
                         }
                         else
                         {
-                            _logger.LogInformation("Auto-install is disabled. Manual update trigger required from dashboard.");
+                            _logger.LogWarning("Unknown update status: {Status}", updateInfo.Status);
                         }
-                    }
-                    else if (updateInfo.Status == UpdateStatus.UpdateNotAvailable)
-                    {
-                        if (manualTrigger)
-                        {
-                            _logger.LogInformation("Manual update triggered but no updates available. Current version {CurrentVersion} is up to date.", _currentVersion);
-                        }
-                        else
-                        {
-                            _logger.LogDebug("No updates available. Current version {CurrentVersion} is up to date.", _currentVersion);
-                        }
-                    }
-                    else if (updateInfo.Status == UpdateStatus.CouldNotDetermine)
-                    {
-                        _logger.LogWarning("Could not determine update status. Check appcast URL and network connectivity.");
-                        _logger.LogWarning("Appcast URL being used: {AppcastUrl}", _updateOptions.AppcastUrl);
-                        _logger.LogWarning("Current version: {CurrentVersion} (raw: {CurrentVersionRaw})", _currentVersion, _currentVersionRaw);
-                        _logger.LogWarning("Ensure the URL is accessible and the appcast.json file exists at that location.");
-                        _logger.LogWarning("Common causes: network issues, invalid JSON format, signature verification failure, or incorrect appcast structure.");
-                        _logger.LogWarning("Check the [NetSparkle] debug logs above for detailed diagnostic information.");
                     }
                     else
                     {
-                        _logger.LogWarning("Unknown update status: {Status}", updateInfo.Status);
+                        // No trigger, just check for automatic updates
+                        UpdateInfo? updateInfo = await CheckForUpdatesWithRetryAsync(stoppingToken);
+
+                        if (updateInfo != null)
+                        {
+                            if (updateInfo.Status == UpdateStatus.UpdateAvailable)
+                            {
+                                var latestVersion = updateInfo.Updates?.FirstOrDefault()?.Version ?? "unknown";
+                                _logger.LogInformation(
+                                    "Update available: Version {LatestVersion} (current: {CurrentVersion})",
+                                    latestVersion, _currentVersion);
+
+                                if (_updateOptions.AutoInstall)
+                                {
+                                    _logger.LogInformation("Auto-install is enabled. Applying update...");
+                                    await ApplyUpdateAsync(updateInfo, stoppingToken);
+                                }
+                                else
+                                {
+                                    _logger.LogInformation("Auto-install is disabled. Manual update trigger required from dashboard.");
+                                }
+                            }
+                            else if (updateInfo.Status == UpdateStatus.UpdateNotAvailable)
+                            {
+                                _logger.LogDebug("No updates available. Current version {CurrentVersion} is up to date.", _currentVersion);
+                            }
+                            else if (updateInfo.Status == UpdateStatus.CouldNotDetermine)
+                            {
+                                _logger.LogWarning("Could not determine update status. Check appcast URL and network connectivity.");
+                                _logger.LogWarning("Appcast URL being used: {AppcastUrl}", _updateOptions.AppcastUrl);
+                                _logger.LogWarning("Current version: {CurrentVersion} (raw: {CurrentVersionRaw})", _currentVersion, _currentVersionRaw);
+                                _logger.LogWarning("Ensure the URL is accessible and the appcast.json file exists at that location.");
+                                _logger.LogWarning("Common causes: network issues, invalid JSON format, signature verification failure, or incorrect appcast structure.");
+                                _logger.LogWarning("Check the [NetSparkle] debug logs above for detailed diagnostic information.");
+                            }
+                            else
+                            {
+                                _logger.LogWarning("Unknown update status: {Status}", updateInfo.Status);
+                            }
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -442,7 +525,35 @@ public sealed class UpdateService : BackgroundService
             _logger.LogError(ex, "Failed to initialize update system");
         }
     }
-
+    
+    // New method to poll for pending commands
+    private async Task<List<PendingCommand>> PollForPendingCommandsAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            using var httpClient = new HttpClient();
+            httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_updateOptions.ApiKey}");
+            var response = await httpClient.GetAsync($"{_updateOptions.ApiBaseUrl}/api/commands/pending?agentId={_updateOptions.AgentId}", stoppingToken); // Assume AgentId in UpdateOptions
+            response.EnsureSuccessStatusCode();
+            var commands = await response.Content.ReadFromJsonAsync<List<PendingCommand>>(cancellationToken: stoppingToken);
+            return commands ?? new List<PendingCommand>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to poll for pending commands");
+            return new List<PendingCommand>();
+        }
+    }
+    
+    // Define PendingCommand class (add to file or separate)
+    public class PendingCommand
+    {
+        public string? Id { get; set; }
+        public string? Type { get; set; }
+        // Add other properties as needed
+    }
+    
+    
     /// <summary>
     /// Checks for updates with retry logic and exponential backoff
     /// </summary>

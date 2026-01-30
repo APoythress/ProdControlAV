@@ -44,4 +44,10 @@ public sealed class UpdateOptions
     /// The previous default of 30 seconds was too aggressive for some network conditions.
     /// </summary>
     public int AppcastTimeoutSeconds { get; init; } = 90;
+    
+    public string ApiBaseUrl { get; set; } = string.Empty;
+    
+    public string ApiKey { get; set; } = string.Empty;
+    
+    public string AgentId { get; set; } = string.Empty;
 }
