@@ -336,6 +336,28 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
             _logger.LogInformation("NetSparkle update system initialized successfully");
             _logger.LogInformation("Note: File logging for UpdateService is active in logs/updateService/ folder");
     
+            // Check if we just completed an update (marker file exists)
+            // If so, delete the marker and skip the first update check to prevent infinite loop
+            var updateCompletedMarker = Path.Combine(GetSafeTempDirectory(), "prodcontrolav-update-completed");
+            if (File.Exists(updateCompletedMarker))
+            {
+                _logger.LogInformation("Update completed marker detected. Skipping initial update check to prevent re-update loop.");
+                try
+                {
+                    File.Delete(updateCompletedMarker);
+                    _logger.LogDebug("Deleted update completed marker file");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to delete update completed marker, but continuing");
+                }
+                
+                // Wait one full check interval before starting the update check loop
+                // This gives the agent time to stabilize after an update
+                _logger.LogInformation("Waiting {Seconds} seconds before starting update checks after completed update", _updateOptions.CheckIntervalSeconds);
+                await Task.Delay(TimeSpan.FromSeconds(_updateOptions.CheckIntervalSeconds), stoppingToken);
+            }
+
             // Run the update check loop
             while (!stoppingToken.IsCancellationRequested)
             {
@@ -680,6 +702,20 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
 
                 // Step 5: Launch external updater and exit
                 _logger.LogInformation("Launching external updater to apply update and restart agent");
+                
+                // Create marker file to indicate update was applied
+                // This prevents infinite update loop on restart when AutoInstall is enabled
+                try
+                {
+                    var updateCompletedMarker = Path.Combine(GetSafeTempDirectory(), "prodcontrolav-update-completed");
+                    File.WriteAllText(updateCompletedMarker, DateTime.UtcNow.ToString("O"));
+                    _logger.LogDebug("Created update completed marker at: {MarkerPath}", updateCompletedMarker);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to create update completed marker, but continuing with update");
+                }
+                
                 LaunchExternalUpdaterAndExit(extractTempPath, backupPath, envBackupPath ?? "", "prodcontrolav-agent");
             }
             catch (Exception ex)
