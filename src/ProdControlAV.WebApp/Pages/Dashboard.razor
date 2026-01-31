@@ -362,6 +362,9 @@
             public bool AllowTelNet { get; set; }
             public string Location { get; set; } = "";
             public int Port { get; set; } = 80;
+            public bool AtemEnabled { get; set; }
+            public int? AtemTransitionDefaultRate { get; set; }
+            public string? AtemTransitionDefaultType { get; set; }
         }
         
         // Get logic
@@ -384,7 +387,10 @@
                 Ip = device.Ip,
                 AllowTelNet = device.AllowTelNet,
                 Location = device.Location ?? "",
-                Port = device.Port
+                Port = device.Port,
+                AtemEnabled = device.AtemEnabled ?? false,
+                AtemTransitionDefaultRate = device.AtemTransitionDefaultRate,
+                AtemTransitionDefaultType = device.AtemTransitionDefaultType
             };
             
             // Get actions for this device
@@ -427,6 +433,9 @@
             public Guid TenantId { get; set; }
             public bool Status { get; set; }
             public bool? RecordingStatus { get; set; }
+            public bool? AtemEnabled { get; set; }
+            public int? AtemTransitionDefaultRate { get; set; }
+            public string? AtemTransitionDefaultType { get; set; }
         }
 
         private async Task SaveDeviceChanges()
@@ -450,7 +459,10 @@
                     AllowTelNet = _deviceForm.AllowTelNet,
                     Ip = _deviceForm.Ip,
                     Port = _deviceForm.Port,
-                    Location = _deviceForm.Location
+                    Location = _deviceForm.Location,
+                    AtemEnabled = _deviceForm.AtemEnabled,
+                    AtemTransitionDefaultRate = _deviceForm.AtemTransitionDefaultRate,
+                    AtemTransitionDefaultType = _deviceForm.AtemTransitionDefaultType
                 };
 
                 var response = await Http.PutAsJsonAsync($"api/devices/{_selectedDevice.Id}", updateDto);
@@ -466,6 +478,9 @@
                         _devices[deviceIndex].Port = _deviceForm.Port;
                         _devices[deviceIndex].AllowTelNet = _deviceForm.AllowTelNet;
                         _devices[deviceIndex].Location = _deviceForm.Location;
+                        _devices[deviceIndex].AtemEnabled = _deviceForm.AtemEnabled;
+                        _devices[deviceIndex].AtemTransitionDefaultRate = _deviceForm.AtemTransitionDefaultRate;
+                        _devices[deviceIndex].AtemTransitionDefaultType = _deviceForm.AtemTransitionDefaultType;
                     }
 
                     // Update selected device
@@ -474,6 +489,9 @@
                     _selectedDevice.Port = _deviceForm.Port;
                     _selectedDevice.AllowTelNet = _deviceForm.AllowTelNet;
                     _selectedDevice.Location = _deviceForm.Location;
+                    _selectedDevice.AtemEnabled = _deviceForm.AtemEnabled;
+                    _selectedDevice.AtemTransitionDefaultRate = _deviceForm.AtemTransitionDefaultRate;
+                    _selectedDevice.AtemTransitionDefaultType = _deviceForm.AtemTransitionDefaultType;
 
                     _modalMessage = "Device updated successfully!";
                     _modalMessageCss = "alert-success";

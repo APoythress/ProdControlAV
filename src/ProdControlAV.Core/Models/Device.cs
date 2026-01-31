@@ -19,4 +19,9 @@ public class Device
     public string? LastResponse { get; set; }
     public int PingFrequencySeconds { get; set; } = 300; // Default to 300 seconds (5 minutes)
     public bool? RecordingStatus { get; set; } // For Video devices - true when recording, false when idle
+    
+    // ATEM-specific properties (for devices with Type="ATEM" or similar)
+    public bool? AtemEnabled { get; set; } // Enable ATEM control for this device
+    public int? AtemTransitionDefaultRate { get; set; } // Default transition rate in frames (e.g., 30)
+    public string? AtemTransitionDefaultType { get; set; } // Default transition type: "mix" or "cut"
 }
