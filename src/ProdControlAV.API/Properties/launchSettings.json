@@ -1,8 +1,39 @@
 {
+  "$schema": "https://json.schemastore.org/launchsettings.json",
   "profiles": {
     "ProdControlAV.Server": {
       "commandName": "Project",
       "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "applicationUrl": "http://localhost:5000;https://localhost:5001",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        
+        // Database Configuration
+        // TODO: Set your Azure SQL Database connection string
+        // You can also use dotnet user-secrets instead of hardcoding here
+        "ConnectionStrings__DefaultConnection": "",
+        
+        // JWT Configuration
+        // TODO: Set your JWT configuration values
+        "Jwt__Issuer": "https://localhost:5001",
+        "Jwt__Audience": "https://localhost:5001",
+        "Jwt__Key": "",
+        
+        // Azure Storage Configuration
+        // TODO: Set your Azure Storage endpoints/connection strings
+        "Storage__TablesEndpoint": "",
+        "Storage__QueueConnectionString": "",
+        
+        // Agent API Key
+        // TODO: Set your agent API key (minimum 32 characters)
+        "Api__AgentApiKey": ""
+      }
+    },
+    "ProdControlAV.Server (User Secrets)": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
       "applicationUrl": "http://localhost:5000;https://localhost:5001",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"

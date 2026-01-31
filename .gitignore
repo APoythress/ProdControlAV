@@ -80,3 +80,8 @@ database-scripts/
 
 # Temporary script generation files
 appsettings.ScriptGeneration.json
+
+# Environment files with secrets
+.env
+.env.local
+.env.*.local

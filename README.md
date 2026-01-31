@@ -101,8 +101,47 @@ See [Ping Frequency Optimization Guide](docs/PING_FREQUENCY_OPTIMIZATION.md) for
 
 ### Prerequisites
 - .NET 8 SDK
+- Docker Desktop (for container development)
 - SQL Server or Azure SQL Database
 - Raspberry Pi 5 with Pi OS 64-bit (for agent deployment)
+
+### Local Development Setup
+
+**Choose your development approach:**
+
+#### Option 1: Docker Development (Recommended for Production Testing)
+```bash
+# 1. Copy environment template
+cp .env.example .env
+
+# 2. Edit .env with your Azure credentials
+nano .env
+
+# 3. Start the application
+docker-compose up --build
+
+# 4. Access at http://localhost:5000
+```
+
+#### Option 2: IDE Development (JetBrains Rider / Visual Studio)
+```bash
+# 1. Clone and build
+git clone <repository-url>
+cd ProdControlAV
+dotnet restore
+dotnet build
+
+# 2. Configure environment variables
+# See LOCAL-DEVELOPMENT.md for detailed instructions
+
+# 3. Run from your IDE or command line
+cd src/ProdControlAV.API
+dotnet run
+
+# 4. Access at https://localhost:5001
+```
+
+📚 **For complete setup instructions, see [LOCAL-DEVELOPMENT.md](LOCAL-DEVELOPMENT.md)**
 
 ### Development Setup
 

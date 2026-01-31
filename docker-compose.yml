@@ -1,0 +1,101 @@
+version: '3.8'
+
+services:
+  # ProdControlAV API + WebApp
+  # This service runs both the ASP.NET Core API backend and the Blazor WebAssembly frontend
+  prodcontrolav-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: prodcontrolav-api
+    ports:
+      # Map container port 8080 to host port 5000 for HTTP access
+      - "5000:8080"
+    environment:
+      # Runtime configuration
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://0.0.0.0:8080
+      
+      # Database configuration (from .env file)
+      - ConnectionStrings__DefaultConnection=${DB_CONNECTION_STRING}
+      
+      # JWT configuration (from .env file)
+      - Jwt__Issuer=${JWT_ISSUER}
+      - Jwt__Audience=${JWT_AUDIENCE}
+      - Jwt__Key=${JWT_KEY}
+      
+      # Azure Storage configuration (from .env file)
+      - Storage__TablesEndpoint=${TABLES_ENDPOINT}
+      - Storage__ConnectionString=${TABLES_CONNECTION_STRING:-}
+      - Storage__QueueConnectionString=${QUEUE_CONNECTION_STRING}
+      
+      # Agent API key (from .env file)
+      - Api__AgentApiKey=${AGENT_API_KEY}
+      
+      # Logging
+      - Logging__LogLevel__Default=Information
+      - Logging__LogLevel__Microsoft.AspNetCore=Warning
+    
+    # Load environment variables from .env file
+    env_file:
+      - .env
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Networks
+    networks:
+      - prodcontrolav-network
+
+networks:
+  prodcontrolav-network:
+    driver: bridge
+
+# =============================================================================
+# USAGE INSTRUCTIONS
+# =============================================================================
+# 
+# 1. Setup:
+#    - Copy .env.example to .env
+#    - Fill in your Azure connection strings and secrets in .env
+#    - Ensure .env is in .gitignore (already configured)
+#
+# 2. Build and start:
+#    docker-compose up --build
+#
+# 3. Start in background:
+#    docker-compose up -d
+#
+# 4. Stop:
+#    docker-compose down
+#
+# 5. View logs:
+#    docker-compose logs -f
+#
+# 6. Access the application:
+#    - Web UI: http://localhost:5000
+#    - Swagger API: http://localhost:5000/swagger
+#
+# 7. Rebuild after code changes:
+#    docker-compose build
+#    docker-compose up
+#
+# =============================================================================
+# NOTES
+# =============================================================================
+#
+# - The API serves both the backend REST API and the Blazor WebAssembly frontend
+# - Environment variables use ASP.NET Core configuration syntax (__ for nested keys)
+# - The .env file is automatically loaded by Docker Compose
+# - Health check endpoint needs to be implemented at /api/health
+# - For HTTPS in Docker, you would need to configure certificates
+# - This setup points to your Azure instances (SQL DB, Storage, etc.)
+#
