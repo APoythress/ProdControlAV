@@ -95,6 +95,9 @@ public sealed class UpdateService : BackgroundService
     private SparkleUpdater? _sparkle;
     private readonly SemaphoreSlim _updateLock = new SemaphoreSlim(1, 1);
     private string? _safeTempDirectory; // Cached safe temp directory
+    
+    // Marker file name for preventing infinite update loops
+    private const string UpdateCompletedMarkerFileName = "prodcontrolav-update-completed";
 
     public UpdateService(
         ILogger<UpdateService> logger,
@@ -336,6 +339,28 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
             _logger.LogInformation("NetSparkle update system initialized successfully");
             _logger.LogInformation("Note: File logging for UpdateService is active in logs/updateService/ folder");
     
+            // Check if we just completed an update (marker file exists)
+            // If so, delete the marker and skip the first update check to prevent infinite loop
+            var updateCompletedMarker = Path.Combine(GetSafeTempDirectory(), UpdateCompletedMarkerFileName);
+            if (File.Exists(updateCompletedMarker))
+            {
+                _logger.LogInformation("Update completed marker detected. Skipping initial update check to prevent re-update loop.");
+                try
+                {
+                    File.Delete(updateCompletedMarker);
+                    _logger.LogDebug("Deleted update completed marker file");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to delete update completed marker, but continuing");
+                }
+                
+                // Wait one full check interval before starting the update check loop
+                // This gives the agent time to stabilize after an update
+                _logger.LogInformation("Waiting {Seconds} seconds before starting update checks after completed update", _updateOptions.CheckIntervalSeconds);
+                await Task.Delay(TimeSpan.FromSeconds(_updateOptions.CheckIntervalSeconds), stoppingToken);
+            }
+
             // Run the update check loop
             while (!stoppingToken.IsCancellationRequested)
             {
@@ -344,60 +369,16 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
                     // Define update signal file path once
                     var updateSignalFile = Path.Combine(GetSafeTempDirectory(), "prodcontrolav-update-trigger");
 
-                    // Poll for pending commands from API
-                    var pendingCommands = await PollForPendingCommandsAsync(stoppingToken);
-                    var updateCommand = pendingCommands.FirstOrDefault(c => c.Type == "update");
-                    bool manualTrigger = false;
-                    string? commandId = null;
-                    if (updateCommand != null)
-                    {
-                        commandId = updateCommand.Id;
-                        try
-                        {
-                            if (string.IsNullOrWhiteSpace(_updateOptions.ApiBaseUrl) || string.IsNullOrWhiteSpace(_updateOptions.ApiKey))
-                            {
-                                _logger.LogWarning("API configuration not set (ApiBaseUrl or ApiKey missing). Cannot mark command as processed.");
-                            }
-                            else
-                            {
-                                using var httpClient = new HttpClient();
-                                httpClient.BaseAddress = new Uri(_updateOptions.ApiBaseUrl);
-                                httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_updateOptions.ApiKey}");
-                                var response = await httpClient.PutAsync($"api/commands/{commandId}/status?status=processed", null, stoppingToken);
-                                response.EnsureSuccessStatusCode();
-                                _logger.LogInformation("Command {CommandId} marked as processed", commandId);
-                                manualTrigger = true;
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogWarning(ex, "Failed to mark command {CommandId} as processed, skipping update processing", commandId);
-                        }
-                    }
-
-                    if (manualTrigger)
-                    {
-                        _logger.LogInformation("Manual update command detected via polling, processing...");
-
-                        // Create trigger file for existing logic
-                        try
-                        {
-                            File.WriteAllText(updateSignalFile, "");
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogWarning(ex, "Failed to create update trigger file");
-                        }
-                    }
-                    else
-                    {
-                        _logger.LogDebug("Checking for updates (current version: {CurrentVersion})...", _currentVersion);
-                    }
-
-                    // Check for manual update trigger signal (file-based, for backward compatibility)
+                    // Check for manual update trigger signal (file-based)
+                    // This file is created by CommandService when an UPDATE command is received from the command queue
                     var fileTrigger = File.Exists(updateSignalFile);
 
-                    if (fileTrigger || manualTrigger)
+                    if (!fileTrigger)
+                    {
+                        _logger.LogDebug("No manual update trigger detected, checking for updates normally (current version: {CurrentVersion})...", _currentVersion);
+                    }
+
+                    if (fileTrigger)
                     {
                         if (fileTrigger)
                         {
@@ -429,11 +410,11 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
                                 "Update available: Version {LatestVersion} (current: {CurrentVersion})",
                                 latestVersion, _currentVersion);
 
-                            if (_updateOptions.AutoInstall || manualTrigger || fileTrigger)
+                            if (_updateOptions.AutoInstall || fileTrigger)
                             {
-                                if (manualTrigger || fileTrigger)
+                                if (fileTrigger)
                                 {
-                                    _logger.LogInformation("Manual update trigger - applying update immediately...");
+                                    _logger.LogInformation("Manual update trigger detected - applying update immediately...");
                                 }
                                 else
                                 {
@@ -448,7 +429,7 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
                         }
                         else if (updateInfo.Status == UpdateStatus.UpdateNotAvailable)
                         {
-                            if (manualTrigger || fileTrigger)
+                            if (fileTrigger)
                             {
                                 _logger.LogInformation("Manual update triggered but no updates available. Current version {CurrentVersion} is up to date.", _currentVersion);
                             }
@@ -533,41 +514,6 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
             _logger.LogError(ex, "Failed to initialize update system");
         }
     }
-    
-    // New method to poll for pending commands
-    private async Task<List<PendingCommand>> PollForPendingCommandsAsync(CancellationToken stoppingToken)
-    {
-        if (string.IsNullOrWhiteSpace(_updateOptions.ApiBaseUrl) || string.IsNullOrWhiteSpace(_updateOptions.ApiKey))
-        {
-            _logger.LogDebug("API configuration not set (ApiBaseUrl or ApiKey missing). Skipping command polling.");
-            return new List<PendingCommand>();
-        }
-
-        try
-        {
-            using var httpClient = new HttpClient();
-            httpClient.BaseAddress = new Uri(_updateOptions.ApiBaseUrl);
-            httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_updateOptions.ApiKey}");
-            var response = await httpClient.GetAsync($"api/commands/pending?agentId={_updateOptions.AgentId}", stoppingToken);
-            response.EnsureSuccessStatusCode();
-            var commands = await response.Content.ReadFromJsonAsync<List<PendingCommand>>(cancellationToken: stoppingToken);
-            return commands ?? new List<PendingCommand>();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to poll for pending commands");
-            return new List<PendingCommand>();
-        }
-    }
-    
-    // Define PendingCommand class (add to file or separate)
-    public class PendingCommand
-    {
-        public string? Id { get; set; }
-        public string? Type { get; set; }
-        // Add other properties as needed
-    }
-    
     
     /// <summary>
     /// Checks for updates with retry logic and exponential backoff
@@ -759,6 +705,20 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
 
                 // Step 5: Launch external updater and exit
                 _logger.LogInformation("Launching external updater to apply update and restart agent");
+                
+                // Create marker file to indicate update was applied
+                // This prevents infinite update loop on restart when AutoInstall is enabled
+                try
+                {
+                    var updateCompletedMarker = Path.Combine(GetSafeTempDirectory(), UpdateCompletedMarkerFileName);
+                    File.WriteAllText(updateCompletedMarker, string.Empty);
+                    _logger.LogDebug("Created update completed marker at: {MarkerPath}", updateCompletedMarker);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to create update completed marker, but continuing with update");
+                }
+                
                 LaunchExternalUpdaterAndExit(extractTempPath, backupPath, envBackupPath ?? "", "prodcontrolav-agent");
             }
             catch (Exception ex)
