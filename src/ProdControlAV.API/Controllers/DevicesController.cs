@@ -26,20 +26,39 @@ public class DevicesController : ControllerBase
     }
     
     // GET api/devices/devices
-    // Now reads from Azure Table Storage instead of SQL
+    // Reads from Azure Table Storage for status and polling info, and enriches with SQL data for ATEM fields
     // Returns a simple DTO compatible with dashboard needs
     [HttpGet("devices")]
     public async Task<ActionResult<List<DashboardDeviceDto>>> Devices(CancellationToken ct)
     {
         var devices = new List<DashboardDeviceDto>();
+        
+        // Get all device IDs from Table Storage first
+        var tableDevices = new List<(Guid Id, string Name, string Model, string Brand, string Type, bool AllowTelNet, string IpAddress, int Port, string Location, Guid TenantId, string Status, DateTimeOffset? LastSeenUtc, DateTimeOffset? LastPolledUtc)>();
         await foreach (var device in _deviceStore.GetAllForTenantAsync(_tenant.TenantId, ct))
         {
+            tableDevices.Add((device.Id, device.Name, device.Model ?? "", device.Brand ?? "", device.Type, device.AllowTelNet, device.IpAddress, device.Port, device.Location, device.TenantId, device.Status, device.LastSeenUtc, device.LastPolledUtc));
+        }
+        
+        // Fetch ATEM fields from SQL for all devices
+        var deviceIds = tableDevices.Select(d => d.Id).ToList();
+        var sqlDevices = await _db.Devices
+            .Where(d => deviceIds.Contains(d.Id) && d.TenantId == _tenant.TenantId)
+            .Select(d => new { d.Id, d.AtemEnabled, d.AtemTransitionDefaultRate, d.AtemTransitionDefaultType })
+            .ToListAsync(ct);
+        
+        var atemFieldsDict = sqlDevices.ToDictionary(d => d.Id);
+        
+        // Combine data from both sources
+        foreach (var device in tableDevices)
+        {
+            var atemFields = atemFieldsDict.GetValueOrDefault(device.Id);
             devices.Add(new DashboardDeviceDto
             {
                 Id = device.Id,
                 Name = device.Name,
-                Model = device.Model ?? "",
-                Brand = device.Brand ?? "",
+                Model = device.Model,
+                Brand = device.Brand,
                 Type = device.Type,
                 AllowTelNet = device.AllowTelNet,
                 Ip = device.IpAddress,
@@ -48,7 +67,10 @@ public class DevicesController : ControllerBase
                 TenantId = device.TenantId,
                 Status = string.Equals(device.Status, "ONLINE", StringComparison.OrdinalIgnoreCase), // Case-insensitive check for online status
                 LastSeenUtc = device.LastSeenUtc,
-                LastPolledUtc = device.LastPolledUtc
+                LastPolledUtc = device.LastPolledUtc,
+                AtemEnabled = atemFields?.AtemEnabled,
+                AtemTransitionDefaultRate = atemFields?.AtemTransitionDefaultRate,
+                AtemTransitionDefaultType = atemFields?.AtemTransitionDefaultType
             });
         }
         _logger.LogInformation("Retrieved {Count} devices from Table Storage for tenant {TenantId}", devices.Count, _tenant.TenantId);
@@ -71,6 +93,9 @@ public class DevicesController : ControllerBase
         public bool Status { get; init; } // Online/Offline status for UI
         public DateTimeOffset? LastSeenUtc { get; init; } // When device was last seen
         public DateTimeOffset? LastPolledUtc { get; init; } // When device was last polled
+        public bool? AtemEnabled { get; init; } // Enable ATEM control for this device
+        public int? AtemTransitionDefaultRate { get; init; } // Default transition rate in frames
+        public string? AtemTransitionDefaultType { get; init; } // Default transition type: "mix" or "cut"
     }
 
     // GET api/devices/actions
@@ -110,7 +135,7 @@ public class DevicesController : ControllerBase
         return Ok(d);
     }
 
-    public record UpsertDevice(Guid? Id, string Name, string Model, string Brand, string Type, bool AllowTelNet, string Ip, int? Port, string? Location, int? PingFrequencySeconds);
+    public record UpsertDevice(Guid? Id, string Name, string Model, string Brand, string Type, bool AllowTelNet, string Ip, int? Port, string? Location, int? PingFrequencySeconds, bool? AtemEnabled, int? AtemTransitionDefaultRate, string? AtemTransitionDefaultType);
 
     [HttpPost]
     [Authorize(Policy = "IsMember")]
@@ -132,7 +157,10 @@ public class DevicesController : ControllerBase
             Port = dto.Port.GetValueOrDefault(80),
             Location = dto.Location?.Trim(),
             Status = false,
-            PingFrequencySeconds = dto.PingFrequencySeconds.GetValueOrDefault(300)
+            PingFrequencySeconds = dto.PingFrequencySeconds.GetValueOrDefault(300),
+            AtemEnabled = dto.AtemEnabled,
+            AtemTransitionDefaultRate = dto.AtemTransitionDefaultRate,
+            AtemTransitionDefaultType = dto.AtemTransitionDefaultType?.Trim()
         };
         _db.Devices.Add(d);
         await _db.SaveChangesAsync();
@@ -176,6 +204,9 @@ public class DevicesController : ControllerBase
             d.PingFrequencySeconds = dto.PingFrequencySeconds.Value;
         d.AllowTelNet = dto.AllowTelNet;
         d.Location = dto.Location?.Trim();
+        d.AtemEnabled = dto.AtemEnabled;
+        d.AtemTransitionDefaultRate = dto.AtemTransitionDefaultRate;
+        d.AtemTransitionDefaultType = dto.AtemTransitionDefaultType?.Trim();
 
         await _db.SaveChangesAsync();
         

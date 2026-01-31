@@ -102,6 +102,43 @@
                                 <label for="deviceLocation" class="form-label">Location</label>
                                 <input type="text" class="form-control" id="deviceLocation" @bind="_deviceForm.Location" placeholder="Enter device location (optional)">
                             </div>
+                            
+                            <!-- ATEM Configuration Section -->
+                            @if (_selectedDevice.Type == "ATEM" || _selectedDevice.Type == "Video")
+                            {
+                                <div class="col-12 mt-3">
+                                    <h6 class="border-bottom pb-2"><u>ATEM Configuration</u></h6>
+                                </div>
+                                
+                                <div class="col-12 mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="atemEnabled" @bind="_deviceForm.AtemEnabled">
+                                        <label class="form-check-label" for="atemEnabled">
+                                            Enable ATEM Control
+                                        </label>
+                                        <div class="form-text">Enable remote control of this ATEM video switcher</div>
+                                    </div>
+                                </div>
+                                
+                                @if (_deviceForm.AtemEnabled)
+                                {
+                                    <div class="col-md-6 mb-3">
+                                        <label for="atemTransitionType" class="form-label">Default Transition Type</label>
+                                        <select class="form-select" id="atemTransitionType" @bind="_deviceForm.AtemTransitionDefaultType">
+                                            <option value="">-- Select Type --</option>
+                                            <option value="mix">Mix (Fade)</option>
+                                            <option value="cut">Cut</option>
+                                        </select>
+                                        <div class="form-text">Default transition style for program switching</div>
+                                    </div>
+                                    
+                                    <div class="col-md-6 mb-3">
+                                        <label for="atemTransitionRate" class="form-label">Default Transition Rate (frames)</label>
+                                        <input type="number" class="form-control" id="atemTransitionRate" @bind="_deviceForm.AtemTransitionDefaultRate" min="1" max="250" placeholder="30">
+                                        <div class="form-text">Transition duration in frames (e.g., 30 frames ~= 1 second at 30fps)</div>
+                                    </div>
+                                }
+                            }
                         </div>
 
                         <!-- Device Actions Section -->
@@ -382,6 +419,9 @@
             public bool AllowTelNet { get; set; }
             public string Location { get; set; } = "";
             public int Port { get; set; } = 80;
+            public bool AtemEnabled { get; set; }
+            public int? AtemTransitionDefaultRate { get; set; }
+            public string? AtemTransitionDefaultType { get; set; }
         }
         
         // Get logic
@@ -404,7 +444,10 @@
                 Ip = device.Ip,
                 AllowTelNet = device.AllowTelNet,
                 Location = device.Location ?? "",
-                Port = device.Port
+                Port = device.Port,
+                AtemEnabled = device.AtemEnabled ?? false,
+                AtemTransitionDefaultRate = device.AtemTransitionDefaultRate,
+                AtemTransitionDefaultType = device.AtemTransitionDefaultType
             };
             
             // Get actions for this device
@@ -443,6 +486,9 @@
             public Guid TenantId { get; set; }
             public bool Status { get; set; }
             public bool? RecordingStatus { get; set; }
+            public bool? AtemEnabled { get; set; }
+            public int? AtemTransitionDefaultRate { get; set; }
+            public string? AtemTransitionDefaultType { get; set; }
         }
 
         private async Task SaveDeviceChanges()
@@ -466,7 +512,10 @@
                     AllowTelNet = _deviceForm.AllowTelNet,
                     Ip = _deviceForm.Ip,
                     Port = _deviceForm.Port,
-                    Location = _deviceForm.Location
+                    Location = _deviceForm.Location,
+                    AtemEnabled = _deviceForm.AtemEnabled,
+                    AtemTransitionDefaultRate = _deviceForm.AtemTransitionDefaultRate,
+                    AtemTransitionDefaultType = _deviceForm.AtemTransitionDefaultType
                 };
 
                 var response = await Http.PutAsJsonAsync($"api/devices/{_selectedDevice.Id}", updateDto);
@@ -482,6 +531,9 @@
                         _devices[deviceIndex].Port = _deviceForm.Port;
                         _devices[deviceIndex].AllowTelNet = _deviceForm.AllowTelNet;
                         _devices[deviceIndex].Location = _deviceForm.Location;
+                        _devices[deviceIndex].AtemEnabled = _deviceForm.AtemEnabled;
+                        _devices[deviceIndex].AtemTransitionDefaultRate = _deviceForm.AtemTransitionDefaultRate;
+                        _devices[deviceIndex].AtemTransitionDefaultType = _deviceForm.AtemTransitionDefaultType;
                     }
 
                     // Update selected device
@@ -490,6 +542,9 @@
                     _selectedDevice.Port = _deviceForm.Port;
                     _selectedDevice.AllowTelNet = _deviceForm.AllowTelNet;
                     _selectedDevice.Location = _deviceForm.Location;
+                    _selectedDevice.AtemEnabled = _deviceForm.AtemEnabled;
+                    _selectedDevice.AtemTransitionDefaultRate = _deviceForm.AtemTransitionDefaultRate;
+                    _selectedDevice.AtemTransitionDefaultType = _deviceForm.AtemTransitionDefaultType;
 
                     _modalMessage = "Device updated successfully!";
                     _modalMessageCss = "alert-success";
