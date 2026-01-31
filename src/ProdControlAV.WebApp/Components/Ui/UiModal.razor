@@ -1,0 +1,116 @@
+﻿@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Web
+
+@if (IsOpen)
+{
+    <div class="ui-modal-backdrop @(Show ? "show" : "")"
+         @onclick="HandleBackdropClick"
+         @onkeydown="HandleKeyDown"
+         tabindex="0">
+
+        <div class="@ModalClass"
+             role="dialog"
+             aria-modal="true"
+             aria-label="@AriaLabel"
+             @onclick:stopPropagation="true">
+
+            @if (Header is not null || !string.IsNullOrWhiteSpace(Title))
+            {
+                <div class="ui-modal-header">
+                    <div class="ui-modal-heading">
+                        @if (Header is not null)
+                        {
+                            @Header
+                        }
+                        else
+                        {
+                            <div class="ui-modal-title">@Title</div>
+                            @if (!string.IsNullOrWhiteSpace(SubTitle))
+                            {
+                                <div class="ui-modal-subtitle">@SubTitle</div>
+                            }
+                        }
+                    </div>
+
+                    @if (ShowCloseX)
+                    {
+                        <button type="button" class="ui-modal-x" @onclick="Close">✕</button>
+                    }
+                </div>
+            }
+
+            <div class="ui-modal-body">
+                @ChildContent
+            </div>
+
+            @if (Footer is not null)
+            {
+                <div class="ui-modal-footer">
+                    @Footer
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+
+    [Parameter] public string AriaLabel { get; set; } = "Modal";
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? SubTitle { get; set; }
+
+    // IMPORTANT: These names MUST match the tags <Header> and <Footer>
+    [Parameter] public RenderFragment? Header { get; set; }
+    [Parameter] public RenderFragment? Footer { get; set; }
+
+    // IMPORTANT: This MUST be named ChildContent
+    [Parameter] public RenderFragment ChildContent { get; set; } = default!;
+
+    [Parameter] public string Size { get; set; } = "lg";
+    [Parameter] public string? Variant { get; set; } = "card-glow-blue";
+    [Parameter] public bool CloseOnBackdrop { get; set; } = true;
+    [Parameter] public bool CloseOnEscape { get; set; } = true;
+    [Parameter] public bool ShowCloseX { get; set; } = true;
+    [Parameter] public string? Class { get; set; }
+
+    private bool Show { get; set; }
+
+    private string ModalClass =>
+        string.Join(" ",
+            new[]
+            {
+                "ui-modal",
+                $"ui-modal-{Size}",
+                Variant,
+                Class
+            }.Where(s => !string.IsNullOrWhiteSpace(s)));
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsOpen)
+        {
+            Show = false;
+            await Task.Yield();
+            Show = true;
+        }
+    }
+
+    private async Task Close()
+    {
+        Show = false;
+        await Task.Delay(120);
+        await IsOpenChanged.InvokeAsync(false);
+    }
+
+    private async Task HandleBackdropClick()
+    {
+        if (CloseOnBackdrop) await Close();
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (CloseOnEscape && e.Key == "Escape") await Close();
+    }
+}

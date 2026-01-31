@@ -170,6 +170,112 @@
 .card-glow-purple::after{ background: radial-gradient(circle at 70% 20%, rgba(139,92,255,.65), transparent 55%); }
 .card-glow-green::after{ background: radial-gradient(circle at 65% 70%, rgba(78,226,156,.55), transparent 55%); }
 
+
+/* ========= UI MODAL ========= */
+
+.ui-modal-backdrop{
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: grid;
+    place-items: center;
+    padding: 22px;
+    background: rgba(0,0,0,.55);
+    backdrop-filter: blur(8px);
+    opacity: 0;
+    transition: opacity 160ms cubic-bezier(.2,.8,.2,1);
+}
+
+.ui-modal-backdrop.show{ opacity: 1; }
+
+.ui-modal{
+    width: min(980px, 96vw);
+    max-height: 88vh;
+    overflow: auto;
+    border-radius: 22px;
+    border: 1px solid rgba(255,255,255,.12);
+
+    background:
+            radial-gradient(900px 240px at 25% 0%, rgba(255,255,255,.10), transparent 55%),
+            linear-gradient(180deg, rgba(255,255,255,.06), transparent 55%),
+            rgba(12,16,24,.96);
+
+    box-shadow:
+            0 36px 120px rgba(0,0,0,.80),
+            inset 0 1px 0 rgba(255,255,255,.06);
+
+    transform: translateY(10px) scale(.985);
+    opacity: 0;
+    transition: transform 160ms cubic-bezier(.2,.8,.2,1), opacity 160ms cubic-bezier(.2,.8,.2,1);
+    position: relative;
+}
+
+.ui-modal-backdrop.show .ui-modal{
+    transform: translateY(0) scale(1);
+    opacity: 1;
+}
+
+/* Sizes */
+.ui-modal-sm{ width: min(520px, 96vw); }
+.ui-modal-md{ width: min(720px, 96vw); }
+.ui-modal-lg{ width: min(980px, 96vw); }
+.ui-modal-xl{ width: min(1200px, 96vw); }
+
+.ui-modal-header{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap: 16px;
+    padding: 18px 18px 10px;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+.ui-modal-heading{ display:flex; flex-direction:column; gap: 4px; }
+
+.ui-modal-title{
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: -0.2px;
+    color: rgba(235,240,248,.96);
+}
+
+.ui-modal-subtitle{
+    font-size: 12px;
+    color: rgba(166,184,208,.92);
+}
+
+.ui-modal-x{
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    color: rgba(235,240,248,.92);
+    display:grid;
+    place-items:center;
+    cursor:pointer;
+    transition: transform 140ms cubic-bezier(.2,.8,.2,1), background 140ms;
+}
+.ui-modal-x:hover{ transform: translateY(-1px); background: rgba(255,255,255,.10); }
+
+.ui-modal-body{
+    padding: 16px 18px;
+}
+
+.ui-modal-footer{
+    display:flex;
+    justify-content:flex-end;
+    gap: 10px;
+    padding: 12px 18px 18px;
+    border-top: 1px solid rgba(255,255,255,.08);
+}
+
+/* Make modal cards look tighter */
+.ui-modal .card{
+    border-radius: 18px;
+}
+
+
 /* ----------------------------
    Stat blocks (big number + label)
 -----------------------------*/
@@ -224,6 +330,7 @@
 -----------------------------*/
 .badge{
     display:inline-flex;
+    max-width: 80px;
     align-items:center;
     gap: 8px;
     height: 24px;
