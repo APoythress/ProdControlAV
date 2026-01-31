@@ -246,7 +246,8 @@ sudo journalctl -u prodcontrolav-agent -f
     "AppcastUrl": "https://yourstorageaccount.blob.core.windows.net/updates/appcast.json",
     "Ed25519PublicKey": "",
     "CheckIntervalSeconds": 3600,
-    "AutoInstall": true
+    "AutoInstall": true,
+    "AppcastTimeoutSeconds": 30
   }
 }
 ```
@@ -281,6 +282,10 @@ The agent supports secure configuration via environment variables with the `PROD
 - **`Ed25519PublicKey`** - Base64-encoded public key for verifying update signatures
 - **`CheckIntervalSeconds`** - How often to check for updates (default: 3600 = 1 hour)
 - **`AutoInstall`** - Automatically download and install updates (default: true)
+- **`AppcastTimeoutSeconds`** - Timeout for downloading appcast manifest (default: 30 seconds)
+  - Increase this value if experiencing timeout errors on slow network connections
+  - The default NetSparkle timeout of 100 seconds is too long; 30 seconds provides faster failure detection
+  - For very slow connections, increase to 60-120 seconds
 
 **For complete automatic update setup instructions, see [AUTOMATIC-UPDATES-SETUP.md](../../AUTOMATIC-UPDATES-SETUP.md)**
 

@@ -195,6 +195,25 @@ namespace ProdControlAV.Infrastructure.Services
             }
         }
         
+        public async Task MarkAsSucceededAsync(Guid tenantId, Guid commandId, CancellationToken ct)
+        {
+            var partitionKey = tenantId.ToString().ToLowerInvariant();
+            var commandIdStr = commandId.ToString();
+        
+            var filter = $"PartitionKey eq '{partitionKey}' and CommandId eq '{commandIdStr}'";
+        
+            var query = _table.QueryAsync<TableEntity>(filter, maxPerPage: 1, cancellationToken: ct);
+        
+            await foreach (var entity in query)
+            {
+                entity["Status"] = "Succeeded";
+                entity["CompletedUtc"] = DateTimeOffset.UtcNow;
+                await _table.UpdateEntityAsync(entity, entity.ETag, TableUpdateMode.Replace, ct);
+                _logger?.LogInformation("Marked command {CommandId} as Succeeded", commandId);
+                return;
+            }
+        }
+        
         public async Task MarkAsFailedAsync(Guid tenantId, Guid commandId, CancellationToken ct)
         {
             var partitionKey = tenantId.ToString().ToLowerInvariant();
@@ -209,6 +228,7 @@ namespace ProdControlAV.Infrastructure.Services
                 entity["Status"] = "Failed";
                 entity["FailedUtc"] = DateTimeOffset.UtcNow;
                 await _table.UpdateEntityAsync(entity, entity.ETag, TableUpdateMode.Replace, ct);
+                _logger?.LogInformation("Marked command {CommandId} as Failed", commandId);
                 return;
             }
         }

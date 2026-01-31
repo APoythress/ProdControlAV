@@ -1,6 +1,7 @@
 using System.Reflection;
 using DotNetEnv;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection;
 using ProdControlAV.Agent.Services;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -70,6 +71,15 @@ builder.Services.PostConfigure<ApiOptions>(options =>
             "Agent Tenant ID must be provided either in configuration (Api:TenantId) " +
             "or via environment variable (PRODCONTROL_AGENT_TENANTID)");
     }
+});
+
+// Post-configure UpdateOptions to use values from ApiOptions to avoid duplication
+builder.Services.PostConfigure<UpdateOptions>(options =>
+{
+    var sp = builder.Services.BuildServiceProvider();
+    var apiOptions = sp.GetRequiredService<IOptions<ApiOptions>>().Value;
+    options.ApiBaseUrl = apiOptions.BaseUrl;
+    options.ApiKey = apiOptions.ApiKey;
 });
 
 // JWT auth service for token management

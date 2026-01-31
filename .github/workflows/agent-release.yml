@@ -14,6 +14,11 @@ on:
         description: 'Version number (e.g., 0.2.0)'
         required: true
         type: string
+      branch:
+        description: 'Branch to build from (e.g., main, development, hotfix/xxx)'
+        required: false
+        default: 'main'
+        type: string
       description:
         description: 'Release description'
         required: false
@@ -40,6 +45,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.branch || github.ref }}
       
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -126,7 +133,8 @@ jobs:
             echo "ERROR: AZURE_BLOB_BASE_URL secret not set"
             exit 1
           fi
-          DOWNLOAD_URL="${BLOB_BASE_URL}/${{ env.AZURE_STORAGE_CONTAINER }}/ProdControlAV-Agent-${{ steps.version.outputs.version }}-linux-arm64.zip"
+          DOWNLOAD_URL="${BLOB_BASE_URL}/ProdControlAV-Agent-${{ steps.version.outputs.version }}-linux-arm64.zip"
+          
           
           # Generate appcast
           python .github/scripts/make_appcast.py \
@@ -210,6 +218,13 @@ jobs:
           echo "✅ Release signed with Ed25519" >> $GITHUB_STEP_SUMMARY
           echo "✅ Appcast manifest generated" >> $GITHUB_STEP_SUMMARY
           echo "✅ Uploaded to Azure Blob Storage" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Details" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "- Branch: \`${{ inputs.branch }}\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- Branch: \`${GITHUB_REF#refs/tags/}\` (from tag)" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Files" >> $GITHUB_STEP_SUMMARY
           echo "- ZIP: ProdControlAV-Agent-${{ steps.version.outputs.version }}-linux-arm64.zip" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,20 @@
+﻿<div class="field @Class">
+    @if (!string.IsNullOrWhiteSpace(Label))
+    {
+        <div class="label">@Label</div>
+    }
+
+    @ChildContent
+
+    @if (!string.IsNullOrWhiteSpace(HelpText))
+    {
+        <div class="card-subtitle">@HelpText</div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? HelpText { get; set; }
+    [Parameter] public RenderFragment ChildContent { get; set; } = default!;
+    [Parameter] public string? Class { get; set; }
+}

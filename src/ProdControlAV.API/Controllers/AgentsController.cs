@@ -669,7 +669,30 @@ public sealed class AgentsController : ControllerBase
                     req.CommandId.ToString("D"));
             }
             
-            // Always attempt to remove command from queue, even if history recording failed
+            // Mark command status as Succeeded or Failed BEFORE dequeuing
+            // This ensures proper status tracking in the queue
+            Exception? statusException = null;
+            try
+            {
+                if (req.Success)
+                {
+                    await queueStore.MarkAsSucceededAsync(tenantId, req.CommandId, ct);
+                    _logger.LogInformation("[COMMANDS/HISTORY] Marked command {CommandId} as Succeeded", req.CommandId.ToString("D"));
+                }
+                else
+                {
+                    await queueStore.MarkAsFailedAsync(tenantId, req.CommandId, ct);
+                    _logger.LogInformation("[COMMANDS/HISTORY] Marked command {CommandId} as Failed", req.CommandId.ToString("D"));
+                }
+            }
+            catch (Exception ex)
+            {
+                statusException = ex;
+                _logger.LogError(ex, "[COMMANDS/HISTORY] Error marking command {CommandId} status (Success={Success})", 
+                    req.CommandId.ToString("D"), req.Success);
+            }
+            
+            // Always attempt to remove command from queue after marking status
             // This prevents commands from getting stuck in the queue
             try
             {
@@ -682,10 +705,17 @@ public sealed class AgentsController : ControllerBase
                     req.CommandId.ToString("D"));
             }
             
-            // If history recording failed, return error but command was still dequeued
-            if (historyException != null)
+            // If history recording or status marking failed, return appropriate error
+            if (historyException != null || statusException != null)
             {
-                return StatusCode(500, new { error = "failed_to_record_history", message = "Command was dequeued but history recording failed" });
+                var errors = new List<string>();
+                if (historyException != null) errors.Add("history recording failed");
+                if (statusException != null) errors.Add("status update failed");
+                
+                return StatusCode(500, new { 
+                    error = "partial_failure", 
+                    message = $"Command was dequeued but {string.Join(" and ", errors)}"
+                });
             }
             
             return Ok(new { success = true, executionId = history.ExecutionId });
