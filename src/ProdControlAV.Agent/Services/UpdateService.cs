@@ -490,9 +490,6 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         }
     }
     
-    // New method to poll for pending commands
-    
-    
     /// <summary>
     /// Checks for updates with retry logic and exponential backoff
     /// </summary>
