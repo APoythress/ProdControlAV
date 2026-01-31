@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # ProdControlAV API + WebApp
   # This service runs both the ASP.NET Core API backend and the Blazor WebAssembly frontend
@@ -37,6 +35,7 @@ services:
       - Logging__LogLevel__Microsoft.AspNetCore=Warning
     
     # Load environment variables from .env file
+    # Create .env from .env.example and fill in your Azure credentials
     env_file:
       - .env
     
