@@ -95,6 +95,9 @@ public sealed class UpdateService : BackgroundService
     private SparkleUpdater? _sparkle;
     private readonly SemaphoreSlim _updateLock = new SemaphoreSlim(1, 1);
     private string? _safeTempDirectory; // Cached safe temp directory
+    
+    // Marker file name for preventing infinite update loops
+    private const string UpdateCompletedMarkerFileName = "prodcontrolav-update-completed";
 
     public UpdateService(
         ILogger<UpdateService> logger,
@@ -338,7 +341,7 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     
             // Check if we just completed an update (marker file exists)
             // If so, delete the marker and skip the first update check to prevent infinite loop
-            var updateCompletedMarker = Path.Combine(GetSafeTempDirectory(), "prodcontrolav-update-completed");
+            var updateCompletedMarker = Path.Combine(GetSafeTempDirectory(), UpdateCompletedMarkerFileName);
             if (File.Exists(updateCompletedMarker))
             {
                 _logger.LogInformation("Update completed marker detected. Skipping initial update check to prevent re-update loop.");
@@ -707,8 +710,8 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
                 // This prevents infinite update loop on restart when AutoInstall is enabled
                 try
                 {
-                    var updateCompletedMarker = Path.Combine(GetSafeTempDirectory(), "prodcontrolav-update-completed");
-                    File.WriteAllText(updateCompletedMarker, DateTime.UtcNow.ToString("O"));
+                    var updateCompletedMarker = Path.Combine(GetSafeTempDirectory(), UpdateCompletedMarkerFileName);
+                    File.WriteAllText(updateCompletedMarker, string.Empty);
                     _logger.LogDebug("Created update completed marker at: {MarkerPath}", updateCompletedMarker);
                 }
                 catch (Exception ex)
