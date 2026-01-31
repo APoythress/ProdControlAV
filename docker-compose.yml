@@ -94,7 +94,7 @@ networks:
 # - The API serves both the backend REST API and the Blazor WebAssembly frontend
 # - Environment variables use ASP.NET Core configuration syntax (__ for nested keys)
 # - The .env file is automatically loaded by Docker Compose
-# - Health check endpoint needs to be implemented at /api/health
+# - Health check endpoint is available at /api/health (implemented in HealthController)
 # - For HTTPS in Docker, you would need to configure certificates
 # - This setup points to your Azure instances (SQL DB, Storage, etc.)
 #

@@ -272,8 +272,8 @@ ProdControlAV/
 | IDE (HTTP) | http://localhost:5000 | API + WebApp |
 | IDE (HTTPS) | https://localhost:5001 | API + WebApp |
 | Swagger | https://localhost:5001/swagger | API Documentation |
-| Health | /api/health | Basic health check |
-| Health (Detailed) | /api/health/storage | Storage health |
+| Health | http://localhost:5000/api/health | Basic health check |
+| Health (Detailed) | http://localhost:5000/api/health/storage | Storage health |
 
 ## ⚠️ Common Issues
 
