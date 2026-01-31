@@ -1,0 +1,19 @@
+﻿<span class="@CssClass">
+    @if (ShowDot)
+    {
+        <span class="mini-dot"></span>
+    }
+    @ChildContent
+</span>
+
+@code {
+    [Parameter] public RenderFragment ChildContent { get; set; } = default!;
+    [Parameter] public bool ShowDot { get; set; } = true;
+
+    // "blue", "purple", "green", etc.
+    [Parameter] public string Color { get; set; } = "blue";
+    [Parameter] public string? Class { get; set; }
+
+    private string CssClass => string.Join(" ",
+        new[] { "badge", Color, Class }.Where(s => !string.IsNullOrWhiteSpace(s)));
+}

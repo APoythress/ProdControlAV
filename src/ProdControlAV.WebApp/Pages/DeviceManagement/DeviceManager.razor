@@ -5,7 +5,7 @@
 @using ProdControlAV.Core.Models
 @inject HttpClient Http
 
-<div class="container-sm mt-5 text-white">
+<div class="container-sm mt-5">
     <EditForm Model="@_device" OnValidSubmit="@HandleSubmit">
         <DataAnnotationsValidator />
         <ValidationSummary />
