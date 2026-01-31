@@ -502,3 +502,275 @@
     }
     .command-row > *{ justify-self:start; }
 }
+
+/* ===== Dashboard layout polish ===== */
+.ui-dashboard{
+    max-width: 1180px;
+    margin: 42px auto 80px;
+    padding: 0 18px;
+}
+
+.ui-section-title{
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.4px;
+    text-align: center;
+    margin: 10px 0 18px;
+    color: rgba(231,237,246,.95);
+    text-shadow: 0 2px 18px rgba(0,0,0,.55);
+}
+
+.ui-grid-cards{
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+@media (max-width: 1100px){
+    .ui-grid-cards{ grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 860px){
+    .ui-grid-cards{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px){
+    .ui-grid-cards{ grid-template-columns: 1fr; }
+}
+
+/* ===== Make the cards "tile-y" and punchy ===== */
+.device-tile{
+    min-height: 140px;
+    border-radius: 22px;
+    border: 1px solid rgba(255,255,255,.10);
+    background:
+            radial-gradient(900px 240px at 25% 0%, rgba(255,255,255,.08), transparent 55%),
+            linear-gradient(180deg, rgba(255,255,255,.05), transparent 55%),
+            rgba(15,22,33,.96);
+    box-shadow:
+            0 18px 60px rgba(0,0,0,.65),
+            inset 0 1px 0 rgba(255,255,255,.06);
+    transition: transform 180ms cubic-bezier(.2,.8,.2,1),
+    box-shadow 180ms cubic-bezier(.2,.8,.2,1),
+    border-color 180ms cubic-bezier(.2,.8,.2,1);
+    cursor: pointer;
+}
+
+.device-tile:hover{
+    transform: translateY(-4px);
+    box-shadow:
+            0 26px 80px rgba(0,0,0,.72),
+            0 0 0 1px rgba(58,160,255,.18),
+            inset 0 1px 0 rgba(255,255,255,.08);
+    border-color: rgba(231,237,246,.18);
+}
+
+/* ===== Better internal spacing / typography ===== */
+.tile-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: 14px;
+}
+
+.tile-label{
+    font-size: 12px;
+    color: rgba(159,176,198,.95);
+    letter-spacing: .2px;
+}
+
+.tile-value{
+    display:flex;
+    align-items:center;
+    gap: 10px;
+}
+
+/* ===== Stronger glow variants (your previous glow was too timid) ===== */
+.card-glow-green::after,
+.card-glow-purple::after,
+.card-glow-blue::after,
+.card-glow-orange::after{
+    content:"";
+    position:absolute;
+    inset:-70px;
+    pointer-events:none;
+    filter: blur(45px);
+    opacity:.32;              /* <-- stronger */
+}
+
+.card-glow-green::after{
+    background: radial-gradient(circle at 80% 20%, rgba(78,226,156,.75), transparent 55%);
+}
+.card-glow-purple::after{
+    background: radial-gradient(circle at 80% 20%, rgba(139,92,255,.75), transparent 55%);
+}
+.card-glow-blue::after{
+    background: radial-gradient(circle at 80% 20%, rgba(58,160,255,.75), transparent 55%);
+}
+.card-glow-orange::after{
+    background: radial-gradient(circle at 80% 20%, rgba(255,138,76,.75), transparent 55%);
+}
+
+.ui-modal{
+    border: 1px solid rgba(255,255,255,.10);
+    border-radius: 18px;
+    box-shadow: 0 30px 90px rgba(0,0,0,.70);
+}
+
+.modal-card{
+    border-radius: 18px;
+}
+
+
+/* ===== CORE LAYOUT (make sure grid is actually grid) ===== */
+.ui-dashboard{
+    max-width: 1200px;
+    margin: 36px auto 80px;
+    padding: 0 18px;
+}
+
+.ui-section-title{
+    font-size: 24px;
+    font-weight: 800;
+    letter-spacing: -0.4px;
+    text-align: center;
+    margin: 12px 0 18px;
+    color: rgba(235,240,248,.96);
+    text-shadow: 0 10px 30px rgba(0,0,0,.55);
+}
+
+/* This MUST exist; if it doesn't, everything stacks */
+.ui-grid{
+    display: grid;
+    gap: 18px;
+}
+
+.ui-grid-cards{
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 1100px){
+    .ui-grid-cards{ grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 860px){
+    .ui-grid-cards{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px){
+    .ui-grid-cards{ grid-template-columns: 1fr; }
+}
+
+/* ===== DEVICE TILES (stronger contrast + hover) ===== */
+.device-tile{
+    position: relative;
+    min-height: 140px;
+    border-radius: 22px;
+    border: 1px solid rgba(255,255,255,.12);
+    background:
+            radial-gradient(900px 240px at 20% 0%, rgba(255,255,255,.10), transparent 55%),
+            linear-gradient(180deg, rgba(255,255,255,.06), transparent 50%),
+            rgba(12,16,24,.96);
+    box-shadow:
+            0 20px 70px rgba(0,0,0,.70),
+            inset 0 1px 0 rgba(255,255,255,.06);
+    transition: transform 160ms cubic-bezier(.2,.8,.2,1),
+    box-shadow 160ms cubic-bezier(.2,.8,.2,1),
+    border-color 160ms cubic-bezier(.2,.8,.2,1);
+    cursor: pointer;
+    overflow: hidden;
+}
+
+.device-tile:hover{
+    transform: translateY(-4px);
+    border-color: rgba(255,255,255,.18);
+    box-shadow:
+            0 30px 90px rgba(0,0,0,.76),
+            0 0 0 1px rgba(58,160,255,.18),
+            inset 0 1px 0 rgba(255,255,255,.08);
+}
+
+.tile-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.tile-label{
+    font-size: 12px;
+    color: rgba(166,184,208,.95);
+    letter-spacing: .2px;
+}
+
+/* ===== COMMANDS LIST (doesn't collapse / wraps nicely) ===== */
+.cmd-list{
+    display:flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.cmd-head{
+    display:grid;
+    grid-template-columns: 1.3fr .9fr .6fr 2fr auto;
+    gap: 12px;
+    align-items:center;
+    color: rgba(166,184,208,.92);
+    font-size: 12px;
+    padding: 8px 10px 12px;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+.cmd-row{
+    display:grid;
+    grid-template-columns: 1.3fr .9fr .6fr 2fr auto;
+    gap: 12px;
+    align-items:center;
+    padding: 12px 12px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,.10);
+    background:
+            linear-gradient(180deg, rgba(255,255,255,.04), transparent 60%),
+            rgba(15,22,33,.92);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+}
+
+.cmd-row:hover{
+    border-color: rgba(58,160,255,.22);
+    background: rgba(58,160,255,.06);
+}
+
+.cmd-name{
+    font-weight: 700;
+    color: rgba(235,240,248,.96);
+}
+
+.cmd-desc{
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (max-width: 900px){
+    .cmd-head{ display:none; }
+    .cmd-row{
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+    .cmd-desc{ white-space: normal; }
+}
+
+/* ===== STRONGER GLOWS (visible even on dark bg) ===== */
+.card-glow-green::after,
+.card-glow-orange::after{
+    content:"";
+    position:absolute;
+    inset:-70px;
+    pointer-events:none;
+    filter: blur(44px);
+    opacity: .40;
+}
+
+.card-glow-green::after{
+    background: radial-gradient(circle at 85% 10%, rgba(78,226,156,.85), transparent 58%);
+}
+.card-glow-orange::after{
+    background: radial-gradient(circle at 85% 10%, rgba(255,138,76,.85), transparent 58%);
+}
+
+

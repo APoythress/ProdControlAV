@@ -10,345 +10,94 @@
 @inject HttpClient Http
 @inject IJSRuntime JsRuntime
 
-<div class="container mt-5">
-    <!-- =============== Devices =============== -->
-    <!-- Device Header -->
-    <h3 class="text-center mb-4"><u>Device Status</u></h3>
+<div class="ui-dashboard">
 
-    <!-- Device Cards -->
-    <div class="ui-grid cols-4">
-        @if (_devices is not null)
+    <div class="ui-section-title">Device Status</div>
+
+    <div class="ui-grid ui-grid-cards">
+        @foreach (var device in _devices ?? [])
         {
-            @foreach (var device in _devices)
-            {
-                <UiCard Title="@device.Name"
-                        Variant="@GetDeviceCardVariant(device)"
-                        Class="device-card"
-                        @onclick="@(() => OpenDeviceModal(device))">
+            <UiCard Title="@device.Name"
+                    Variant="@GetDeviceCardVariant(device)"
+                    Class="device-tile"
+                    @onclick="@(() => OpenDeviceModal(device))">
 
-                    <div class="row between">
-                        <span class="muted">Status</span>
-                        <UiBadge Color="@GetDeviceStatusColor(device)">
-                            @(device.Status ? "online" : "offline")
+                <div class="tile-row">
+                    <span class="tile-label">Status</span>
+                    <UiBadge Color="@GetDeviceStatusColor(device)">
+                        @(device.Status ? "online" : "offline")
+                    </UiBadge>
+                </div>
+
+                @if (device.Type == "Video" && device.RecordingStatus.HasValue)
+                {
+                    <div class="tile-row mt-2">
+                        <span class="tile-label">Recording</span>
+                        <UiBadge Color="@(device.RecordingStatus.Value ? "red" : "purple")" ShowDot="false">
+                            @(device.RecordingStatus.Value ? "Recording" : "Idle")
                         </UiBadge>
                     </div>
-
-                    @if (device.Type == "Video" && device.RecordingStatus.HasValue)
-                    {
-                        <div class="mt-2 row between">
-                            <span class="muted">Recording</span>
-                            <UiBadge Color="@(device.RecordingStatus.Value ? "red" : "purple")" ShowDot="false">
-                                @(device.RecordingStatus.Value ? "Recording" : "Idle")
-                            </UiBadge>
-                        </div>
-                    }
-                </UiCard>
-            }
-        }
-    </div>
-    <!-- Device Modal -->
-    <div class="modal fade" id="deviceModal" tabindex="-1" aria-labelledby="deviceModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-centered">
-            <div class="modal-content bg-dark text-white">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="deviceModalLabel">Device: @(_selectedDevice?.Name ?? "")</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    @if (_selectedDevice != null)
-                    {
-                        <!-- Device Details Section -->
-                        <div class="row mb-4">
-                            <div class="col-12">
-                                <h6 class="mb-3"><u>Device Details</u></h6>
-                            </div>
-
-                            <div class="col-md-6 mb-3">
-                                <label for="deviceName" class="form-label">Name</label>
-                                <input type="text" class="form-control" id="deviceName" @bind="_deviceForm.Name">
-                            </div>
-
-                            <div class="col-md-6 mb-3">
-                                <label for="deviceIp" class="form-label">IP Address</label>
-                                <input type="text" class="form-control" id="deviceIp" @bind="_deviceForm.Ip">
-                            </div>
-
-                            <div class="col-md-6 mb-3">
-                                <label for="devicePort" class="form-label">Port</label>
-                                <input type="number" class="form-control" id="devicePort" @bind="_deviceForm.Port" min="1" max="65535">
-                            </div>
-
-                            <div class="col-md-6 mb-3">
-                                <label for="deviceModel" class="form-label">Model</label>
-                                <input type="text" class="form-control" id="deviceModel" @bind="_deviceForm.Model" readonly>
-                            </div>
-
-                            <div class="col-md-6 mb-3">
-                                <label for="deviceStatus" class="form-label">Status</label>
-                                <input type="text" class="form-control" id="deviceStatus" value="@(_selectedDevice.Status ? "Online" : "Offline")" readonly>
-                            </div>
-
-                            <div class="col-12 mb-3">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="allowTelnet" @bind="_deviceForm.AllowTelNet">
-                                    <label class="form-check-label" for="allowTelnet">
-                                        Allow Telnet
-                                    </label>
-                                </div>
-                            </div>
-
-                            <div class="col-12 mb-3">
-                                <label for="deviceLocation" class="form-label">Location</label>
-                                <input type="text" class="form-control" id="deviceLocation" @bind="_deviceForm.Location" placeholder="Enter device location (optional)">
-                            </div>
-                        </div>
-
-                        <!-- Device Actions Section -->
-                        <div class="row">
-                            <div class="col-12">
-                                <h6 class="mb-3"><u>Device Actions</u></h6>
-                                @if (_deviceCommands.Any())
-                                {
-                                    <div class="table-responsive">
-                                        <table class="table table-dark table-striped">
-                                            <thead>
-                                            <tr>
-                                                <th>Action Name</th>
-                                                <th>Execute</th>
-                                            </tr>
-                                            </thead>
-                                            <tbody>
-                                            @foreach (var command in _deviceCommands)
-                                            {
-                                                <tr>
-                                                    <td>@command.CommandName</td>
-                                                    <td>
-                                                        <button class="btn btn-sm btn-outline-light"
-                                                                @onclick="@(() => TriggerCommand(command.CommandId))"
-                                                                disabled="@_isExecutingCommand">
-                                                            @if (_isExecutingCommand)
-                                                            {
-                                                                <span class="spinner-border spinner-border-sm" role="status"></span>
-                                                            }
-                                                            else
-                                                            {
-                                                                <text>Execute</text>
-                                                            }
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            }
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                }
-                                else
-                                {
-                                    <p class="text-muted">No actions available for this device.</p>
-                                }
-                            </div>
-                        </div>
-                    }
-
-                    @if (!string.IsNullOrEmpty(_modalMessage))
-                    {
-                        <div class="alert @_modalMessageCss mt-3" role="alert">
-                            @_modalMessage
-                        </div>
-                    }
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-success" @onclick="SaveDeviceChanges" disabled="@_isSaving">
-                        @if (_isSaving)
-                        {
-                            <span class="spinner-border spinner-border-sm" role="status"></span>
-                            <text> Saving...</text>
-                        }
-                        else
-                        {
-                            <text>Save Changes</text>
-                        }
-                    </button>
-                    <button type="button" class="btn btn-danger" @onclick="ShowDeleteConfirmation" disabled="@(_isSaving || _isDeleting)">
-                        @if (_isDeleting)
-                        {
-                            <span class="spinner-border spinner-border-sm" role="status"></span>
-                            <text> Deleting...</text>
-                        }
-                        else
-                        {
-                            <text>Delete Device</text>
-                        }
-                    </button>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="button" class="btn btn-outline-light" disabled>Manage Actions</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Delete Device Confirmation Modal -->
-    <div class="modal fade" id="deleteConfirmationModal" tabindex="-1" aria-labelledby="deleteConfirmationModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content bg-dark text-white">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="deleteConfirmationModalLabel">Confirm Delete</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <p>Are you sure you want to delete the device "<strong>@(_selectedDevice?.Name ?? "")</strong>"?</p>
-                    <p class="text-warning"><i class="fas fa-exclamation-triangle"></i> This action cannot be undone.</p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-danger" @onclick="ConfirmDeleteDevice" disabled="@_isDeleting">
-                        @if (_isDeleting)
-                        {
-                            <span class="spinner-border spinner-border-sm" role="status"></span>
-                            <text> Deleting...</text>
-                        }
-                        else
-                        {
-                            <text>Delete</text>
-                        }
-                    </button>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- =============== Commands =============== -->
-    <!-- Commands Header -->
-    <h4 class="text-center mt-5"><u>Commands</u></h4>
-    
-    <!-- Commands Grid -->
-    <div class="container mt-5">
-        @if (_loading)
-        {
-            <div class="text-center">
-                <div class="spinner-border text-light" role="status">
-                    <span class="visually-hidden">Loading...</span>
-                </div>
-            </div>
-        }
-        else if (!_commands.Any())
-        {
-            <div class="alert alert-info">
-                No commands found. Click "Create Command" to add your first command.
-            </div>
-        }
-        else
-        {
-            <UiCard Title="Commands"
-                    SubTitle="Remote actions"
-                    Variant="card pad accent-blue">
-
-                <div class="command-table">
-
-                    <div class="command-header">
-                        <span>Command</span>
-                        <span>Device</span>
-                        <span>Type</span>
-                        <span>Description</span>
-                        <span></span>
-                    </div>
-
-                    @foreach (var cmd in _commands)
-                    {
-                        <div class="command-row">
-                            <span>@cmd.CommandName</span>
-                            <span class="muted">@GetDeviceName(cmd.DeviceId)</span>
-
-                            <UiBadge Color="@GetCommandTypeColor(cmd.CommandType)" ShowDot="false">
-                                @cmd.CommandType
-                            </UiBadge>
-
-                            <span class="muted">@(cmd.Description ?? "-")</span>
-
-                            <UiButton Variant="btn btn-primary"
-                                      OnClick="@(() => ShowTriggerModal(cmd))">
-                                Run
-                            </UiButton>
-                        </div>
-                    }
-
-                </div>
-
+                }
             </UiCard>
         }
+    </div>
 
+    <div class="ui-section-title" style="margin-top:28px;">Commands</div>
 
-        <!-- Trigger Command Modal -->
-        <div class="modal fade" id="triggerModal" tabindex="-1" aria-labelledby="triggerModalLabel" aria-hidden="true">
-            <div class="modal-dialog modal-dialog-centered">
-                <div class="modal-content bg-dark text-white">
-                    <div class="modal-header">
-                        <h5 class="modal-title" id="triggerModalLabel">Trigger Command</h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
-                    <div class="modal-body">
-                        @if (_selectedCommand != null)
-                        {
-                            <p><strong>Command:</strong> @_selectedCommand.CommandName</p>
-                            <p><strong>Device:</strong> @GetDeviceName(_selectedCommand.DeviceId)</p>
-                            <p><strong>Type:</strong> @_selectedCommand.CommandType</p>
-                            @if (!string.IsNullOrEmpty(_selectedCommand.Description))
-                            {
-                                <p><strong>Description:</strong> @_selectedCommand.Description</p>
-                            }
-                            
-                            @if (_selectedCommand.RequireDeviceOnline)
-                            {
-                                var deviceStatus = GetDeviceStatus(_selectedCommand.DeviceId);
-                                <p>
-                                    <strong>Device Status:</strong> 
-                                    <span class="badge @(deviceStatus ? "bg-success" : "bg-danger")">
-                                        @(deviceStatus ? "Online" : "Offline")
-                                    </span>
-                                </p>
-                                
-                                @if (!deviceStatus)
-                                {
-                                    <div class="alert alert-warning">
-                                        <i class="fas fa-exclamation-triangle"></i> This command requires the device to be online, but it is currently offline.
-                                    </div>
-                                }
-                            }
-                        }
-
-                        @if (!string.IsNullOrEmpty(_triggerMessage))
-                        {
-                            <div class="alert @_triggerMessageCss mt-3" role="alert">
-                                @_triggerMessage
-                            </div>
-                        }
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-success" @onclick="TriggerCommand" disabled="@_isTriggering">
-                            @if (_isTriggering)
-                            {
-                                <span class="spinner-border spinner-border-sm" role="status"></span>
-                                <text> Running...</text>
-                            }
-                            else
-                            {
-                                <text>Run</text>
-                            }
-                        </button>
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    </div>
-                </div>
+    @if (_loading)
+    {
+        <UiCard Title="Loading" SubTitle="Fetching commands…" Variant="card pad card-muted">
+            <div class="center" style="padding:18px 0;">
+                <div class="spinner-border text-light" role="status"></div>
             </div>
-        </div>
-    </div>
+        </UiCard>
+    }
+    else if (!(_commands?.Any() ?? false))
+    {
+        <UiCard Title="No commands" SubTitle="Create your first command to start automating." Variant="card pad card-muted">
+            <div class="muted">No commands found.</div>
+        </UiCard>
+    }
+    else
+    {
+        <UiCard Title="Commands" SubTitle="Remote actions" Variant="card pad accent-blue">
+            <div class="cmd-list">
 
-    <!-- Device / Command Totals -->
-    <div class="d-flex justify-content-center flex-wrap gap-3 mt-3">
-        <p class="text-info">Devices loaded: @_devices?.Count()</p>
-        <p class="text-info">Commands loaded: @_commandsList?.Count()</p>
-    </div>
+                <div class="cmd-head">
+                    <span>Command</span>
+                    <span>Device</span>
+                    <span>Type</span>
+                    <span>Description</span>
+                    <span></span>
+                </div>
 
+                @foreach (var cmd in _commands ?? [])
+                {
+                    <div class="cmd-row">
+                        <div class="cmd-name">@cmd.CommandName</div>
+                        <div class="muted">@GetDeviceName(cmd.DeviceId)</div>
+
+                        <UiBadge Color="@GetCommandTypeColor(cmd.CommandType)" ShowDot="false">
+                            @cmd.CommandType
+                        </UiBadge>
+
+                        <div class="muted cmd-desc">@(cmd.Description ?? "-")</div>
+
+                        <UiButton Variant="btn btn-primary" OnClick="@(() => ShowTriggerModal(cmd))">
+                            Run
+                        </UiButton>
+                    </div>
+                }
+
+            </div>
+        </UiCard>
+    }
+
+    <div class="center muted mt-3">
+        Devices loaded: @(_devices?.Count ?? 0) &nbsp; | &nbsp; Commands loaded: @(_commandsList?.Count ?? 0)
+    </div>
 </div>
+
 
 @code {
     // ========== Page Load ==========
@@ -594,15 +343,14 @@
         }
         
         // helper logic
-        private string GetDeviceStatusColor(DashboardDeviceDto d)
-            => d.Status ? "green" : "red";
-
         private string GetDeviceCardVariant(DashboardDeviceDto d)
         {
-            // online: glow green, offline: accent orange/red
             if (d.Status) return "card pad card-glow-green";
-            return "card pad accent-orange";
+            return "card pad card-glow-orange";
         }
+
+        private string GetDeviceStatusColor(DashboardDeviceDto d)
+            => d.Status ? "green" : "red";
 
     
     #endregion
