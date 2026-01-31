@@ -143,6 +143,8 @@ dotnet run
 
 📚 **For complete setup instructions, see [LOCAL-DEVELOPMENT.md](LOCAL-DEVELOPMENT.md)**
 
+📚 **For environment variable configuration, see [ENVIRONMENT-VARIABLES.md](ENVIRONMENT-VARIABLES.md)**
+
 ### Development Setup
 
 1. **Clone and Build**:
