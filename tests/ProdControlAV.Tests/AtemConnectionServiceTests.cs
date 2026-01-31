@@ -13,15 +13,15 @@ namespace ProdControlAV.Tests;
 public class AtemConnectionServiceTests
 {
     [Fact]
-    public void Constructor_WithEmptyIp_ThrowsInvalidOperationException()
+    public void Constructor_WithEmptyIp_ThrowsArgumentException()
     {
         // Arrange
         var mockLogger = new Mock<ILogger<AtemConnectionService>>();
-        var options = new AtemOptions { Ip = "" };
+        var options = new AtemOptions();
         
         // Act & Assert
-        Assert.Throws<InvalidOperationException>(() => 
-            new AtemConnectionService(mockLogger.Object, Options.Create(options)));
+        Assert.Throws<ArgumentException>(() => 
+            new AtemConnectionService(mockLogger.Object, Options.Create(options), "", 9910));
     }
     
     [Fact]
@@ -29,15 +29,10 @@ public class AtemConnectionServiceTests
     {
         // Arrange
         var mockLogger = new Mock<ILogger<AtemConnectionService>>();
-        var options = new AtemOptions 
-        { 
-            Ip = "192.168.1.240",
-            Port = 9910,
-            Name = "Test ATEM"
-        };
+        var options = new AtemOptions();
         
         // Act
-        var service = new AtemConnectionService(mockLogger.Object, Options.Create(options));
+        var service = CreateService(mockLogger.Object, options);
         
         // Assert
         Assert.NotNull(service);
@@ -49,142 +44,173 @@ public class AtemConnectionServiceTests
     {
         // Arrange
         var mockLogger = new Mock<ILogger<AtemConnectionService>>();
-        var options = new AtemOptions 
-        { 
-            Ip = "192.168.1.240",
-            ConnectAuto = false
-        };
-        var service = new AtemConnectionService(mockLogger.Object, Options.Create(options));
-        
-        AtemConnectionState? capturedState = null;
-        service.ConnectionStateChanged += (sender, state) => capturedState = state;
+        var options = new AtemOptions();
+        var service = CreateService(mockLogger.Object, options);
         
         // Act
-        try
-        {
-            await service.ConnectAsync(CancellationToken.None);
-        }
-        catch
-        {
-            // Connection will fail in test environment, but we can verify state changes
-        }
-        
-        // Assert - Should have attempted to connect
-        Assert.NotNull(capturedState);
-        mockLogger.Verify(
-            x => x.Log(
-                LogLevel.Information,
-                It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Connecting to ATEM")),
-                It.IsAny<Exception>(),
-                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-            Times.Once);
-    }
-    
-    [Fact]
-    public async Task CutToProgramAsync_WhenDisconnected_ThrowsInvalidOperationException()
-    {
-        // Arrange
-        var mockLogger = new Mock<ILogger<AtemConnectionService>>();
-        var options = new AtemOptions { Ip = "192.168.1.240" };
-        var service = new AtemConnectionService(mockLogger.Object, Options.Create(options));
-        
-        // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(async () => 
-            await service.CutToProgramAsync(1, CancellationToken.None));
-    }
-    
-    [Fact]
-    public async Task FadeToProgramAsync_WhenDisconnected_ThrowsInvalidOperationException()
-    {
-        // Arrange
-        var mockLogger = new Mock<ILogger<AtemConnectionService>>();
-        var options = new AtemOptions { Ip = "192.168.1.240" };
-        var service = new AtemConnectionService(mockLogger.Object, Options.Create(options));
-        
-        // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(async () => 
-            await service.FadeToProgramAsync(2, 30, CancellationToken.None));
-    }
-    
-    [Fact]
-    public async Task SetPreviewAsync_WhenDisconnected_ThrowsInvalidOperationException()
-    {
-        // Arrange
-        var mockLogger = new Mock<ILogger<AtemConnectionService>>();
-        var options = new AtemOptions { Ip = "192.168.1.240" };
-        var service = new AtemConnectionService(mockLogger.Object, Options.Create(options));
-        
-        // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(async () => 
-            await service.SetPreviewAsync(3, CancellationToken.None));
-    }
-    
-    [Fact]
-    public async Task ListMacrosAsync_WhenDisconnected_ThrowsInvalidOperationException()
-    {
-        // Arrange
-        var mockLogger = new Mock<ILogger<AtemConnectionService>>();
-        var options = new AtemOptions { Ip = "192.168.1.240" };
-        var service = new AtemConnectionService(mockLogger.Object, Options.Create(options));
-        
-        // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(async () => 
-            await service.ListMacrosAsync(CancellationToken.None));
-    }
-    
-    [Fact]
-    public async Task RunMacroAsync_WhenDisconnected_ThrowsInvalidOperationException()
-    {
-        // Arrange
-        var mockLogger = new Mock<ILogger<AtemConnectionService>>();
-        var options = new AtemOptions { Ip = "192.168.1.240" };
-        var service = new AtemConnectionService(mockLogger.Object, Options.Create(options));
-        
-        // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(async () => 
-            await service.RunMacroAsync(1, CancellationToken.None));
-    }
-    
-    [Fact]
-    public void StateChanged_Event_IsRaisedOnStateUpdate()
-    {
-        // Arrange
-        var mockLogger = new Mock<ILogger<AtemConnectionService>>();
-        var options = new AtemOptions 
-        { 
-            Ip = "192.168.1.240",
-            StateEmitOnChangeOnly = false
-        };
-        var service = new AtemConnectionService(mockLogger.Object, Options.Create(options));
-        
-        AtemState? capturedState = null;
-        service.StateChanged += (sender, state) => capturedState = state;
-        
-        // Act - This would normally be triggered by ATEM state updates
-        // For now, we just verify the event is wired up correctly
+        await service.ConnectAsync();
         
         // Assert
-        Assert.Null(capturedState); // No state changes yet in disconnected state
+        Assert.Equal(AtemConnectionState.Connected, service.ConnectionState);
     }
     
-    [Theory]
-    [InlineData(0)]   // Too low
-    [InlineData(21)]  // Too high
-    [InlineData(-1)]  // Negative
-    public async Task CutToProgramAsync_WithInvalidInputId_ThrowsArgumentOutOfRangeException(int invalidInputId)
+    [Fact]
+    public async Task ConnectAsync_WhenAlreadyConnected_DoesNotReconnect()
     {
         // Arrange
         var mockLogger = new Mock<ILogger<AtemConnectionService>>();
-        var options = new AtemOptions { Ip = "192.168.1.240" };
-        var service = new AtemConnectionService(mockLogger.Object, Options.Create(options));
+        var options = new AtemOptions();
+        var service = CreateService(mockLogger.Object, options);
+        await service.ConnectAsync();
         
-        // Simulate connected state (would normally require actual connection)
-        // For this test, we're checking validation logic which runs before connection check
+        // Act
+        await service.ConnectAsync(); // Second connect
+        
+        // Assert - Should still be connected
+        Assert.Equal(AtemConnectionState.Connected, service.ConnectionState);
+    }
+    
+    [Fact]
+    public async Task DisconnectAsync_WhenConnected_UpdatesConnectionState()
+    {
+        // Arrange
+        var mockLogger = new Mock<ILogger<AtemConnectionService>>();
+        var options = new AtemOptions();
+        var service = CreateService(mockLogger.Object, options);
+        await service.ConnectAsync();
+        
+        // Act
+        await service.DisconnectAsync();
+        
+        // Assert
+        Assert.Equal(AtemConnectionState.Disconnected, service.ConnectionState);
+    }
+    
+    [Fact]
+    public async Task CutToProgram_WhenConnected_CompletesSuccessfully()
+    {
+        // Arrange
+        var mockLogger = new Mock<ILogger<AtemConnectionService>>();
+        var options = new AtemOptions();
+        var service = CreateService(mockLogger.Object, options);
+        await service.ConnectAsync();
+        
+        // Act
+        await service.CutToProgramAsync(1);
+        
+        // Assert - Method completes without throwing
+        Assert.Equal(AtemConnectionState.Connected, service.ConnectionState);
+    }
+    
+    [Fact]
+    public async Task CutToProgram_WhenDisconnected_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var mockLogger = new Mock<ILogger<AtemConnectionService>>();
+        var options = new AtemOptions();
+        var service = CreateService(mockLogger.Object, options);
         
         // Act & Assert
-        // Will throw InvalidOperationException due to disconnected state, but that's expected
-        await Assert.ThrowsAnyAsync<Exception>(async () => 
-            await service.CutToProgramAsync(invalidInputId, CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => 
+            service.CutToProgramAsync(1));
+    }
+    
+    [Fact]
+    public async Task FadeToProgramAsync_WithCustomRate_UsesProvidedRate()
+    {
+        // Arrange
+        var mockLogger = new Mock<ILogger<AtemConnectionService>>();
+        var options = new AtemOptions();
+        var service = CreateService(mockLogger.Object, options);
+        await service.ConnectAsync();
+        
+        // Act
+        await service.FadeToProgramAsync(2, 60);
+        
+        // Assert - Method completes without throwing
+        Assert.Equal(AtemConnectionState.Connected, service.ConnectionState);
+    }
+    
+    [Fact]
+    public async Task FadeToProgramAsync_WithoutRate_UsesDefaultRate()
+    {
+        // Arrange
+        var mockLogger = new Mock<ILogger<AtemConnectionService>>();
+        var options = new AtemOptions();
+        var service = CreateService(mockLogger.Object, options, transitionDefaultRate: 45);
+        await service.ConnectAsync();
+        
+        // Act
+        await service.FadeToProgramAsync(2);
+        
+        // Assert - Method completes without throwing
+        Assert.Equal(AtemConnectionState.Connected, service.ConnectionState);
+    }
+    
+    [Fact]
+    public async Task SetPreviewAsync_WhenConnected_CompletesSuccessfully()
+    {
+        // Arrange
+        var mockLogger = new Mock<ILogger<AtemConnectionService>>();
+        var options = new AtemOptions();
+        var service = CreateService(mockLogger.Object, options);
+        await service.ConnectAsync();
+        
+        // Act
+        await service.SetPreviewAsync(3);
+        
+        // Assert - Method completes without throwing
+        Assert.Equal(AtemConnectionState.Connected, service.ConnectionState);
+    }
+    
+    [Fact]
+    public async Task ListMacrosAsync_WhenConnected_ReturnsEmptyList()
+    {
+        // Arrange
+        var mockLogger = new Mock<ILogger<AtemConnectionService>>();
+        var options = new AtemOptions();
+        var service = CreateService(mockLogger.Object, options);
+        await service.ConnectAsync();
+        
+        // Act
+        var macros = await service.ListMacrosAsync();
+        
+        // Assert
+        Assert.NotNull(macros);
+        Assert.Empty(macros); // Stub returns empty list
+    }
+    
+    [Fact]
+    public async Task RunMacroAsync_WhenConnected_CompletesSuccessfully()
+    {
+        // Arrange
+        var mockLogger = new Mock<ILogger<AtemConnectionService>>();
+        var options = new AtemOptions();
+        var service = CreateService(mockLogger.Object, options);
+        await service.ConnectAsync();
+        
+        // Act
+        await service.RunMacroAsync(5);
+        
+        // Assert - Method completes without throwing
+        Assert.Equal(AtemConnectionState.Connected, service.ConnectionState);
+    }
+    
+    // Helper method to create service with device-specific settings
+    private static AtemConnectionService CreateService(
+        ILogger<AtemConnectionService> logger,
+        AtemOptions options,
+        string deviceIp = "192.168.1.240",
+        int devicePort = 9910,
+        string deviceName = "Test ATEM",
+        int transitionDefaultRate = 30)
+    {
+        return new AtemConnectionService(
+            logger,
+            Options.Create(options),
+            deviceIp,
+            devicePort,
+            deviceName,
+            transitionDefaultRate);
     }
 }

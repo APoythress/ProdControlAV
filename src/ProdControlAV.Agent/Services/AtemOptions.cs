@@ -1,30 +1,12 @@
 namespace ProdControlAV.Agent.Services;
 
 /// <summary>
-/// Configuration options for ATEM device connection and operation.
+/// Agent-level ATEM configuration options.
+/// Device-specific settings (IP, Port, Name, Transition defaults) are stored in the Devices table per tenant.
+/// These settings apply globally to all ATEM connections managed by this agent.
 /// </summary>
 public class AtemOptions
 {
-    /// <summary>
-    /// IPv4 address or resolvable hostname of the ATEM device.
-    /// </summary>
-    public string Ip { get; set; } = string.Empty;
-    
-    /// <summary>
-    /// Port number for ATEM connection (default: 9910 per ATEM protocol).
-    /// </summary>
-    public int Port { get; set; } = 9910;
-    
-    /// <summary>
-    /// Friendly name for the ATEM device (used in logs and telemetry).
-    /// </summary>
-    public string? Name { get; set; }
-    
-    /// <summary>
-    /// Enable automatic connection on service startup (default: false).
-    /// </summary>
-    public bool ConnectAuto { get; set; } = false;
-    
     /// <summary>
     /// Enable automatic reconnection on connection failure.
     /// </summary>
@@ -41,11 +23,6 @@ public class AtemOptions
     public int ReconnectMaxDelaySeconds { get; set; } = 60;
     
     /// <summary>
-    /// Connection timeout in seconds.
-    /// </summary>
-    public int ConnectTimeoutSeconds { get; set; } = 10;
-    
-    /// <summary>
     /// Minimum interval in milliseconds for publishing state updates (coalescing).
     /// </summary>
     public int StatePublishIntervalMs { get; set; } = 500;
@@ -54,15 +31,4 @@ public class AtemOptions
     /// Only emit state updates when values change (reduces noise).
     /// </summary>
     public bool StateEmitOnChangeOnly { get; set; } = true;
-    
-    /// <summary>
-    /// Default transition type: "mix" (fade) or "cut".
-    /// </summary>
-    public string TransitionDefaultType { get; set; } = "mix";
-    
-    /// <summary>
-    /// Default transition rate in frames (ATEM uses 1-250, where 1 = fastest).
-    /// Typical values: 30 frames @ 30fps = 1 second transition.
-    /// </summary>
-    public int TransitionDefaultRate { get; set; } = 30;
 }

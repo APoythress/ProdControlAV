@@ -15,11 +15,24 @@ namespace ProdControlAV.Agent.Services;
 /// 
 /// This implementation uses LibAtem 1.0.0 for ATEM protocol communication.
 /// Note: LibAtem is licensed under LGPL-3.0. See THIRD-PARTY-NOTICES.md for details.
+/// 
+/// IMPORTANT: This is a STUB implementation demonstrating the command pipeline and API contracts.
+/// Device-specific settings (IP, Port, Name, Transition defaults) should come from the Device table,
+/// not from appsettings.json. Production implementation should:
+/// 1. Create a device connection registry mapping device IDs to IAtemConnection instances
+/// 2. Pass device-specific settings (from Device table) to each connection instance
+/// 3. Replace TODO sections with actual LibAtem API calls
 /// </summary>
 public class AtemConnectionService : IAtemConnection, IDisposable
 {
     private readonly ILogger<AtemConnectionService> _logger;
     private readonly AtemOptions _options;
+    
+    // Device-specific settings (should come from Device table in production)
+    private readonly string _deviceIp;
+    private readonly int _devicePort;
+    private readonly string _deviceName;
+    private readonly int _transitionDefaultRate;
     
     private AtemConnectionState _connectionState = AtemConnectionState.Disconnected;
     private AtemState? _currentState;
@@ -47,17 +60,29 @@ public class AtemConnectionService : IAtemConnection, IDisposable
     public event EventHandler<AtemConnectionState>? ConnectionStateChanged;
     public event EventHandler<AtemState>? StateChanged;
     
+    /// <summary>
+    /// Constructor accepting device-specific settings.
+    /// In production, these should come from the Device table per tenant.
+    /// </summary>
     public AtemConnectionService(
         ILogger<AtemConnectionService> logger,
-        IOptions<AtemOptions> options)
+        IOptions<AtemOptions> options,
+        string deviceIp,
+        int devicePort = 9910,
+        string? deviceName = null,
+        int transitionDefaultRate = 30)
     {
         _logger = logger;
         _options = options.Value;
+        _deviceIp = deviceIp;
+        _devicePort = devicePort;
+        _deviceName = deviceName ?? "ATEM";
+        _transitionDefaultRate = transitionDefaultRate;
         
         // Validate configuration
-        if (string.IsNullOrWhiteSpace(_options.Ip))
+        if (string.IsNullOrWhiteSpace(_deviceIp))
         {
-            throw new InvalidOperationException("ATEM IP address must be configured");
+            throw new ArgumentException("ATEM device IP address cannot be null or empty", nameof(deviceIp));
         }
         
         // Initialize state publish timer for coalescing
@@ -75,19 +100,19 @@ public class AtemConnectionService : IAtemConnection, IDisposable
         {
             if (_connectionState == AtemConnectionState.Connected)
             {
-                _logger.LogInformation("ATEM already connected to {Ip}:{Port}", _options.Ip, _options.Port);
+                _logger.LogInformation("ATEM already connected to {Ip}:{Port}", _deviceIp, _devicePort);
                 return;
             }
             
             _logger.LogInformation("Connecting to ATEM at {Ip}:{Port} (Name: {Name})", 
-                _options.Ip, _options.Port, _options.Name ?? "Unknown");
+                _deviceIp, _devicePort, _deviceName);
             
             UpdateConnectionState(AtemConnectionState.Connecting);
             
             try
             {
                 // TODO: Initialize LibAtem client and connect
-                // _atemClient = new AtemClient(_options.Ip, _options.Port);
+                // _atemClient = new AtemClient(_deviceIp, _devicePort);
                 // _atemClient.OnConnectionStateChanged += HandleConnectionStateChanged;
                 // _atemClient.OnStateChanged += HandleStateChanged;
                 // await _atemClient.ConnectAsync(TimeSpan.FromSeconds(_options.ConnectTimeoutSeconds), ct);
@@ -98,7 +123,7 @@ public class AtemConnectionService : IAtemConnection, IDisposable
                 UpdateConnectionState(AtemConnectionState.Connected);
                 _reconnectAttempts = 0;
                 
-                _logger.LogInformation("Successfully connected to ATEM at {Ip}:{Port}", _options.Ip, _options.Port);
+                _logger.LogInformation("Successfully connected to ATEM at {Ip}:{Port}", _deviceIp, _devicePort);
                 
                 // Initialize state from ATEM
                 await RefreshStateAsync(ct);
@@ -111,7 +136,7 @@ public class AtemConnectionService : IAtemConnection, IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to connect to ATEM at {Ip}:{Port}", _options.Ip, _options.Port);
+                _logger.LogError(ex, "Failed to connect to ATEM at {Ip}:{Port}", _deviceIp, _devicePort);
                 UpdateConnectionState(AtemConnectionState.Disconnected);
                 
                 // Start reconnect if enabled
@@ -147,7 +172,7 @@ public class AtemConnectionService : IAtemConnection, IDisposable
                 return;
             }
             
-            _logger.LogInformation("Disconnecting from ATEM at {Ip}:{Port}", _options.Ip, _options.Port);
+            _logger.LogInformation("Disconnecting from ATEM at {Ip}:{Port}", _deviceIp, _devicePort);
             
             try
             {
@@ -205,7 +230,7 @@ public class AtemConnectionService : IAtemConnection, IDisposable
             EnsureConnected();
             ValidateInputId(programInputId);
             
-            var rate = transitionRate ?? _options.TransitionDefaultRate;
+            var rate = transitionRate ?? _transitionDefaultRate;
             
             _logger.LogInformation("ATEM: Fade to Program - Input {InputId}, Rate {Rate} frames", 
                 programInputId, rate);
