@@ -3,50 +3,49 @@
 @using System.Net.Http.Json
 @using System.Threading
 @using ProdControlAV.Core.Models
-@using ProdControlAV.WebApp.Components
+@using ProdControlAV.WebApp.Components.Ui
 
 @implements IAsyncDisposable
 
 @inject HttpClient Http
 @inject IJSRuntime JsRuntime
 
-<div class="container mt-5 text-white">
+<div class="container mt-5">
     <!-- =============== Devices =============== -->
     <!-- Device Header -->
     <h3 class="text-center mb-4"><u>Device Status</u></h3>
 
     <!-- Device Cards -->
-    <div class="row g-3 justify-content-center">
-        @{
-            if (_devices != null)
-                foreach (var device in _devices)
-                {
-                    <div class="col-12 col-sm-6 col-md-4 col-lg-3">
-                        <div class="card text-center bg-dark border-light text-white" style="cursor: pointer;"
-                             @onclick="@(() => OpenDeviceModal(device))">
-                            <div class="card-body">
-                                <h5 class="card-title">@device.Name</h5>
-                                <br/>
-                                <p class="card-text">
-                                    Status:
-                                    <span class="badge @GetStatusClass(device)">@(device.Status ? "online" : "offline")</span>
-                                </p>
-                                @if (device.Type == "Video" && device.RecordingStatus.HasValue)
-                                {
-                                    <p class="card-text">
-                                        <span class="badge @(device.RecordingStatus.Value ? "bg-danger" : "bg-secondary")">
-                                            @(device.RecordingStatus.Value ? "Recording" : "Idle")
-                                        </span>
-                                    </p>
-                                }
-                            </div>
+    <div class="ui-grid cols-4">
+        @if (_devices is not null)
+        {
+            @foreach (var device in _devices)
+            {
+                <UiCard Title="@device.Name"
+                        Variant="@GetDeviceCardVariant(device)"
+                        Class="device-card"
+                        @onclick="@(() => OpenDeviceModal(device))">
 
-                        </div>
+                    <div class="row between">
+                        <span class="muted">Status</span>
+                        <UiBadge Color="@GetDeviceStatusColor(device)">
+                            @(device.Status ? "online" : "offline")
+                        </UiBadge>
                     </div>
-                }
+
+                    @if (device.Type == "Video" && device.RecordingStatus.HasValue)
+                    {
+                        <div class="mt-2 row between">
+                            <span class="muted">Recording</span>
+                            <UiBadge Color="@(device.RecordingStatus.Value ? "red" : "purple")" ShowDot="false">
+                                @(device.RecordingStatus.Value ? "Recording" : "Idle")
+                            </UiBadge>
+                        </div>
+                    }
+                </UiCard>
+            }
         }
     </div>
-
     <!-- Device Modal -->
     <div class="modal fade" id="deviceModal" tabindex="-1" aria-labelledby="deviceModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
@@ -223,7 +222,7 @@
     <h4 class="text-center mt-5"><u>Commands</u></h4>
     
     <!-- Commands Grid -->
-    <div class="container mt-5 text-white">
+    <div class="container mt-5">
         @if (_loading)
         {
             <div class="text-center">
@@ -240,42 +239,44 @@
         }
         else
         {
-            <div class="table-responsive">
-                <table class="table table-dark table-striped table-hover">
-                    <thead>
-                        <tr>
-                            <th>Command Name</th>
-                            <th>Device</th>
-                            <th>Type</th>
-                            <th>Description</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var cmd in _commands)
-                        {
-                            <tr>
-                                <td>@cmd.CommandName</td>
-                                <td>@GetDeviceName(cmd.DeviceId)</td>
-                                <td>
-                                    <span class="badge @GetCommandTypeBadgeClass(cmd.CommandType)">
-                                        @cmd.CommandType
-                                    </span>
-                                </td>
-                                <td>@(cmd.Description ?? "-")</td>
-                                <td>
-                                    <button class="btn btn-sm btn-success me-1" 
-                                            @onclick="@(() => ShowTriggerModal(cmd))"
-                                            title="Trigger Command">
-                                        <i class="fas fa-play"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
+            <UiCard Title="Commands"
+                    SubTitle="Remote actions"
+                    Variant="card pad accent-blue">
+
+                <div class="command-table">
+
+                    <div class="command-header">
+                        <span>Command</span>
+                        <span>Device</span>
+                        <span>Type</span>
+                        <span>Description</span>
+                        <span></span>
+                    </div>
+
+                    @foreach (var cmd in _commands)
+                    {
+                        <div class="command-row">
+                            <span>@cmd.CommandName</span>
+                            <span class="muted">@GetDeviceName(cmd.DeviceId)</span>
+
+                            <UiBadge Color="@GetCommandTypeColor(cmd.CommandType)" ShowDot="false">
+                                @cmd.CommandType
+                            </UiBadge>
+
+                            <span class="muted">@(cmd.Description ?? "-")</span>
+
+                            <UiButton Variant="btn btn-primary"
+                                      OnClick="@(() => ShowTriggerModal(cmd))">
+                                Run
+                            </UiButton>
+                        </div>
+                    }
+
+                </div>
+
+            </UiCard>
         }
+
 
         <!-- Trigger Command Modal -->
         <div class="modal fade" id="triggerModal" tabindex="-1" aria-labelledby="triggerModalLabel" aria-hidden="true">
@@ -591,6 +592,18 @@
         StateHasChanged();
         }
         }
+        
+        // helper logic
+        private string GetDeviceStatusColor(DashboardDeviceDto d)
+            => d.Status ? "green" : "red";
+
+        private string GetDeviceCardVariant(DashboardDeviceDto d)
+        {
+            // online: glow green, offline: accent orange/red
+            if (d.Status) return "card pad card-glow-green";
+            return "card pad accent-orange";
+        }
+
     
     #endregion
     
@@ -782,6 +795,15 @@
                 _ => "bg-secondary"
             };
         }
+        
+        // helper logic
+        private string GetCommandTypeColor(string type) => type switch
+        {
+            "REST" => "blue",
+            "Telnet" => "cyan",
+            _ => "purple"
+        };
+
     #endregion
     
     // ========== Page Refresh Loop ==========

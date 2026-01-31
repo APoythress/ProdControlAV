@@ -1,0 +1,49 @@
+﻿<div class="@CssClass">
+    @if (Header is not null)
+    {
+        <div class="card-header">@Header</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(Title) || !string.IsNullOrWhiteSpace(SubTitle))
+    {
+        <div style="margin-bottom:12px;">
+            @if (!string.IsNullOrWhiteSpace(Title))
+            {
+                <div class="card-title">@Title</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(SubTitle))
+            {
+                <div class="card-subtitle">@SubTitle</div>
+            }
+        </div>
+    }
+
+    <div class="card-body">
+        @ChildContent
+    </div>
+
+    @if (Footer is not null)
+    {
+        <div class="card-footer">@Footer</div>
+    }
+</div>
+
+@code {
+    [Parameter] public RenderFragment? Header { get; set; }
+    [Parameter] public RenderFragment? Footer { get; set; }
+    [Parameter] public RenderFragment ChildContent { get; set; } = default!;
+
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? SubTitle { get; set; }
+
+    // ex: "card pad card-glow-purple" or "card pad accent-blue"
+    [Parameter] public string Variant { get; set; } = "card pad";
+    [Parameter] public string? Class { get; set; }
+    
+    // allow for clicks
+    [Parameter(CaptureUnmatchedValues = true)]
+    public Dictionary<string, object>? AdditionalAttributes { get; set; }
+
+    private string CssClass => string.Join(" ",
+        new[] { Variant, Class }.Where(s => !string.IsNullOrWhiteSpace(s)));
+}

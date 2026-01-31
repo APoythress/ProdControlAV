@@ -1,0 +1,29 @@
+﻿<div class="stat @Class">
+    <div class="stat-row">
+        <div class="stat-value">@Value</div>
+        @if (Right is not null)
+        {
+            <div class="right">@Right</div>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Label))
+    {
+        <div class="stat-label">@Label</div>
+    }
+
+    @if (ChildContent is not null)
+    {
+        <div class="mt-2">@ChildContent</div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Value { get; set; } = "0";
+    [Parameter] public string? Label { get; set; }
+
+    [Parameter] public RenderFragment? Right { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+}
