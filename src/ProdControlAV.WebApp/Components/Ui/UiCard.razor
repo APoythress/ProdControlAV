@@ -1,4 +1,6 @@
-﻿<div class="@CssClass" @attributes="AdditionalAttributes">
+﻿<div class="@CssClass"
+     @onclick="HandleClick" 
+     @attributes="AdditionalAttributes">
     @if (Header is not null)
     {
         <div class="card-header">@Header</div>
