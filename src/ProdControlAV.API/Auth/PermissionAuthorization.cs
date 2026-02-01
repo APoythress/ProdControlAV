@@ -40,13 +40,11 @@ public sealed class PermissionHandler : AuthorizationHandler<PermissionRequireme
             return; // not authenticated
 
         // Check if user has DevAdmin role - if so, grant all permissions
-        var userRoles = await _db.UserTenants
+        var isDevAdmin = await _db.UserTenants
             .AsNoTracking()
-            .Where(ut => ut.UserId == userId)
-            .Select(ut => ut.Role)
-            .ToListAsync();
+            .AnyAsync(ut => ut.UserId == userId && ut.Role == "DevAdmin");
 
-        if (userRoles.Any(r => r == "DevAdmin"))
+        if (isDevAdmin)
         {
             context.Succeed(requirement);
             return;

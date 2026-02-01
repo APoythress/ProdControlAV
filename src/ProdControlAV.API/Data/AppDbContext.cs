@@ -93,6 +93,7 @@ public class AppDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Permission).HasMaxLength(100).IsRequired();
             e.HasIndex(x => new { x.UserId, x.Permission }).IsUnique();
+            e.HasIndex(x => x.UserId); // Non-unique index for efficient permission lookups by user
             e.HasOne(x => x.User)
                 .WithMany(u => u.Permissions)
                 .HasForeignKey(x => x.UserId)

@@ -251,7 +251,7 @@
                 _state = await response.Content.ReadFromJsonAsync<AtemStateDto>();
                 if (_state?.Inputs != null)
                 {
-                    _totalPages = Math.Min((int)Math.Ceiling(_state.Inputs.Count / (double)InputsPerPage), MaxPages);
+                    _totalPages = Math.Min((_state.Inputs.Count + InputsPerPage - 1) / InputsPerPage, MaxPages);
                 }
             }
             else if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
