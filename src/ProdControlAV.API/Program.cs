@@ -376,12 +376,13 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var pendingMigrations = dbContext.Database.GetPendingMigrations().ToList();
+        var pendingMigrations = dbContext.Database.GetPendingMigrations();
         
         if (pendingMigrations.Any())
         {
+            var migrationList = pendingMigrations.ToList();
             logger.LogInformation("Applying {Count} pending database migration(s): {Migrations}", 
-                pendingMigrations.Count, string.Join(", ", pendingMigrations));
+                migrationList.Count, string.Join(", ", migrationList));
             dbContext.Database.Migrate();
             logger.LogInformation("Database migrations applied successfully.");
         }
