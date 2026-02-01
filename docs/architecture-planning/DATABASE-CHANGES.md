@@ -509,6 +509,7 @@ Before deploying database changes:
 - [ ] Documentation updated (this file, deployment docs)
 - [ ] Rollback plan documented
 - [ ] Backup taken before production deployment
+- [ ] Create Pro OR Post publish SQL script for manual database updates
 
 ## References
 
