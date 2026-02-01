@@ -29,17 +29,17 @@ namespace ProdControlAV.API.Migrations
                 oldClrType: typeof(string),
                 oldType: "nvarchar(max)");
 
-            migrationBuilder.AddColumn<int>(
-                name: "SubscriptionPlanId",
-                table: "Tenants",
-                type: "int",
-                nullable: true);
+            // migrationBuilder.AddColumn<int>(
+            //     name: "SubscriptionPlanId",
+            //     table: "Tenants",
+            //     type: "int",
+            //     nullable: true);
 
-            migrationBuilder.AddColumn<int>(
-                name: "TenantStatusId",
-                table: "Tenants",
-                type: "int",
-                nullable: true);
+            // migrationBuilder.AddColumn<int>(
+            //     name: "TenantStatusId",
+            //     table: "Tenants",
+            //     type: "int",
+            //     nullable: true);
 
             migrationBuilder.AddColumn<string>(
                 name: "SubLocation",
@@ -78,41 +78,41 @@ namespace ProdControlAV.API.Migrations
                     table.PrimaryKey("PK_ClientNotes", x => x.Id);
                 });
 
-            migrationBuilder.CreateTable(
-                name: "SubscriptionPlans",
-                columns: table => new
-                {
-                    SubscriptionPlanId = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    SubscriptionPlanText = table.Column<string>(type: "nvarchar(25)", maxLength: 25, nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_SubscriptionPlans", x => x.SubscriptionPlanId);
-                });
+            // migrationBuilder.CreateTable(
+            //     name: "SubscriptionPlans",
+            //     columns: table => new
+            //     {
+            //         SubscriptionPlanId = table.Column<int>(type: "int", nullable: false)
+            //             .Annotation("SqlServer:Identity", "1, 1"),
+            //         SubscriptionPlanText = table.Column<string>(type: "nvarchar(25)", maxLength: 25, nullable: false)
+            //     },
+            //     constraints: table =>
+            //     {
+            //         table.PrimaryKey("PK_SubscriptionPlans", x => x.SubscriptionPlanId);
+            //     });
 
-            migrationBuilder.CreateTable(
-                name: "TenantStatus",
-                columns: table => new
-                {
-                    TenantStatusId = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    TenantStatusText = table.Column<string>(type: "nvarchar(25)", maxLength: 25, nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_TenantStatus", x => x.TenantStatusId);
-                });
+            // migrationBuilder.CreateTable(
+            //     name: "TenantStatus",
+            //     columns: table => new
+            //     {
+            //         TenantStatusId = table.Column<int>(type: "int", nullable: false)
+            //             .Annotation("SqlServer:Identity", "1, 1"),
+            //         TenantStatusText = table.Column<string>(type: "nvarchar(25)", maxLength: 25, nullable: false)
+            //     },
+            //     constraints: table =>
+            //     {
+            //         table.PrimaryKey("PK_TenantStatus", x => x.TenantStatusId);
+            //     });
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Tenants_SubscriptionPlanId",
-                table: "Tenants",
-                column: "SubscriptionPlanId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Tenants_TenantStatusId",
-                table: "Tenants",
-                column: "TenantStatusId");
+            // migrationBuilder.CreateIndex(
+            //     name: "IX_Tenants_SubscriptionPlanId",
+            //     table: "Tenants",
+            //     column: "SubscriptionPlanId");
+            //
+            // migrationBuilder.CreateIndex(
+            //     name: "IX_Tenants_TenantStatusId",
+            //     table: "Tenants",
+            //     column: "TenantStatusId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Agents_TenantId",
@@ -124,33 +124,33 @@ namespace ProdControlAV.API.Migrations
                 table: "ClientNotes",
                 columns: new[] { "TenantId", "CreatedUtc" });
 
-            migrationBuilder.AddForeignKey(
-                name: "FK_Tenants_SubscriptionPlans_SubscriptionPlanId",
-                table: "Tenants",
-                column: "SubscriptionPlanId",
-                principalTable: "SubscriptionPlans",
-                principalColumn: "SubscriptionPlanId",
-                onDelete: ReferentialAction.SetNull);
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_Tenants_TenantStatus_TenantStatusId",
-                table: "Tenants",
-                column: "TenantStatusId",
-                principalTable: "TenantStatus",
-                principalColumn: "TenantStatusId",
-                onDelete: ReferentialAction.SetNull);
+            // migrationBuilder.AddForeignKey(
+            //     name: "FK_Tenants_SubscriptionPlans_SubscriptionPlanId",
+            //     table: "Tenants",
+            //     column: "SubscriptionPlanId",
+            //     principalTable: "SubscriptionPlans",
+            //     principalColumn: "SubscriptionPlanId",
+            //     onDelete: ReferentialAction.SetNull);
+            //
+            // migrationBuilder.AddForeignKey(
+            //     name: "FK_Tenants_TenantStatus_TenantStatusId",
+            //     table: "Tenants",
+            //     column: "TenantStatusId",
+            //     principalTable: "TenantStatus",
+            //     principalColumn: "TenantStatusId",
+            //     onDelete: ReferentialAction.SetNull);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropForeignKey(
-                name: "FK_Tenants_SubscriptionPlans_SubscriptionPlanId",
-                table: "Tenants");
-
-            migrationBuilder.DropForeignKey(
-                name: "FK_Tenants_TenantStatus_TenantStatusId",
-                table: "Tenants");
+            // migrationBuilder.DropForeignKey(
+            //     name: "FK_Tenants_SubscriptionPlans_SubscriptionPlanId",
+            //     table: "Tenants");
+            //
+            // migrationBuilder.DropForeignKey(
+            //     name: "FK_Tenants_TenantStatus_TenantStatusId",
+            //     table: "Tenants");
 
             migrationBuilder.DropTable(
                 name: "ClientNotes");
@@ -161,13 +161,13 @@ namespace ProdControlAV.API.Migrations
             migrationBuilder.DropTable(
                 name: "TenantStatus");
 
-            migrationBuilder.DropIndex(
-                name: "IX_Tenants_SubscriptionPlanId",
-                table: "Tenants");
-
-            migrationBuilder.DropIndex(
-                name: "IX_Tenants_TenantStatusId",
-                table: "Tenants");
+            // migrationBuilder.DropIndex(
+            //     name: "IX_Tenants_SubscriptionPlanId",
+            //     table: "Tenants");
+            //
+            // migrationBuilder.DropIndex(
+            //     name: "IX_Tenants_TenantStatusId",
+            //     table: "Tenants");
 
             migrationBuilder.DropIndex(
                 name: "IX_Agents_TenantId",
