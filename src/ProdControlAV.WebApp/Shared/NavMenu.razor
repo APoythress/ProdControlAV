@@ -6,54 +6,74 @@
 
 <aside class="w-full md:w-64 bg-gray-900 text-white min-h-screen px-4 py-6">
     <nav class="navbar fixed-top">
-      <div class="container-fluid">
-        <span class="d-flex align-items-center">
-          <i class="bi bi-person-circle" style="font-size: 2rem; padding:0 0.5rem;"></i>
-          @displayName
-        </span>
+        <div class="container-fluid">
+            <span class="d-flex align-items-center">
+                <i class="bi bi-person-circle" style="font-size: 2rem; padding:0 0.5rem;"></i>
+                @displayName
+            </span>
         
-        <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas" data-bs-target="#offcanvasDarkNavbar" aria-controls="offcanvasDarkNavbar" aria-label="Toggle navigation">
-          <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="offcanvas offcanvas-end" tabindex="-1" id="offcanvasDarkNavbar" aria-labelledby="offcanvasDarkNavbarLabel">
-          <div class="offcanvas-header">
-            <h5 class="offcanvas-title" id="offcanvasDarkNavbarLabel">Menu</h5>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
-          </div>
-          <div class="offcanvas-body">
-            <ul class="navbar-nav justify-content-end flex-grow-1 pe-3">
-              <li class="nav-item" data-bs-dismiss="offcanvas">
-                <a class="nav-link active" aria-current="page" href="/Dashboard">Home</a>
-              </li>
-              <li class="nav-item" data-bs-dismiss="offcanvas">
-                  <a class="nav-link" href="/devicemanager">Add Device</a>
-              </li>
-              <li class="nav-item" data-bs-dismiss="offcanvas">
-                  <a class="nav-link" href="/commands">Commands</a>
-              </li>
-              <li class="nav-item" data-bs-dismiss="offcanvas">
-                  <a class="nav-link" href="/agent-health">Agent Health</a>
-              </li>
-              <li class="nav-item" data-bs-dismiss="offcanvas">
-                  <a class="nav-link" href="/settings">Device Settings</a>
-              </li>
-              <li class="nav-item" data-bs-dismiss="offcanvas">
-                  <a class="nav-link" href="/clientmanager">Manage Clients</a>
-              </li>
-              <li class="nav-item" data-bs-dismiss="offcanvas">
-                  <a class="nav-link" href="/account">Account</a>
-              </li>
-              <li class="nav-item" data-bs-dismiss="offcanvas">
-                  <button class="nav-link btn btn-link text-start w-100" @onclick="SignOut">
-                      <i class="bi bi-box-arrow-right"></i> Sign Out
-                  </button>
-              </li>
-            </ul>
-          </div>
+            <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas" data-bs-target="#offcanvasDarkNavbar" aria-controls="offcanvasDarkNavbar" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="offcanvas offcanvas-end" style="background-color: #17202E" tabindex="-1" id="offcanvasDarkNavbar" aria-labelledby="offcanvasDarkNavbarLabel">
+                <div class="offcanvas-header">
+                    <h5 class="offcanvas-title" id="offcanvasDarkNavbarLabel">Menu</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+                </div>
+                <div class="offcanvas-body">
+                    <ul class="navbar-nav justify-content-end flex-grow-1 pe-3">
+                        <li class="nav-item" data-bs-dismiss="offcanvas">
+                            <a class="nav-link active" aria-current="page" href="/Dashboard">Home</a>
+                        </li>
+                        <li class="nav-item" data-bs-dismiss="offcanvas">
+                            <a class="nav-link" href="/devicemanager">Add Device</a>
+                        </li>
+                        <li class="nav-item" data-bs-dismiss="offcanvas">
+                            <a class="nav-link" href="/commands">Commands</a>
+                        </li>
+                        <li class="nav-item" data-bs-dismiss="offcanvas">
+                            <a class="nav-link" href="/agent-health">Agent Health</a>
+                        </li>
+                        <li class="nav-item" data-bs-dismiss="offcanvas">
+                            <a class="nav-link" href="/settings">Device Settings</a>
+                        </li>
+                        <li class="nav-item" data-bs-dismiss="offcanvas">
+                            <a class="nav-link" href="/clientmanager">Manage Clients</a>
+                        </li>
+                        <li class="nav-item" data-bs-dismiss="offcanvas">
+                            <a class="nav-link" href="/account">Account</a>
+                        </li>
+                        <li class="nav-item" data-bs-dismiss="offcanvas">
+                            <button class="nav-link btn btn-link text-start w-100" @onclick="SignOut">
+                                <i class="bi bi-box-arrow-right"></i> Sign Out
+                            </button>
+                        </li>
+                    </ul>
+                </div>
+            </div>
         </div>
-      </div>
-</nav>
+    </nav>
 </aside>
+
+<style>
+    /* Override Bootstrap Offcanvas styles for dark theme */
+    #offcanvasDarkNavbar{
+        background-color: #17202E;
+        top: 0;
+        bottom: auto;
+        position: fixed;
+        z-index: 1045;
+        display: flex;
+        flex-direction: column;
+        transition: transform 0.3s ease-in-out;
+        background-clip: padding-box;
+        max-width: 100%;
+        padding: 25px;
+        width: 300px;
+        height: 100%;
+        box-shadow: inset -3px 3rem 3rem 4px rgba(0, 0, 0, 0.075);
+    }
+</style>
 
 @code {
     private string displayName = "Loading...";
