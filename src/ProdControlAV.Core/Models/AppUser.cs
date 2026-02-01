@@ -5,6 +5,12 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ProdControlAV.Core.Models;
 
+public enum SubscriptionPlan
+{
+    Base = 0,
+    Pro = 1
+}
+
 [Table("Users")]
 public class AppUser
 {
@@ -21,6 +27,13 @@ public class AppUser
     public string PasswordHash { get; set; } = string.Empty;
     
     public Guid TenantId { get; set; }
+
+    // Subscription plan management
+    public SubscriptionPlan SubscriptionPlan { get; set; } = SubscriptionPlan.Base;
+    
+    // SMS notification settings (Pro plan only)
+    public string? PhoneNumber { get; set; } // Encrypted phone number
+    public bool SmsNotificationsEnabled { get; set; } = false;
 
     // Needed for UserTenantConfig: WithMany(u => u.Memberships)
     public ICollection<UserTenant> Memberships { get; set; } = new List<UserTenant>();
