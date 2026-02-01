@@ -24,4 +24,7 @@ public class AppUser
 
     // Needed for UserTenantConfig: WithMany(u => u.Memberships)
     public ICollection<UserTenant> Memberships { get; set; } = new List<UserTenant>();
+    
+    // User permissions
+    public ICollection<UserPermission> Permissions { get; set; } = new List<UserPermission>();
 }

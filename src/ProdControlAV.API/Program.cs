@@ -175,12 +175,17 @@ builder.Services.AddAuthorization(options =>
         policy.RequireAuthenticatedUser();
         policy.RequireClaim("tenantId");
     });
+    
+    // ATEM Control policy - requires ATEM-Control permission
+    options.AddPolicy("AtemControl", policy =>
+        policy.Requirements.Add(new PermissionRequirement("ATEM-Control")));
 });
 
 // IMPORTANT: register the handler as Scoped (or Transient), not Singleton
 builder.Services.AddScoped<IAuthorizationHandler, TenantMemberHandler>();
 builder.Services.AddScoped<IAuthorizationHandler, AdminHandler>();
 builder.Services.AddScoped<IAuthorizationHandler, DevAdminHandler>();
+builder.Services.AddScoped<IAuthorizationHandler, PermissionHandler>();
 
 // Device/infra services
 builder.Services.AddSingleton<ICommandQueue>(new JsonCommandQueue("Data/Commands"));
