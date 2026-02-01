@@ -21,6 +21,7 @@ public class AppDbContext : DbContext
     public DbSet<OutboxEntry> OutboxEntries => Set<OutboxEntry>();
     public DbSet<Command> Commands => Set<Command>();
     public DbSet<CommandTemplate> CommandTemplates => Set<CommandTemplate>();
+    public DbSet<UserPermission> UserPermissions => Set<UserPermission>();
 // Ensure you already have: Devices, DeviceStatusHistory
 
 
@@ -86,5 +87,17 @@ public class AppDbContext : DbContext
 
         b.Entity<AppUser>()
             .HasKey(x => x.UserId);
+        
+        b.Entity<UserPermission>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Permission).HasMaxLength(100).IsRequired();
+            e.HasIndex(x => new { x.UserId, x.Permission }).IsUnique();
+            e.HasIndex(x => x.UserId); // Non-unique index for efficient permission lookups by user
+            e.HasOne(x => x.User)
+                .WithMany(u => u.Permissions)
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
     }
 }

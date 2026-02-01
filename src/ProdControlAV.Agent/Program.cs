@@ -1,5 +1,7 @@
+using System.Reflection;
 using DotNetEnv;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection;
 using ProdControlAV.Agent.Services;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -10,10 +12,18 @@ Env.Load(); // Loads .env from current working directory
 // Add environment variable configuration with specific prefix for security
 builder.Configuration.AddEnvironmentVariables("PRODCONTROL_");
 
+// Determine agent directory for file logging
+var assembly = Assembly.GetExecutingAssembly();
+var agentDirectory = Path.GetDirectoryName(assembly.Location) ?? "/opt/prodcontrolav/agent";
+
 // Configure logging from configuration and add console provider
 builder.Logging.ClearProviders();
 builder.Logging.AddConfiguration(builder.Configuration.GetSection("Logging"));
 builder.Logging.AddConsole();
+
+// Add dedicated file logging for UpdateService
+builder.Logging.Services.AddSingleton<ILoggerProvider>(sp => 
+    new UpdateServiceFileLoggerProvider(agentDirectory));
 
 // Bind options
 builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("Polling"));
@@ -63,6 +73,15 @@ builder.Services.PostConfigure<ApiOptions>(options =>
     }
 });
 
+// Post-configure UpdateOptions to use values from ApiOptions to avoid duplication
+builder.Services.PostConfigure<UpdateOptions>(options =>
+{
+    var sp = builder.Services.BuildServiceProvider();
+    var apiOptions = sp.GetRequiredService<IOptions<ApiOptions>>().Value;
+    options.ApiBaseUrl = apiOptions.BaseUrl;
+    options.ApiKey = apiOptions.ApiKey;
+});
+
 // JWT auth service for token management
 builder.Services.AddSingleton<IJwtAuthService, JwtAuthService>();
 
@@ -79,6 +98,9 @@ builder.Services.AddHttpClient<ICommandService, CommandService>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(10);
 });
+
+// ATEM Connection Manager for LibAtem integration
+builder.Services.AddSingleton<AtemConnectionManager>();
 // Additional HTTP client for JWT auth service
 builder.Services.AddHttpClient("JwtAuth", c => {
     c.Timeout = TimeSpan.FromMinutes(5);

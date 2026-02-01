@@ -64,68 +64,66 @@ def load_template(template_path):
         sys.exit(1)
 
 
-def create_appcast_item(version, url, signature, size, description, pub_date, critical):
+def create_appcast_item(version, url, signature, size, description, pubDate, critical):
     """Create a new appcast item with the provided information."""
     return {
         "title": f"Version {version}",
         "version": version,
-        "short_version": version,
-        "pub_date": pub_date,
+        "shortVersion": version,
+        "pubDate": pubDate,
         "url": url,
         "description": description,
         "size": int(size),
         "type": "application/zip",
-        "signature": {
-            "ed25519": signature
-        },
+        "signature": signature,  # NetSparkle expects signature as a string, not an object
         "os": "linux",
-        "critical_update": critical,
-        "min_system_version": "0.0.0"
+        "criticalUpdate": critical,
+        "minSystemVersion": "0.0.0"
     }
 
 
-def update_appcast(template, new_item, keep_history=True, max_history=10):
+def update_appcast(template, newItem, keepHistory=True, maxHistory=10):
     """
     Update the appcast with a new item.
     
     Args:
         template: The appcast template/existing manifest
-        new_item: The new release item to add
-        keep_history: Whether to keep old versions in the manifest
-        max_history: Maximum number of historical versions to keep
+        newItem: The new release item to add
+        keepHistory: Whether to keep old versions in the manifest
+        maxHistory: Maximum number of historical versions to keep
     
     Returns:
         Updated appcast dictionary
     """
     appcast = template.copy()
     
-    if keep_history:
+    if keepHistory:
         # Add new item to the beginning of the list
-        existing_items = appcast.get("items", [])
+        existingItems = appcast.get("items", [])
         
         # Filter out any existing item with the same version
-        existing_items = [item for item in existing_items if item.get("version") != new_item["version"]]
+        existingItems = [item for item in existingItems if item.get("version") != newItem["version"]]
         
         # Add new item at the beginning
-        items = [new_item] + existing_items
+        items = [newItem] + existingItems
         
         # Keep only the most recent items
-        items = items[:max_history]
+        items = items[:maxHistory]
         
         appcast["items"] = items
     else:
         # Replace all items with just the new one
-        appcast["items"] = [new_item]
+        appcast["items"] = [newItem]
     
     return appcast
 
 
-def save_appcast(appcast, output_path):
+def save_appcast(appcast, outputPath):
     """Save the appcast to a file."""
     try:
-        with open(output_path, 'w') as f:
+        with open(outputPath, 'w') as f:
             json.dump(appcast, f, indent=2)
-        print(f"Appcast saved to: {output_path}", file=sys.stderr)
+        print(f"Appcast saved to: {outputPath}", file=sys.stderr)
     except Exception as e:
         print(f"ERROR: Failed to save appcast: {e}", file=sys.stderr)
         sys.exit(1)
@@ -144,10 +142,10 @@ def main():
     parser.add_argument("--size", help="Size of ZIP file in bytes")
     parser.add_argument("--output", required=True, help="Path to output appcast.json")
     parser.add_argument("--description", help="Release description")
-    parser.add_argument("--pub-date", help="Publication date in ISO format")
+    parser.add_argument("--pubDate", help="Publication date in ISO format")
     parser.add_argument("--critical", action="store_true", help="Mark as critical update")
-    parser.add_argument("--no-history", action="store_true", help="Don't keep version history")
-    parser.add_argument("--max-history", type=int, default=10, help="Maximum versions to keep (default: 10)")
+    parser.add_argument("--noHistory", action="store_true", help="Don't keep version history")
+    parser.add_argument("--maxHistory", type=int, default=10, help="Maximum versions to keep (default: 10)")
     
     args = parser.parse_args()
     
@@ -173,28 +171,28 @@ def main():
     
     # Set defaults
     description = args.description or f"Release version {version}"
-    pub_date = args.pub_date or datetime.now(timezone.utc).isoformat()
+    pubDate = args.pubDate or datetime.now(timezone.utc).isoformat()
     
     # Load template
     template = load_template(args.template)
     
     # Create new item
-    new_item = create_appcast_item(
+    newItem = create_appcast_item(
         version=version,
         url=url,
         signature=signature,
         size=size,
         description=description,
-        pub_date=pub_date,
+        pubDate=pubDate,
         critical=args.critical
     )
     
     # Update appcast
     appcast = update_appcast(
         template=template,
-        new_item=new_item,
-        keep_history=not args.no_history,
-        max_history=args.max_history
+        newItem=newItem,
+        keepHistory=not args.noHistory,
+        maxHistory=args.maxHistory
     )
     
     # Save to file

@@ -5,7 +5,7 @@
 @using ProdControlAV.Core.Models
 @inject HttpClient Http
 
-<div class="container-sm mt-5 text-white">
+<div class="container-sm mt-5">
     <EditForm Model="@_device" OnValidSubmit="@HandleSubmit">
         <DataAnnotationsValidator />
         <ValidationSummary />
@@ -64,6 +64,46 @@
                 </div>
             </div>
         </div>
+
+        <!-- ATEM Configuration Section -->
+        @if (_device.Type == "ATEM" || _device.Type == "Video")
+        {
+            <div class="row mt-3">
+                <div class="col-12">
+                    <h5 class="border-bottom pb-2">ATEM Configuration</h5>
+                </div>
+            </div>
+
+            <div class="row mt-2">
+                <div class="col">
+                    <div class="form-check form-switch">
+                        <input type="checkbox" class="form-check-input" id="atemEnabled" checked="@(_device.AtemEnabled ?? false)" @onchange="@((ChangeEventArgs e) => _device.AtemEnabled = (bool)e.Value!)"/>
+                        <label class="form-check-label" for="atemEnabled">Enable ATEM Control</label>
+                        <div class="form-text">Enable remote control of this ATEM video switcher</div>
+                    </div>
+                </div>
+            </div>
+
+            @if (_device.AtemEnabled == true)
+            {
+                <div class="row mt-2">
+                    <div class="col-9 col-sm-6">
+                        <label class="form-label">Default Transition Type</label>
+                        <InputSelect class="form-select" @bind-Value="_device.AtemTransitionDefaultType">
+                            <option value="">-- Select Type --</option>
+                            <option value="mix">Mix (Fade)</option>
+                            <option value="cut">Cut</option>
+                        </InputSelect>
+                        <div class="form-text">Default transition style for program switching</div>
+                    </div>
+                    <div class="col-9 col-sm-6">
+                        <label class="form-label">Default Transition Rate (frames)</label>
+                        <InputNumber class="form-control" @bind-Value="_device.AtemTransitionDefaultRate" min="1" max="250"/>
+                        <div class="form-text">Transition duration in frames (e.g., 30 frames ~= 1 second at 30fps)</div>
+                    </div>
+                </div>
+            }
+        }
 
         <button type="submit" class="btn btn-primary mt-3" disabled="@_isSubmitting">
             @(_isSubmitting ? "Adding..." : "Add Device")

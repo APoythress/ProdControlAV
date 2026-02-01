@@ -42,6 +42,7 @@ public class CommandService : ICommandService
     private readonly ILogger<CommandService> _logger;
     private readonly ApiOptions _api;
     private readonly IJwtAuthService _jwtAuth;
+    private readonly AtemConnectionManager _atemManager;
 
     // Explicit JsonSerializerOptions with a TypeInfoResolver to opt-out of the reflection-disabled behavior
     private static readonly JsonSerializerOptions s_jsonOptions = new()
@@ -67,12 +68,18 @@ public class CommandService : ICommandService
         DefaultVersionPolicy = System.Net.Http.HttpVersionPolicy.RequestVersionOrLower
     };
 
-    public CommandService(HttpClient http, ILogger<CommandService> logger, IOptions<ApiOptions> api, IJwtAuthService jwtAuth)
+    public CommandService(
+        HttpClient http, 
+        ILogger<CommandService> logger, 
+        IOptions<ApiOptions> api, 
+        IJwtAuthService jwtAuth,
+        AtemConnectionManager atemManager)
     {
         _http = http;
         _logger = logger;
         _api = api.Value;
         _jwtAuth = jwtAuth;
+        _atemManager = atemManager;
         _http.BaseAddress = new Uri(_api.BaseUrl);
     }
 
@@ -185,6 +192,27 @@ public class CommandService : ICommandService
                     // Execute Telnet command (future implementation)
                     message = "Telnet commands not yet implemented";
                     _logger.LogWarning("Telnet command execution not yet implemented");
+                }
+                else if (commandType == "UPDATE")
+                {
+                    // Trigger agent update
+                    _logger.LogInformation("Received UPDATE command, triggering agent update...");
+                    message = "Update command received and will be processed by UpdateService";
+                    success = true;
+                    
+                    // Signal update service to check and apply updates
+                    // This is done via file system signal since we can't inject UpdateService
+                    var updateSignalFile = Path.Combine(Path.GetTempPath(), "prodcontrolav-update-trigger");
+                    await File.WriteAllTextAsync(updateSignalFile, DateTime.UtcNow.ToString("O"), ct);
+                    _logger.LogInformation("Update trigger signal created at: {SignalFile}", updateSignalFile);
+                }
+                else if (commandType == "ATEM")
+                {
+                    // Execute ATEM command
+                    var result = await ExecuteAtemCommandAsync(payloadJson, ct);
+                    success = result.Success;
+                    message = result.Message;
+                    response = result.Response;
                 }
                 else
                 {
@@ -405,7 +433,28 @@ public class CommandService : ICommandService
 
                 using var res = await _http.SendAsync(req, ct);
                 
-                if (res.StatusCode == System.Net.HttpStatusCode.Unauthorized && attempt < maxRetries - 1)
+                // Handle 401 Unauthorized - check if we're on the last attempt
+                if (res.StatusCode == System.Net.HttpStatusCode.Unauthorized && attempt >= maxRetries - 1)
+                {
+                    // Final attempt still got 401 - log and return instead of throwing
+                    // Note: The command itself was already executed successfully (Success={Success})
+                    // This only affects history recording, not command execution
+                    if (success)
+                    {
+                        _logger.LogWarning("Command {CommandId} executed successfully, but failed to record history after {MaxRetries} attempts due to 401 Unauthorized. " +
+                            "This is a non-critical issue - the command completed successfully. History recording will be skipped.", 
+                            commandId, maxRetries);
+                    }
+                    else
+                    {
+                        _logger.LogError("Command {CommandId} failed execution, and also failed to record failure history after {MaxRetries} attempts due to 401 Unauthorized. " +
+                            "This may indicate an authentication issue. The command failure was not recorded in history.", 
+                            commandId, maxRetries);
+                    }
+                    return;
+                }
+                
+                if (res.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
                     // 401 Unauthorized - force token refresh and retry
                     _logger.LogWarning("Received 401 Unauthorized when recording command history, forcing token refresh (attempt {Attempt}/{MaxRetries})", 
@@ -430,9 +479,19 @@ public class CommandService : ICommandService
                 }
                 else
                 {
-                    _logger.LogError(ex, "Failed to record command history for {CommandId} after {MaxRetries} attempts. " +
-                        "This may cause the command to remain in the queue. Command was executed with Success={Success}", 
-                        commandId, maxRetries, success);
+                    // Log with appropriate severity based on command success
+                    if (success)
+                    {
+                        _logger.LogWarning(ex, "Command {CommandId} executed successfully, but failed to record history after {MaxRetries} attempts. " +
+                            "This is a non-critical issue - the command completed successfully. Error: {Error}", 
+                            commandId, maxRetries, ex.Message);
+                    }
+                    else
+                    {
+                        _logger.LogError(ex, "Command {CommandId} failed execution, and also failed to record failure history after {MaxRetries} attempts. " +
+                            "The command failure was not recorded in history. Error: {Error}", 
+                            commandId, maxRetries, ex.Message);
+                    }
                 }
             }
         }
@@ -556,5 +615,201 @@ public class CommandService : ICommandService
         {
             _logger.LogWarning(ex, "Failed to update recording status for device {DeviceId}", deviceId);
         }
+    }
+    
+    /// <summary>
+    /// Executes an ATEM command from the payload using LibAtem.
+    /// </summary>
+    private async Task<AtemCommandResult> ExecuteAtemCommandAsync(JsonElement payload, CancellationToken ct)
+    {
+        try
+        {
+            // Extract device information
+            if (!payload.TryGetProperty("deviceId", out var deviceIdProp))
+            {
+                return new AtemCommandResult
+                {
+                    Success = false,
+                    Message = "Missing required property: deviceId",
+                    Response = null
+                };
+            }
+
+            if (!Guid.TryParse(deviceIdProp.GetString(), out var deviceId))
+            {
+                return new AtemCommandResult
+                {
+                    Success = false,
+                    Message = "Invalid deviceId format",
+                    Response = null
+                };
+            }
+
+            // Extract device connection info from payload (should be added by API)
+            string? deviceIp = payload.TryGetProperty("deviceIp", out var ipProp) ? ipProp.GetString() : null;
+            int devicePort = payload.TryGetProperty("devicePort", out var portProp) ? portProp.GetInt32() : 9910;
+
+            if (string.IsNullOrEmpty(deviceIp))
+            {
+                return new AtemCommandResult
+                {
+                    Success = false,
+                    Message = "Missing required property: deviceIp",
+                    Response = null
+                };
+            }
+
+            // Extract ATEM command details
+            if (!payload.TryGetProperty("atemCommand", out var atemCommandProp))
+            {
+                return new AtemCommandResult
+                {
+                    Success = false,
+                    Message = "Missing required property: atemCommand",
+                    Response = null
+                };
+            }
+            
+            var atemCommand = atemCommandProp.GetString();
+            
+            _logger.LogInformation("Executing ATEM command: {AtemCommand} for device {DeviceId}", atemCommand, deviceId);
+            
+            // Parse command and parameters
+            switch (atemCommand?.ToUpperInvariant())
+            {
+                case "CUT_TO_PROGRAM":
+                {
+                    if (!payload.TryGetProperty("inputId", out var inputIdProp))
+                    {
+                        return new AtemCommandResult
+                        {
+                            Success = false,
+                            Message = "Missing required property: inputId",
+                            Response = null
+                        };
+                    }
+                    
+                    var inputId = inputIdProp.GetInt64();
+                    var success = await _atemManager.CutToProgramAsync(deviceId, deviceIp, devicePort, inputId, ct);
+                    
+                    return new AtemCommandResult
+                    {
+                        Success = success,
+                        Message = success 
+                            ? $"Cut to Program input {inputId} executed successfully"
+                            : $"Failed to execute Cut to Program input {inputId}",
+                        Response = success ? $"{{\"command\":\"CutToProgram\",\"inputId\":{inputId}}}" : null
+                    };
+                }
+                
+                case "FADE_TO_PROGRAM":
+                {
+                    if (!payload.TryGetProperty("inputId", out var inputIdProp))
+                    {
+                        return new AtemCommandResult
+                        {
+                            Success = false,
+                            Message = "Missing required property: inputId",
+                            Response = null
+                        };
+                    }
+                    
+                    var inputId = inputIdProp.GetInt64();
+                    int? transitionRate = null;
+                    if (payload.TryGetProperty("transitionRate", out var rateProp) && rateProp.ValueKind != JsonValueKind.Null)
+                    {
+                        transitionRate = rateProp.GetInt32();
+                    }
+                    
+                    var success = await _atemManager.AutoToProgramAsync(deviceId, deviceIp, devicePort, inputId, transitionRate, ct);
+                    
+                    return new AtemCommandResult
+                    {
+                        Success = success,
+                        Message = success
+                            ? $"Fade to Program input {inputId} (rate: {transitionRate ?? 30}) executed successfully"
+                            : $"Failed to execute Fade to Program input {inputId}",
+                        Response = success ? $"{{\"command\":\"FadeToProgram\",\"inputId\":{inputId},\"transitionRate\":{transitionRate ?? 30}}}" : null
+                    };
+                }
+                
+                case "SET_AUX_AUX1":
+                case "SET_AUX_AUX2":
+                case "SET_AUX_AUX3":
+                case "FADE_AUX_AUX1":
+                case "FADE_AUX_AUX2":
+                case "FADE_AUX_AUX3":
+                {
+                    if (!payload.TryGetProperty("inputId", out var inputIdProp))
+                    {
+                        return new AtemCommandResult
+                        {
+                            Success = false,
+                            Message = "Missing required property: inputId",
+                            Response = null
+                        };
+                    }
+                    
+                    var inputId = inputIdProp.GetInt64();
+                    var auxIndex = atemCommand!.EndsWith("AUX1") ? 0 : atemCommand.EndsWith("AUX2") ? 1 : 2;
+                    
+                    var success = await _atemManager.SetAuxOutputAsync(deviceId, deviceIp, devicePort, auxIndex, inputId, ct);
+                    
+                    return new AtemCommandResult
+                    {
+                        Success = success,
+                        Message = success
+                            ? $"Set Aux{auxIndex + 1} to input {inputId} executed successfully"
+                            : $"Failed to set Aux{auxIndex + 1} to input {inputId}",
+                        Response = success ? $"{{\"command\":\"SetAux{auxIndex + 1}\",\"inputId\":{inputId}}}" : null
+                    };
+                }
+                
+                default:
+                    return new AtemCommandResult
+                    {
+                        Success = false,
+                        Message = $"Unknown ATEM command: {atemCommand}",
+                        Response = null
+                    };
+            }
+        }
+        catch (KeyNotFoundException ex)
+        {
+            _logger.LogError(ex, "Missing required parameter in ATEM command payload");
+            return new AtemCommandResult
+            {
+                Success = false,
+                Message = $"Missing required parameter: {ex.Message}",
+                Response = null
+            };
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogError(ex, "ATEM connection error");
+            return new AtemCommandResult
+            {
+                Success = false,
+                Message = $"ATEM connection error: {ex.Message}",
+                Response = null
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error executing ATEM command");
+            return new AtemCommandResult
+            {
+                Success = false,
+                Message = $"ATEM command execution failed: {ex.Message}",
+                Response = null
+            };
+        }
+    }
+    
+    private class AtemCommandResult
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = "";
+        public string? Response { get; set; }
     }
 }

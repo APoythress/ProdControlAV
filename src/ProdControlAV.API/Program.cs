@@ -175,12 +175,17 @@ builder.Services.AddAuthorization(options =>
         policy.RequireAuthenticatedUser();
         policy.RequireClaim("tenantId");
     });
+    
+    // ATEM Control policy - requires ATEM-Control permission
+    options.AddPolicy("AtemControl", policy =>
+        policy.Requirements.Add(new PermissionRequirement("ATEM-Control")));
 });
 
 // IMPORTANT: register the handler as Scoped (or Transient), not Singleton
 builder.Services.AddScoped<IAuthorizationHandler, TenantMemberHandler>();
 builder.Services.AddScoped<IAuthorizationHandler, AdminHandler>();
 builder.Services.AddScoped<IAuthorizationHandler, DevAdminHandler>();
+builder.Services.AddScoped<IAuthorizationHandler, PermissionHandler>();
 
 // Device/infra services
 builder.Services.AddSingleton<ICommandQueue>(new JsonCommandQueue("Data/Commands"));
@@ -289,6 +294,22 @@ builder.Services.AddScoped<ICommandHistoryStore>(sp => {
 
 // Agent Auth Store - Table Storage for agent authentication (eliminates SQL dependency for auth)
 builder.Services.AddScoped<IAgentAuthStore, TableAgentAuthStore>();
+
+// TableClient for AtemState
+builder.Services.AddScoped<IAtemStateStore>(sp => {
+    var tableClient = sp.GetRequiredService<TableServiceClient>().GetTableClient("AtemState");
+    try {
+        tableClient.CreateIfNotExists();
+        var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("TableSetup");
+        logger.LogInformation("Ensured Azure Table exists: AtemState");
+    } catch (Exception ex) {
+        var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("TableSetup");
+        logger.LogWarning(ex, "Failed to ensure Azure Table exists: AtemState");
+    }
+    return new TableAtemStateStore(tableClient);
+});
 
 // Activity Monitor for idle detection and SQL suspension
 builder.Services.Configure<ActivityMonitorOptions>(builder.Configuration.GetSection("ActivityMonitor"));

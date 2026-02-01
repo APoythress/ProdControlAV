@@ -246,7 +246,8 @@ sudo journalctl -u prodcontrolav-agent -f
     "AppcastUrl": "https://yourstorageaccount.blob.core.windows.net/updates/appcast.json",
     "Ed25519PublicKey": "",
     "CheckIntervalSeconds": 3600,
-    "AutoInstall": true
+    "AutoInstall": true,
+    "AppcastTimeoutSeconds": 30
   }
 }
 ```
@@ -281,6 +282,10 @@ The agent supports secure configuration via environment variables with the `PROD
 - **`Ed25519PublicKey`** - Base64-encoded public key for verifying update signatures
 - **`CheckIntervalSeconds`** - How often to check for updates (default: 3600 = 1 hour)
 - **`AutoInstall`** - Automatically download and install updates (default: true)
+- **`AppcastTimeoutSeconds`** - Timeout for downloading appcast manifest (default: 30 seconds)
+  - Increase this value if experiencing timeout errors on slow network connections
+  - The default NetSparkle timeout of 100 seconds is too long; 30 seconds provides faster failure detection
+  - For very slow connections, increase to 60-120 seconds
 
 **For complete automatic update setup instructions, see [AUTOMATIC-UPDATES-SETUP.md](../../AUTOMATIC-UPDATES-SETUP.md)**
 
@@ -433,6 +438,40 @@ sudo journalctl -u prodcontrolav-agent -f
 # Check for errors
 sudo journalctl -u prodcontrolav-agent -p err
 ```
+
+### Update Service Logging
+
+The agent includes dedicated file logging for the UpdateService to track all update-related activity:
+
+**Log Location:** `/opt/prodcontrolav/agent/logs/updateService/`  
+**File Format:** `YYYY-MM-DD_UpdateServiceLog.txt` (daily rotation)
+
+**Features:**
+- Captures all UpdateService operations and NetSparkle library events
+- Detailed error logging with exception stack traces
+- Separate log files per day (UTC) for easy troubleshooting
+- Includes timestamps, log levels, and categorized messages
+- Automatically created on first agent startup
+
+**View Update Logs:**
+```bash
+# View today's update log
+cat /opt/prodcontrolav/agent/logs/updateService/$(date -u +%Y-%m-%d)_UpdateServiceLog.txt
+
+# Follow live update activity
+tail -f /opt/prodcontrolav/agent/logs/updateService/$(date -u +%Y-%m-%d)_UpdateServiceLog.txt
+
+# Search for errors in update logs
+grep -i "error\|warn" /opt/prodcontrolav/agent/logs/updateService/*.txt
+
+# View last 50 lines of today's update log
+tail -50 /opt/prodcontrolav/agent/logs/updateService/$(date -u +%Y-%m-%d)_UpdateServiceLog.txt
+```
+
+**Common Update Issues:**
+- **Timeout errors**: Check network connectivity and firewall settings for accessing update server
+- **Appcast download failures**: Verify the AppcastUrl in appsettings.json is correct and accessible
+- **Signature verification errors**: Ensure Ed25519PublicKey matches the update server's signing key
 
 ### Performance Monitoring
 ```bash

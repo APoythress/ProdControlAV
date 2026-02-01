@@ -154,6 +154,128 @@ namespace ProdControlAV.API.Migrations
                     b.ToTable("Users");
                 });
 
+            modelBuilder.Entity("ProdControlAV.Core.Models.Command", b =>
+                {
+                    b.Property<Guid>("CommandId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CommandData")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("CommandName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("CommandType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTimeOffset>("CreatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("HttpMethod")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<bool>("MonitorRecordingStatus")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("RequestBody")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RequestHeaders")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("RequireDeviceOnline")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("StatusEndpoint")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("StatusPollingIntervalSeconds")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("CommandId");
+
+                    b.HasIndex("TenantId", "CommandName");
+
+                    b.HasIndex("TenantId", "DeviceId");
+
+                    b.ToTable("Commands");
+                });
+
+            modelBuilder.Entity("ProdControlAV.Core.Models.CommandTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("DeviceType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Endpoint")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("HttpMethod")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Payload")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("DeviceType", "Category", "DisplayOrder");
+
+                    b.ToTable("CommandTemplates");
+                });
+
             modelBuilder.Entity("ProdControlAV.Core.Models.Device", b =>
                 {
                     b.Property<Guid>("Id")
@@ -162,6 +284,15 @@ namespace ProdControlAV.API.Migrations
 
                     b.Property<bool>("AllowTelNet")
                         .HasColumnType("bit");
+
+                    b.Property<bool?>("AtemEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("AtemTransitionDefaultRate")
+                        .HasColumnType("int");
+
+                    b.Property<string>("AtemTransitionDefaultType")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Brand")
                         .IsRequired()
@@ -195,6 +326,9 @@ namespace ProdControlAV.API.Migrations
 
                     b.Property<int>("Port")
                         .HasColumnType("int");
+
+                    b.Property<bool?>("RecordingStatus")
+                        .HasColumnType("bit");
 
                     b.Property<bool>("Status")
                         .HasMaxLength(16)
@@ -248,66 +382,6 @@ namespace ProdControlAV.API.Migrations
                     b.ToTable("DeviceActions");
                 });
 
-            modelBuilder.Entity("ProdControlAV.Core.Models.Command", b =>
-                {
-                    b.Property<Guid>("CommandId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("CommandName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
-
-                    b.Property<Guid>("DeviceId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("CommandType")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<string>("CommandData")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.Property<string>("HttpMethod")
-                        .HasMaxLength(10)
-                        .HasColumnType("nvarchar(10)");
-
-                    b.Property<string>("RequestBody")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("RequestHeaders")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTimeOffset>("CreatedUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<DateTimeOffset?>("UpdatedUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<bool>("RequireDeviceOnline")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(true);
-
-                    b.HasKey("CommandId");
-
-                    b.HasIndex("TenantId", "DeviceId");
-
-                    b.HasIndex("TenantId", "CommandName");
-
-                    b.ToTable("Commands");
-                });
-
             modelBuilder.Entity("ProdControlAV.Core.Models.OutboxEntry", b =>
                 {
                     b.Property<Guid>("Id")
@@ -350,59 +424,6 @@ namespace ProdControlAV.API.Migrations
                     b.HasIndex("ProcessedUtc", "CreatedUtc");
 
                     b.ToTable("OutboxEntries");
-                });
-
-            modelBuilder.Entity("ProdControlAV.Core.Models.CommandTemplate", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Category")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<string>("HttpMethod")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("nvarchar(10)");
-
-                    b.Property<string>("Endpoint")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<string>("Payload")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("DeviceType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<int>("DisplayOrder")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DeviceType", "Category", "DisplayOrder");
-
-                    b.HasIndex("IsActive");
-
-                    b.ToTable("CommandTemplates");
                 });
 
             modelBuilder.Entity("ProdControlAV.Core.Models.Tenant", b =>

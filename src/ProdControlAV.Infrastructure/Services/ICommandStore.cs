@@ -81,7 +81,12 @@ namespace ProdControlAV.Infrastructure.Services
         Task MarkAsProcessingAsync(Guid tenantId, Guid commandId, CancellationToken ct);
         
         /// <summary>
-        /// Mark command as failed after max retries
+        /// Mark command as succeeded after successful execution
+        /// </summary>
+        Task MarkAsSucceededAsync(Guid tenantId, Guid commandId, CancellationToken ct);
+        
+        /// <summary>
+        /// Mark command as failed after max retries or execution failure
         /// </summary>
         Task MarkAsFailedAsync(Guid tenantId, Guid commandId, CancellationToken ct);
         

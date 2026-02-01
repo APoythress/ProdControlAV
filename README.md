@@ -54,6 +54,16 @@ Configure individual monitoring intervals for each device to optimize database c
 
 See [Ping Frequency Optimization Guide](docs/PING_FREQUENCY_OPTIMIZATION.md) for details.
 
+#### 🎬 ATEM Video Switcher Control (NEW)
+Full integration with Blackmagic Design ATEM video switchers:
+- **Program Control**: Cut or fade transitions to any input
+- **Preview Control**: Independent preview input management
+- **Macro Execution**: List and run ATEM macros remotely
+- **State Monitoring**: Real-time tracking of program/preview sources
+- **Auto-Reconnect**: Resilient connection with exponential backoff
+
+See [ATEM Integration Guide](src/ProdControlAV.Agent/docs/ATEM-INTEGRATION.md) for setup and usage.
+
 #### 🔍 Real-Time Device Monitoring
 - ICMP ping and TCP probe support for comprehensive device health checks
 - Automatic state change detection with configurable thresholds
@@ -189,21 +199,47 @@ For detailed deployment instructions, see:
 
 ## Contributing
 
+### Architecture Planning Documents
+
+Before making any changes, **always** review the relevant architecture planning documents:
+
+📚 **[Architecture Planning Guides](docs/architecture-planning/)** - Comprehensive guides for all system areas
+
+Quick links:
+- [Database Changes](docs/architecture-planning/DATABASE-CHANGES.md) - SQL vs Table Storage, migrations, multi-tenant patterns
+- [Infrastructure Changes](docs/architecture-planning/INFRASTRUCTURE-CHANGES.md) - Azure services, background services, monitoring
+- [UI/UX Changes](docs/architecture-planning/UI-UX-CHANGES.md) - Blazor components, API patterns, responsive design
+- [Agent Service Changes](docs/architecture-planning/AGENT-SERVICE-CHANGES.md) - Raspberry Pi agent, device monitoring, commands
+- [Security & Multi-Tenant](docs/architecture-planning/SECURITY-MULTITENANT.md) - Authentication, authorization, data isolation
+- [Cost Optimization](docs/architecture-planning/COST-OPTIMIZATION.md) - Storage selection, idle detection, cost monitoring
+
+These documents provide:
+- ✅ Decision frameworks for implementation approaches
+- ✅ Code patterns and best practices
+- ✅ Multi-tenant security requirements
+- ✅ Cost optimization strategies
+- ✅ Testing and deployment checklists
+
 ### Development Workflow
-1. Follow the existing code patterns and conventions
-2. Ensure all tests pass: `dotnet test`
-3. Document any new features or breaking changes
-4. Submit pull requests with comprehensive descriptions
+1. **Read relevant planning documents** for the area you're working on
+2. Follow the existing code patterns and conventions
+3. Ensure all tests pass: `dotnet test`
+4. Verify multi-tenant isolation and security
+5. Check cost impact (prefer Table Storage over SQL)
+6. Document any new features or breaking changes
+7. Submit pull requests with comprehensive descriptions
 
 ### Testing Strategy
 - **Unit Tests**: Core business logic and service implementations
 - **Integration Tests**: Database operations and external service interactions
+- **Multi-Tenant Tests**: Verify data isolation between tenants
 - **End-to-End Tests**: Complete user workflows and system integration
 
 ### Code Quality
 - **Static Analysis**: Built-in .NET analyzers with nullable reference types
 - **Security Scanning**: Regular dependency vulnerability assessments
 - **Performance Monitoring**: Continuous performance regression testing
+- **Cost Monitoring**: Track SQL DTU and storage operation counts
 
 ## License
 

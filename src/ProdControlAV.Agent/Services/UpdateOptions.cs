@@ -36,4 +36,18 @@ public sealed class UpdateOptions
     /// When false, updates are only checked and logged (manual update required).
     /// </summary>
     public bool AutoInstall { get; init; } = true;
+
+    /// <summary>
+    /// Timeout for downloading the appcast manifest (in seconds). Default: 90 seconds.
+    /// This timeout includes DNS resolution, TCP connection, TLS handshake, and data transfer.
+    /// For Raspberry Pi devices on slow/unreliable networks, 90-120 seconds is recommended.
+    /// The previous default of 30 seconds was too aggressive for some network conditions.
+    /// </summary>
+    public int AppcastTimeoutSeconds { get; init; } = 90;
+    
+    public string ApiBaseUrl { get; set; } = string.Empty;
+    
+    public string ApiKey { get; set; } = string.Empty;
+    
+    public string AgentId { get; set; } = string.Empty;
 }
