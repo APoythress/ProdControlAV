@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProdControlAV.Core.Models;
+using ProdControlAV.API.Models;
+using Microsoft.Extensions.Options;
 // <-- add this
 
 namespace ProdControlAV.API.Controllers;
@@ -15,10 +17,12 @@ namespace ProdControlAV.API.Controllers;
 public class TenantsController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly IOptions<ClientNotesOptions> _notesOptions;
 
-    public TenantsController(AppDbContext db)
+    public TenantsController(AppDbContext db, IOptions<ClientNotesOptions> notesOptions)
     {
         _db = db;
+        _notesOptions = notesOptions;
     }
 
     public record CreateTenantRequest(string Name, string Slug);
@@ -132,5 +136,275 @@ public class TenantsController : ControllerBase
     {
         var t = await _db.Tenants.FindAsync(new object?[] { id }, ct);
         return t is null ? NotFound() : Ok(t);
+    }
+
+    /// <summary>
+    /// Get tenant management details including agents and recent notes
+    /// </summary>
+    [Authorize]
+    [HttpGet("{id}/manage")]
+    public async Task<ActionResult<TenantManagementDto>> GetManagementDetails(Guid id, CancellationToken ct)
+    {
+        var tenant = await _db.Tenants
+            .Include(t => t.TenantStatus)
+            .Include(t => t.SubscriptionPlan)
+            .FirstOrDefaultAsync(t => t.TenantId == id, ct);
+
+        if (tenant is null)
+            return NotFound(new { error = "tenant_not_found" });
+
+        var agents = await _db.Agents
+            .Where(a => a.TenantId == id)
+            .Select(a => new AgentDto(a.Id, a.Name, a.LocationName, a.LastSeenUtc, a.Version))
+            .ToListAsync(ct);
+
+        var recentNotes = await _db.ClientNotes
+            .Where(n => n.TenantId == id)
+            .OrderByDescending(n => n.CreatedUtc)
+            .Take(3)
+            .Select(n => new ClientNoteDto(n.Id, n.NoteText, n.CreatedUtc, n.CreatedBy))
+            .ToListAsync(ct);
+
+        var result = new TenantManagementDto(
+            tenant.TenantId,
+            tenant.Name,
+            tenant.Slug,
+            tenant.TenantStatusId,
+            tenant.TenantStatus?.TenantStatusText,
+            tenant.SubscriptionPlanId,
+            tenant.SubscriptionPlan?.SubscriptionPlanText,
+            tenant.CreatedUtc,
+            agents,
+            recentNotes
+        );
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Update tenant name
+    /// </summary>
+    [Authorize]
+    [HttpPut("{id}/name")]
+    public async Task<IActionResult> UpdateName(Guid id, [FromBody] UpdateTenantNameRequest request, CancellationToken ct)
+    {
+        var tenant = await _db.Tenants.FindAsync(new object?[] { id }, ct);
+        if (tenant is null)
+            return NotFound(new { error = "tenant_not_found" });
+
+        tenant.Name = request.Name.Trim();
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new { message = "name_updated" });
+    }
+
+    /// <summary>
+    /// Update tenant subscription plan
+    /// </summary>
+    [Authorize]
+    [HttpPut("{id}/subscription")]
+    public async Task<IActionResult> UpdateSubscription(Guid id, [FromBody] UpdateTenantSubscriptionRequest request, CancellationToken ct)
+    {
+        var tenant = await _db.Tenants.FindAsync(new object?[] { id }, ct);
+        if (tenant is null)
+            return NotFound(new { error = "tenant_not_found" });
+
+        var subscriptionExists = await _db.TenantSubscriptionPlans
+            .AnyAsync(sp => sp.SubscriptionPlanId == request.SubscriptionPlanId, ct);
+
+        if (!subscriptionExists)
+            return BadRequest(new { error = "invalid_subscription_plan" });
+
+        tenant.SubscriptionPlanId = request.SubscriptionPlanId;
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new { message = "subscription_updated" });
+    }
+
+    /// <summary>
+    /// Update tenant status (with validation)
+    /// </summary>
+    [Authorize]
+    [HttpPut("{id}/status")]
+    public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateTenantStatusRequest request, CancellationToken ct)
+    {
+        var tenant = await _db.Tenants.FindAsync(new object?[] { id }, ct);
+        if (tenant is null)
+            return NotFound(new { error = "tenant_not_found" });
+
+        var statusExists = await _db.TenantStatuses
+            .AnyAsync(s => s.TenantStatusId == request.TenantStatusId, ct);
+
+        if (!statusExists)
+            return BadRequest(new { error = "invalid_status" });
+
+        tenant.TenantStatusId = request.TenantStatusId;
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new { message = "status_updated" });
+    }
+
+    /// <summary>
+    /// Regenerate tenant slug (destructive operation)
+    /// </summary>
+    [Authorize]
+    [HttpPost("{id}/regenerate-slug")]
+    public async Task<ActionResult<RegenerateSlugResponse>> RegenerateSlug(Guid id, CancellationToken ct)
+    {
+        var tenant = await _db.Tenants.FindAsync(new object?[] { id }, ct);
+        if (tenant is null)
+            return NotFound(new { error = "tenant_not_found" });
+
+        var newSlug = Guid.NewGuid().ToString("N")[..16];
+        
+        var attempts = 0;
+        while (await _db.Tenants.AnyAsync(t => t.Slug == newSlug, ct) && attempts < 10)
+        {
+            newSlug = Guid.NewGuid().ToString("N")[..16];
+            attempts++;
+        }
+
+        if (attempts >= 10)
+            return StatusCode(500, new { error = "failed_to_generate_unique_slug" });
+
+        tenant.Slug = newSlug;
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new RegenerateSlugResponse(newSlug));
+    }
+
+    /// <summary>
+    /// Add a new agent for the tenant
+    /// </summary>
+    [Authorize]
+    [HttpPost("{id}/agents")]
+    public async Task<ActionResult<AgentDto>> AddAgent(Guid id, [FromBody] AddAgentRequest request, CancellationToken ct)
+    {
+        var tenant = await _db.Tenants.FindAsync(new object?[] { id }, ct);
+        if (tenant is null)
+            return NotFound(new { error = "tenant_not_found" });
+
+        var agentKey = Guid.NewGuid().ToString("N");
+        var agentKeyHash = BCrypt.Net.BCrypt.HashPassword(agentKey);
+
+        var agent = new Agent
+        {
+            Id = Guid.NewGuid(),
+            TenantId = id,
+            Name = request.Name.Trim(),
+            LocationName = request.LocationName?.Trim(),
+            AgentKeyHash = agentKeyHash
+        };
+
+        _db.Agents.Add(agent);
+        await _db.SaveChangesAsync(ct);
+
+        var agentDto = new AgentDto(agent.Id, agent.Name, agent.LocationName, agent.LastSeenUtc, agent.Version);
+        return CreatedAtAction(nameof(GetAgents), new { id }, agentDto);
+    }
+
+    /// <summary>
+    /// Get all agents for a tenant
+    /// </summary>
+    [Authorize]
+    [HttpGet("{id}/agents")]
+    public async Task<ActionResult<List<AgentDto>>> GetAgents(Guid id, CancellationToken ct)
+    {
+        var tenant = await _db.Tenants.FindAsync(new object?[] { id }, ct);
+        if (tenant is null)
+            return NotFound(new { error = "tenant_not_found" });
+
+        var agents = await _db.Agents
+            .Where(a => a.TenantId == id)
+            .Select(a => new AgentDto(a.Id, a.Name, a.LocationName, a.LastSeenUtc, a.Version))
+            .ToListAsync(ct);
+
+        return Ok(agents);
+    }
+
+    /// <summary>
+    /// Add a note for the client/tenant
+    /// </summary>
+    [Authorize]
+    [HttpPost("{id}/notes")]
+    public async Task<ActionResult<ClientNoteDto>> AddNote(Guid id, [FromBody] AddClientNoteRequest request, CancellationToken ct)
+    {
+        var tenant = await _db.Tenants.FindAsync(new object?[] { id }, ct);
+        if (tenant is null)
+            return NotFound(new { error = "tenant_not_found" });
+
+        if (request.NoteText.Length > _notesOptions.Value.MaxCharacterLimit)
+            return BadRequest(new { error = "note_exceeds_character_limit", limit = _notesOptions.Value.MaxCharacterLimit });
+
+        var userEmail = User.FindFirstValue(ClaimTypes.Email) ?? "Unknown";
+
+        var note = new ClientNote
+        {
+            Id = Guid.NewGuid(),
+            TenantId = id,
+            NoteText = request.NoteText.Trim(),
+            CreatedUtc = DateTime.UtcNow,
+            CreatedBy = userEmail
+        };
+
+        _db.ClientNotes.Add(note);
+        await _db.SaveChangesAsync(ct);
+
+        var noteDto = new ClientNoteDto(note.Id, note.NoteText, note.CreatedUtc, note.CreatedBy);
+        return CreatedAtAction(nameof(GetNotes), new { id, page = 1, pageSize = 15 }, noteDto);
+    }
+
+    /// <summary>
+    /// Get notes for a tenant (paginated)
+    /// </summary>
+    [Authorize]
+    [HttpGet("{id}/notes")]
+    public async Task<ActionResult<ClientNotesResponse>> GetNotes(Guid id, [FromQuery] int page = 1, [FromQuery] int pageSize = 15, CancellationToken ct = default)
+    {
+        var tenant = await _db.Tenants.FindAsync(new object?[] { id }, ct);
+        if (tenant is null)
+            return NotFound(new { error = "tenant_not_found" });
+
+        if (page < 1) page = 1;
+        if (pageSize < 1 || pageSize > 100) pageSize = 15;
+
+        var totalCount = await _db.ClientNotes
+            .Where(n => n.TenantId == id)
+            .CountAsync(ct);
+
+        var notes = await _db.ClientNotes
+            .Where(n => n.TenantId == id)
+            .OrderByDescending(n => n.CreatedUtc)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(n => new ClientNoteDto(n.Id, n.NoteText, n.CreatedUtc, n.CreatedBy))
+            .ToListAsync(ct);
+
+        var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+        var response = new ClientNotesResponse(notes, totalCount, pageSize, page, totalPages);
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Get list of available subscription plans
+    /// </summary>
+    [Authorize]
+    [HttpGet("subscription-plans")]
+    public async Task<ActionResult<List<TenantSubscriptionPlan>>> GetSubscriptionPlans(CancellationToken ct)
+    {
+        var plans = await _db.TenantSubscriptionPlans.ToListAsync(ct);
+        return Ok(plans);
+    }
+
+    /// <summary>
+    /// Get list of available tenant statuses
+    /// </summary>
+    [Authorize]
+    [HttpGet("statuses")]
+    public async Task<ActionResult<List<TenantStatus>>> GetStatuses(CancellationToken ct)
+    {
+        var statuses = await _db.TenantStatuses.ToListAsync(ct);
+        return Ok(statuses);
     }
 }

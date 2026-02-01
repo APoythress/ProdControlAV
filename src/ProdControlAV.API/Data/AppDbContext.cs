@@ -24,6 +24,7 @@ public class AppDbContext : DbContext
     public DbSet<UserPermission> UserPermissions => Set<UserPermission>();
     public DbSet<TenantStatus> TenantStatuses => Set<TenantStatus>();
     public DbSet<TenantSubscriptionPlan> TenantSubscriptionPlans => Set<TenantSubscriptionPlan>();
+    public DbSet<ClientNote> ClientNotes => Set<ClientNote>();
 // Ensure you already have: Devices, DeviceStatusHistory
 
 
@@ -132,6 +133,22 @@ public class AppDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(x => x.SubscriptionPlanId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        b.Entity<ClientNote>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.NoteText).HasMaxLength(500).IsRequired();
+            e.Property(x => x.CreatedBy).HasMaxLength(200).IsRequired();
+            e.HasIndex(x => new { x.TenantId, x.CreatedUtc });
+        });
+
+        b.Entity<Agent>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            e.Property(x => x.LocationName).HasMaxLength(200);
+            e.HasIndex(x => x.TenantId);
         });
     }
 }
