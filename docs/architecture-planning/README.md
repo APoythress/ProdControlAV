@@ -1,5 +1,13 @@
 # Architecture Planning Documents - Index
 
+## 🚀 Quick Start
+
+**New to these docs?** Start here: **[QUICK-START.md](./QUICK-START.md)**
+- Decision trees to find the right document
+- Critical rules (never break these!)
+- At-a-glance reference tables
+- Common scenarios with examples
+
 ## Overview
 
 This directory contains comprehensive architecture planning documents for coding agents working on ProdControlAV. These documents establish patterns, best practices, and decision-making frameworks to ensure consistency, cost-effectiveness, security, and multi-tenant support across all changes.
