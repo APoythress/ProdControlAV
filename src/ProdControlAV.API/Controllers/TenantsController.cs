@@ -23,6 +23,51 @@ public class TenantsController : ControllerBase
 
     public record CreateTenantRequest(string Name, string Slug);
 
+    public record TenantWithStats
+    {
+        public Guid TenantId { get; set; }
+        public string Name { get; set; } = default!;
+        public string Slug { get; set; } = default!;
+        public DateTime CreatedUtc { get; set; }
+        public int DeviceCount { get; set; }
+        public string? Status { get; set; }
+        public string? Subscription { get; set; }
+    }
+
+    [Authorize]
+    [HttpGet("all")]
+    public async Task<ActionResult<List<TenantWithStats>>> GetAll(CancellationToken ct)
+    {
+        // Get all tenants with their related data
+        var tenants = await _db.Tenants
+            .Include(t => t.TenantStatus)
+            .Include(t => t.SubscriptionPlan)
+            .ToListAsync(ct);
+
+        var result = new List<TenantWithStats>();
+
+        foreach (var tenant in tenants)
+        {
+            // Count devices for this tenant
+            var deviceCount = await _db.Devices
+                .Where(d => d.TenantId == tenant.TenantId)
+                .CountAsync(ct);
+
+            result.Add(new TenantWithStats
+            {
+                TenantId = tenant.TenantId,
+                Name = tenant.Name,
+                Slug = tenant.Slug,
+                CreatedUtc = tenant.CreatedUtc,
+                DeviceCount = deviceCount,
+                Status = tenant.TenantStatus?.TenantStatusText ?? "Active",
+                Subscription = tenant.SubscriptionPlan?.SubscriptionPlanText ?? "N/A"
+            });
+        }
+
+        return Ok(result);
+    }
+
     [Authorize]
     [HttpPost]
     public async Task<ActionResult<Tenant>> Create([FromBody] CreateTenantRequest req, CancellationToken ct)
