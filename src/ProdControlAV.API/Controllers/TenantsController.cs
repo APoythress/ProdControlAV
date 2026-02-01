@@ -44,26 +44,24 @@ public class TenantsController : ControllerBase
             .Include(t => t.SubscriptionPlan)
             .ToListAsync(ct);
 
-        var result = new List<TenantWithStats>();
+        // Get device counts for all tenants in a single query
+        var deviceCounts = await _db.Devices
+            .GroupBy(d => d.TenantId)
+            .Select(g => new { TenantId = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
 
-        foreach (var tenant in tenants)
+        var deviceCountDict = deviceCounts.ToDictionary(dc => dc.TenantId, dc => dc.Count);
+
+        var result = tenants.Select(tenant => new TenantWithStats
         {
-            // Count devices for this tenant
-            var deviceCount = await _db.Devices
-                .Where(d => d.TenantId == tenant.TenantId)
-                .CountAsync(ct);
-
-            result.Add(new TenantWithStats
-            {
-                TenantId = tenant.TenantId,
-                Name = tenant.Name,
-                Slug = tenant.Slug,
-                CreatedUtc = tenant.CreatedUtc,
-                DeviceCount = deviceCount,
-                Status = tenant.TenantStatus?.TenantStatusText ?? "Active",
-                Subscription = tenant.SubscriptionPlan?.SubscriptionPlanText ?? "N/A"
-            });
-        }
+            TenantId = tenant.TenantId,
+            Name = tenant.Name,
+            Slug = tenant.Slug,
+            CreatedUtc = tenant.CreatedUtc,
+            DeviceCount = deviceCountDict.TryGetValue(tenant.TenantId, out var count) ? count : 0,
+            Status = tenant.TenantStatus?.TenantStatusText ?? "Active",
+            Subscription = tenant.SubscriptionPlan?.SubscriptionPlanText ?? "N/A"
+        }).ToList();
 
         return Ok(result);
     }

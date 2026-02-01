@@ -23,7 +23,7 @@ public class AppDbContext : DbContext
     public DbSet<CommandTemplate> CommandTemplates => Set<CommandTemplate>();
     public DbSet<UserPermission> UserPermissions => Set<UserPermission>();
     public DbSet<TenantStatus> TenantStatuses => Set<TenantStatus>();
-    public DbSet<SubscriptionPlans> SubscriptionPlans => Set<SubscriptionPlans>();
+    public DbSet<TenantSubscriptionPlan> SubscriptionPlans => Set<TenantSubscriptionPlan>();
 // Ensure you already have: Devices, DeviceStatusHistory
 
 
@@ -113,7 +113,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.TenantStatusText).HasMaxLength(25).IsRequired();
         });
 
-        b.Entity<SubscriptionPlans>(e =>
+        b.Entity<TenantSubscriptionPlan>(e =>
         {
             e.HasKey(x => x.SubscriptionPlanId);
             e.Property(x => x.SubscriptionPlanText).HasMaxLength(25).IsRequired();

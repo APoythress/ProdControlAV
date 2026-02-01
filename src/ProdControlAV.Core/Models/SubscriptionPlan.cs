@@ -4,7 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace ProdControlAV.Core.Models;
 
 [Table("SubscriptionPlans")]
-public class SubscriptionPlans
+public class TenantSubscriptionPlan
 {
     [Key]
     public int SubscriptionPlanId { get; set; }

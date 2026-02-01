@@ -27,5 +27,5 @@ public class Tenant
     public TenantStatus? TenantStatus { get; set; }
 
     [ForeignKey("SubscriptionPlanId")]
-    public SubscriptionPlans? SubscriptionPlan { get; set; }
+    public TenantSubscriptionPlan? SubscriptionPlan { get; set; }
 }
