@@ -1,12 +1,27 @@
 # Database Schema Deployment Guide
 
-This document explains how to deploy database schema changes for ProdControlAV after removing automatic migrations from the GitHub Actions CI/CD pipeline.
+This document explains database schema deployment for ProdControlAV.
 
 ## 📋 Overview
 
-Starting from this update, database migrations are **no longer applied automatically** during CI/CD deployments. Instead, you must manually apply schema changes to your database using the generated SQL scripts.
+Database migrations are **automatically applied** when the application starts. When the API container is deployed to Azure Container Apps, it will automatically detect and apply any pending database migrations before serving requests.
 
-## 🛠️ Generating SQL Migration Scripts
+### How It Works
+
+1. The application checks for pending migrations on startup
+2. If migrations are pending, they are applied automatically
+3. If migration fails, the application will not start (fail-fast behavior)
+4. Once migrations succeed, the application continues normal startup
+
+This ensures that the database schema is always up-to-date with the deployed code, eliminating the need for manual database updates after deployments.
+
+## 🛠️ Manual Migration Scripts (Optional)
+
+While migrations are applied automatically at startup, you may still want to generate SQL scripts for the following scenarios:
+
+- **Pre-deployment review**: Review SQL changes before deploying
+- **Complex migrations**: Apply migrations manually during scheduled maintenance windows
+- **Backup purposes**: Keep SQL scripts as documentation
 
 ### Prerequisites
 
@@ -43,34 +58,34 @@ scripts\generate-db-scripts.bat
 
 ## 📦 Deployment Process
 
-### For New Databases (Fresh Installation)
+### Automatic Migration (Default)
+
+The application automatically applies pending migrations on startup:
+
+1. **Code changes** are pushed to `main`
+2. **GitHub Actions** builds and deploys the Docker container
+3. **Container starts** and automatically detects pending migrations
+4. **Migrations are applied** to the database
+5. **Application starts** serving requests with the updated schema
+
+No manual intervention is required for standard deployments.
+
+### Manual Migration (Optional)
+
+For complex migrations or scheduled maintenance windows, you can disable automatic migrations and apply them manually:
 
 1. **Generate the scripts**:
    ```bash
    ./scripts/generate-db-scripts.sh
    ```
 
-2. **Configure your connection string** in `appsettings.Production.json`:
-   ```json
-   {
-     "ConnectionStrings": {
-       "DefaultConnection": "Server=your-server.database.windows.net,1433;Database=your-db;User Id=your-user;Password=your-password;Encrypt=True;"
-     }
-   }
-   ```
-
-3. **Run the complete schema script** against your SQL Server database:
-   ```sql
-   -- Execute: database-scripts/01-complete-schema.sql
-   ```
-
-### For Existing Databases (Updates)
-
-1. **Generate new scripts** after merging changes to main
 2. **Backup your production database** (CRITICAL!)
+
 3. **Test the scripts** on a staging/development database first
-4. **Apply the incremental scripts** in the correct order
-5. **Deploy your application** using the existing CI/CD pipeline
+
+4. **Apply the scripts** in the correct order to your production database
+
+5. **Deploy your application** using the existing CI/CD pipeline (migrations will be skipped if already applied)
 
 ## 🔐 Security Considerations
 
@@ -86,52 +101,67 @@ scripts\generate-db-scripts.bat
 
 ## 🎯 CI/CD Integration
 
-### What Changed in GitHub Actions
+### How Migrations Are Applied
 
-The following steps were **removed** from the deployment workflow:
-```yaml
-# REMOVED: These steps no longer run automatically
-- name: Install EF Core tools
-  run: dotnet tool install --global dotnet-ef
-
-- name: Apply database migrations
-  run: |
-    cd src/ProdControlAV.API
-    dotnet ef database update --verbose
-  env:
-    ConnectionStrings__DefaultConnection: ${{ secrets.SQL_CONNECTION_STRING }}
-```
-
-### New Deployment Flow
+Database migrations are applied automatically when the container starts:
 
 1. **Code changes** are pushed to `main`
-2. **GitHub Actions** builds and deploys the application (without migrations)
-3. **Developer manually applies** database schema changes using generated scripts
-4. **Application connects** to the updated database
+2. **GitHub Actions** builds and deploys the Docker container
+3. **Container starts** and executes `Program.cs` startup code
+4. **Migrations are detected** using Entity Framework Core's `Database.Migrate()` method
+5. **Pending migrations are applied** to the database
+6. **Application starts** serving requests
+
+If migration fails, the container will not start and will log the error for investigation.
 
 ## 📝 Best Practices
 
 ### Before Deployment
-- [ ] Generate and review SQL scripts
-- [ ] Backup production database
-- [ ] Test scripts on staging environment
-- [ ] Verify application compatibility
+- [ ] Review Entity Framework migrations in code
+- [ ] Test migrations on staging environment first
+- [ ] Verify application compatibility with schema changes
+- [ ] Monitor container logs during deployment
 
 ### During Deployment
-- [ ] Apply scripts during maintenance window
-- [ ] Monitor for errors during execution
-- [ ] Verify data integrity after completion
-- [ ] Test critical application functionality
+- [ ] Monitor container startup logs for migration progress
+- [ ] Watch for any errors during migration execution
+- [ ] Verify container health after startup
 
 ### After Deployment
-- [ ] Document what was deployed
-- [ ] Monitor application logs
 - [ ] Verify all features work correctly
-- [ ] Keep backup until confident in stability
+- [ ] Monitor application logs for any database-related errors
+- [ ] Test critical functionality that uses updated schema
 
 ## 🐛 Troubleshooting
 
-### Script Generation Issues
+### Migration Failures
+
+**Problem**: Container fails to start with migration errors
+```
+Solution:
+1. Check Azure Container App logs for specific migration error
+2. Verify connection string is correctly configured in secrets
+3. Ensure database server is accessible from Container App
+4. Check if database user has sufficient permissions (dbowner or equivalent)
+```
+
+**Problem**: "The connection string 'DefaultConnection' is missing"
+```
+Solution:
+1. Verify the secret 'db-connstr' is set in Container App
+2. Ensure environment variable ConnectionStrings__DefaultConnection references the secret
+3. Check the deployment workflow set-secret and set-env-vars steps
+```
+
+**Problem**: Migration times out during startup
+```
+Solution:
+1. Increase container startup timeout in Azure Container App settings
+2. For large migrations, consider applying manually first using SQL scripts
+3. Check database server resources and connection limits
+```
+
+### Script Generation Issues (for manual migrations)
 
 **Problem**: "dotnet-ef not found"
 ```bash
@@ -139,65 +169,60 @@ The following steps were **removed** from the deployment workflow:
 dotnet tool install --global dotnet-ef
 ```
 
-**Problem**: "DefaultConnection connection string is required"
-```bash
-# Solution: The script should handle this automatically
-# If it doesn't, check that DesignTimeDbContextFactory.cs includes:
-# .AddJsonFile("appsettings.ScriptGeneration.json", optional: true)
-```
-
-### Database Deployment Issues
-
-**Problem**: Script execution errors
-- Check SQL Server version compatibility
-- Verify connection string and permissions
-- Review script for potential conflicts
-
-**Problem**: Application won't start after migration
-- Verify all migrations were applied successfully
-- Check application configuration
-- Review connection string settings
-
 ## 📞 Support
 
 If you encounter issues:
 
-1. **Check the generated SQL scripts** for obvious problems
-2. **Test on a development database** first
-3. **Review Entity Framework migrations** in the `Migrations/` folder
-4. **Consult the application logs** for specific error messages
+1. **Check Azure Container App logs** for migration errors during startup
+2. **Review Entity Framework migrations** in the `Migrations/` folder
+3. **Verify database connectivity** and permissions
+4. **Test migrations locally** against a test database before deploying
 
-## 🔄 Example Workflow
+## 🔄 Example Deployment Workflow
 
-Here's a complete example workflow for deploying schema changes:
+### Automatic Migration (Standard)
 
 ```bash
-# 1. After merging schema changes to main
-git pull origin main
+# 1. Develop and test your changes locally
+git checkout -b feature/my-database-change
 
-# 2. Generate SQL scripts
+# 2. Add Entity Framework migration
+cd src/ProdControlAV.API
+dotnet ef migrations add MyMigrationName
+
+# 3. Test locally with automatic migration
+dotnet run  # Migrations apply automatically on startup
+
+# 4. Commit and push changes
+git add .
+git commit -m "Add database migration for feature X"
+git push origin feature/my-database-change
+
+# 5. Create PR and merge to main
+# GitHub Actions will automatically:
+# - Build the Docker container
+# - Deploy to Azure Container Apps
+# - Container applies migrations on startup
+```
+
+### Manual Migration (Complex Changes)
+
+For complex migrations that need review or scheduled maintenance:
+
+```bash
+# 1. Generate SQL scripts for review
 ./scripts/generate-db-scripts.sh
 
-# 3. Review the generated scripts
+# 2. Review the generated scripts
 cat database-scripts/01-complete-schema.sql
 
-# 4. Backup production database (using your preferred method)
-# Example: Azure CLI
-az sql db export --resource-group MyResourceGroup --server MyServer --name MyDatabase --admin-user MyUser --admin-password MyPassword --storage-key MyStorageKey --storage-key-type StorageAccessKey --storage-uri https://myaccount.blob.core.windows.net/mycontainer/backup.bacpac
+# 3. Test on staging environment
+# Deploy to staging first and monitor migration logs
 
-# 5. Apply scripts to staging first
-sqlcmd -S staging-server -d staging-db -i database-scripts/01-complete-schema.sql
-
-# 6. Test staging environment
-# ... run tests ...
-
-# 7. Apply to production during maintenance window
-sqlcmd -S production-server -d production-db -i database-scripts/01-complete-schema.sql
-
-# 8. Deploy application (triggers automatically via GitHub Actions)
-# Application deployment happens automatically when changes are pushed to main
+# 4. Once verified, deploy to production
+# The automatic migration will apply changes on container startup
 ```
 
 ---
 
-This approach gives you full control over when and how database schema changes are applied, reducing the risk of deployment failures due to database issues.
+With automatic migrations on container startup, database schema changes are deployed seamlessly alongside code changes, eliminating manual intervention and reducing the risk of schema mismatches between code and database.
