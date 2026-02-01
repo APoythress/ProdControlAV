@@ -299,18 +299,18 @@ public class DeviceOfflineNotificationService : BackgroundService
             return;
         }
 
-        // Check if agent is offline (not updated in 20 minutes)
+        // Calculate time since last seen
         var timeSinceLastSeen = now - currentLastSeen.Value;
-        var isOffline = timeSinceLastSeen.TotalMinutes >= AgentOfflineThresholdMinutes;
-
-        // Check if this is a new offline detection (wasn't offline before or last seen changed)
+        
+        // Determine agent states
+        var isCurrentlyOffline = timeSinceLastSeen.TotalMinutes >= AgentOfflineThresholdMinutes;
         var wasOfflineBefore = previousLastSeen.HasValue && 
                                (now - previousLastSeen.Value).TotalMinutes >= AgentOfflineThresholdMinutes;
+        var hasLastSeenChanged = !previousLastSeen.HasValue || previousLastSeen.Value != currentLastSeen.Value;
+        var isNewOfflineTransition = isCurrentlyOffline && (!wasOfflineBefore || hasLastSeenChanged);
 
-        // Only notify if agent is offline and either:
-        // 1. We haven't notified about this agent recently (rate limiting)
-        // 2. This is a transition to offline state
-        if (isOffline && (!wasOfflineBefore || !previousLastSeen.HasValue || previousLastSeen.Value != currentLastSeen.Value))
+        // Only notify if agent is offline and this is a new offline state or transition
+        if (isCurrentlyOffline && isNewOfflineTransition)
         {
             // Check rate limiting
             if (_lastNotificationTime.TryGetValue(agentId, out var lastNotification))
@@ -341,8 +341,9 @@ public class DeviceOfflineNotificationService : BackgroundService
                 return;
             }
 
-            // Format last seen in 12-hour format: "HH:MM:SS AM/PM"
-            var lastSeenFormatted = currentLastSeen.Value.ToLocalTime().ToString("hh:mm:ss tt");
+            // Format last seen in UTC with explicit timezone indicator to avoid confusion
+            // Using 12-hour format as requested, but showing UTC time
+            var lastSeenFormatted = currentLastSeen.Value.ToString("hh:mm:ss tt") + " UTC";
             var message = $"PROD-CONTROL: Alert - {agent.Name} is offline! Last seen: {lastSeenFormatted}";
 
             foreach (var user in usersToNotify)

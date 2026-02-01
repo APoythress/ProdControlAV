@@ -15,7 +15,7 @@ namespace ProdControlAV.API.Migrations
                 table: "Devices",
                 type: "bit",
                 nullable: false,
-                defaultValue: false);
+                defaultValue: true);
         }
 
         /// <inheritdoc />
