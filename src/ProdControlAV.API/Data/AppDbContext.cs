@@ -85,8 +85,13 @@ public class AppDbContext : DbContext
         // Automatically pick up all IEntityTypeConfiguration<T> in this assembly
         b.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
 
-        b.Entity<AppUser>()
-            .HasKey(x => x.UserId);
+        b.Entity<AppUser>(e =>
+        {
+            e.HasKey(x => x.UserId);
+            e.Property(x => x.SubscriptionPlan).HasDefaultValue(SubscriptionPlan.Base);
+            e.Property(x => x.PhoneNumber).HasMaxLength(500); // Encrypted, so longer than raw phone number
+            e.Property(x => x.SmsNotificationsEnabled).HasDefaultValue(false);
+        });
         
         b.Entity<UserPermission>(e =>
         {

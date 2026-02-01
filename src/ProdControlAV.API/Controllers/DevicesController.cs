@@ -135,7 +135,7 @@ public class DevicesController : ControllerBase
         return Ok(d);
     }
 
-    public record UpsertDevice(Guid? Id, string Name, string Model, string Brand, string Type, bool AllowTelNet, string Ip, int? Port, string? Location, int? PingFrequencySeconds, bool? AtemEnabled, int? AtemTransitionDefaultRate, string? AtemTransitionDefaultType);
+    public record UpsertDevice(Guid? Id, string Name, string Model, string Brand, string Type, bool AllowTelNet, string Ip, int? Port, string? Location, int? PingFrequencySeconds, bool? AtemEnabled, int? AtemTransitionDefaultRate, string? AtemTransitionDefaultType, bool? SmsAlertsEnabled);
 
     [HttpPost]
     [Authorize(Policy = "IsMember")]
@@ -158,6 +158,7 @@ public class DevicesController : ControllerBase
             Location = dto.Location?.Trim(),
             Status = false,
             PingFrequencySeconds = dto.PingFrequencySeconds.GetValueOrDefault(300),
+            SmsAlertsEnabled = dto.SmsAlertsEnabled.GetValueOrDefault(true), // Default to enabled
             AtemEnabled = dto.AtemEnabled,
             AtemTransitionDefaultRate = dto.AtemTransitionDefaultRate,
             AtemTransitionDefaultType = dto.AtemTransitionDefaultType?.Trim()
@@ -202,6 +203,8 @@ public class DevicesController : ControllerBase
         if (dto.Port.HasValue && dto.Port.Value > 0) d.Port = dto.Port.Value;
         if (dto.PingFrequencySeconds.HasValue && dto.PingFrequencySeconds.Value >= 5) 
             d.PingFrequencySeconds = dto.PingFrequencySeconds.Value;
+        if (dto.SmsAlertsEnabled.HasValue)
+            d.SmsAlertsEnabled = dto.SmsAlertsEnabled.Value;
         d.AllowTelNet = dto.AllowTelNet;
         d.Location = dto.Location?.Trim();
         d.AtemEnabled = dto.AtemEnabled;

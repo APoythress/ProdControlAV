@@ -315,12 +315,23 @@ builder.Services.AddScoped<IAtemStateStore>(sp => {
 builder.Services.Configure<ActivityMonitorOptions>(builder.Configuration.GetSection("ActivityMonitor"));
 builder.Services.AddSingleton<IActivityMonitor, DistributedActivityMonitor>();
 
+// Twilio SMS service for notifications
+builder.Services.Configure<TwilioConfig>(builder.Configuration.GetSection("Twilio"));
+builder.Services.AddSingleton<ISmsService, TwilioSmsService>();
+
+// Data Protection service for encrypting sensitive data (phone numbers)
+builder.Services.AddDataProtection();
+builder.Services.AddScoped<IDataProtectionService, AspNetCoreDataProtectionService>();
+
 // Background service for device projection - DISABLED to stop continuous DB polling
 // Devices and DeviceActions are now written directly to Table Storage when created/updated
 // builder.Services.AddHostedService<DeviceProjectionHostedService>();
 
 // Background service for table retention enforcement (deletes entries older than 8 days)
 builder.Services.AddHostedService<TableRetentionEnforcementService>();
+
+// Background service for device offline notifications (SMS)
+builder.Services.AddHostedService<DeviceOfflineNotificationService>();
 
 // Add Swagger/OpenAPI support
 builder.Services.AddEndpointsApiExplorer();

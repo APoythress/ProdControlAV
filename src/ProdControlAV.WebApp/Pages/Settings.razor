@@ -80,6 +80,9 @@
                                             <i class="bi bi-clock me-2"></i>Frequency (seconds)
                                         </th>
                                         <th class="border-0 py-3 text-center">
+                                            <i class="bi bi-phone me-2"></i>SMS Alerts
+                                        </th>
+                                        <th class="border-0 py-3 text-center">
                                             <i class="bi bi-lightning me-2"></i>Action
                                         </th>
                                     </tr>
@@ -106,6 +109,18 @@
                                                     <span class="input-group-text">s</span>
                                                 </div>
                                                 <small class="text-muted d-block mt-1">Min: 5s, Max: 1hr</small>
+                                            </td>
+                                            <td class="align-middle text-center">
+                                                <div class="form-check form-switch d-inline-block">
+                                                    <input class="form-check-input" 
+                                                           type="checkbox" 
+                                                           role="switch"
+                                                           @bind="device.SmsAlertsEnabled"
+                                                           id="smsAlert_@device.Id" />
+                                                    <label class="form-check-label visually-hidden" for="smsAlert_@device.Id">
+                                                        SMS Alerts
+                                                    </label>
+                                                </div>
                                             </td>
                                             <td class="align-middle text-center">
                                                 <button class="btn btn-sm btn-primary px-4" 
