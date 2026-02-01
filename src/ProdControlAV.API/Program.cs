@@ -375,10 +375,20 @@ using (var scope = app.Services.CreateScope())
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     try
     {
-        logger.LogInformation("Applying pending database migrations...");
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        dbContext.Database.Migrate();
-        logger.LogInformation("Database migrations applied successfully.");
+        var pendingMigrations = dbContext.Database.GetPendingMigrations().ToList();
+        
+        if (pendingMigrations.Any())
+        {
+            logger.LogInformation("Applying {Count} pending database migration(s): {Migrations}", 
+                pendingMigrations.Count, string.Join(", ", pendingMigrations));
+            dbContext.Database.Migrate();
+            logger.LogInformation("Database migrations applied successfully.");
+        }
+        else
+        {
+            logger.LogInformation("No pending database migrations to apply.");
+        }
     }
     catch (Exception ex)
     {

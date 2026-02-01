@@ -26,13 +26,14 @@ For large or complex migrations:
 - Azure Container Apps startup probes may need adjustment for long-running migrations
 - Consider scaling to 1 instance temporarily for major schema changes
 - For very large migrations (>2 minutes), apply manually during a maintenance window using the optional SQL scripts
+- **Note**: Already-applied migrations are automatically detected and skipped - no need to disable automatic migrations if you pre-apply manually
 
 ## 🛠️ Manual Migration Scripts (Optional)
 
 While migrations are applied automatically at startup, you may still want to generate SQL scripts for the following scenarios:
 
 - **Pre-deployment review**: Review SQL changes before deploying
-- **Complex migrations**: Apply migrations manually during scheduled maintenance windows
+- **Complex migrations**: Apply migrations manually during scheduled maintenance windows (automatic migration will safely skip already-applied migrations)
 - **Backup purposes**: Keep SQL scripts as documentation
 
 ### Prerequisites
