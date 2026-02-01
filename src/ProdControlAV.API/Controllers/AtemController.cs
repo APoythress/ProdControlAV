@@ -4,9 +4,12 @@ using Microsoft.EntityFrameworkCore;
 using ProdControlAV.API.Auth;
 using ProdControlAV.API.Models;
 using ProdControlAV.Core.Models;
+using ProdControlAV.Core.Interfaces;
+using ProdControlAV.Infrastructure.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -24,12 +27,21 @@ public class AtemController : ControllerBase
     private readonly AppDbContext _db;
     private readonly ITenantProvider _tenant;
     private readonly ILogger<AtemController> _logger;
+    private readonly IAgentCommandQueueService _queueService;
+    private readonly IAtemStateStore _atemStateStore;
 
-    public AtemController(AppDbContext db, ITenantProvider tenant, ILogger<AtemController> logger)
+    public AtemController(
+        AppDbContext db, 
+        ITenantProvider tenant, 
+        ILogger<AtemController> logger,
+        IAgentCommandQueueService queueService,
+        IAtemStateStore atemStateStore)
     {
         _db = db;
         _tenant = tenant;
         _logger = logger;
+        _queueService = queueService;
+        _atemStateStore = atemStateStore;
     }
 
     /// <summary>
@@ -38,7 +50,7 @@ public class AtemController : ControllerBase
     /// <param name="deviceId">Device ID</param>
     /// <param name="ct">Cancellation token</param>
     [HttpGet("{deviceId}/state")]
-    public async Task<ActionResult<AtemStateDto>> GetState(Guid deviceId, CancellationToken ct)
+    public async Task<ActionResult<API.Models.AtemStateDto>> GetState(Guid deviceId, CancellationToken ct)
     {
         var device = await _db.Devices
             .AsNoTracking()
@@ -53,12 +65,30 @@ public class AtemController : ControllerBase
         if (device.AtemEnabled != true)
             return BadRequest(new { message = "ATEM control is not enabled for this device" });
 
-        // TODO: In a real implementation, this would query the ATEM via Agent API
-        // For now, return mock data based on common ATEM configurations
-        var state = new AtemStateDto
+        // Get cached ATEM state from Azure Table Storage
+        var cachedState = await _atemStateStore.GetStateAsync(_tenant.TenantId, deviceId, ct);
+        
+        if (cachedState == null)
         {
-            Inputs = GetMockInputs(),
-            Destinations = GetMockDestinations()
+            return NotFound(new { message = "ATEM state not available. The agent may not have queried this device yet." });
+        }
+
+        // Convert to API DTO format
+        var state = new API.Models.AtemStateDto
+        {
+            Inputs = cachedState.Inputs.Select(i => new API.Models.AtemInputDto
+            {
+                InputId = i.InputId,
+                Name = i.Name,
+                Type = i.Type
+            }).ToList(),
+            Destinations = new List<API.Models.AtemDestinationDto>
+            {
+                new() { Id = "Program", Name = "Program", CurrentInputId = cachedState.CurrentSources.GetValueOrDefault("Program") },
+                new() { Id = "Aux1", Name = "Aux 1", CurrentInputId = cachedState.CurrentSources.GetValueOrDefault("Aux1") },
+                new() { Id = "Aux2", Name = "Aux 2", CurrentInputId = cachedState.CurrentSources.GetValueOrDefault("Aux2") },
+                new() { Id = "Aux3", Name = "Aux 3", CurrentInputId = cachedState.CurrentSources.GetValueOrDefault("Aux3") }
+            }
         };
 
         return Ok(state);
@@ -89,16 +119,50 @@ public class AtemController : ControllerBase
         if (device.AtemEnabled != true)
             return BadRequest(new { message = "ATEM control is not enabled for this device" });
 
+        // Get the agent ID for this device
+        var agent = await _db.Agents
+            .AsNoTracking()
+            .FirstOrDefaultAsync(a => a.TenantId == _tenant.TenantId, ct);
+
+        if (agent == null)
+            return BadRequest(new { message = "No agent found for this tenant" });
+
         _logger.LogInformation(
             "ATEM CUT command - Device: {DeviceId}, Destination: {Destination}, Input: {InputId}",
             deviceId, request.Destination, request.InputId);
 
-        // TODO: In a real implementation, this would send command to ATEM via Agent API
-        // For now, return success
+        // Queue command for agent to execute
+        var payload = new
+        {
+            commandType = "ATEM",
+            atemCommand = GetAtemCommandForDestination(request.Destination, "CUT"),
+            deviceId = deviceId.ToString(),
+            deviceIp = device.Ip,
+            devicePort = device.Port,
+            inputId = request.InputId,
+            destination = request.Destination
+        };
+
+        var command = new AgentCommand
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _tenant.TenantId,
+            AgentId = agent.Id,
+            DeviceId = deviceId,
+            Verb = "ATEM_CUT",
+            Payload = JsonSerializer.Serialize(payload),
+            CreatedUtc = DateTime.UtcNow,
+            DueUtc = DateTime.UtcNow
+        };
+
+        await _queueService.EnqueueCommandAsync(command, ct);
+        
+        _logger.LogInformation("Queued ATEM CUT command {CommandId} for agent {AgentId}", command.Id, agent.Id);
+
         return Ok(new AtemControlResponse
         {
             Success = true,
-            Message = $"CUT to input {request.InputId} on {request.Destination}"
+            Message = $"CUT command queued for input {request.InputId} on {request.Destination}"
         });
     }
 
@@ -127,52 +191,68 @@ public class AtemController : ControllerBase
         if (device.AtemEnabled != true)
             return BadRequest(new { message = "ATEM control is not enabled for this device" });
 
+        // Get the agent ID for this device
+        var agent = await _db.Agents
+            .AsNoTracking()
+            .FirstOrDefaultAsync(a => a.TenantId == _tenant.TenantId, ct);
+
+        if (agent == null)
+            return BadRequest(new { message = "No agent found for this tenant" });
+
         _logger.LogInformation(
             "ATEM AUTO command - Device: {DeviceId}, Destination: {Destination}, Input: {InputId}",
             deviceId, request.Destination, request.InputId);
 
-        // TODO: In a real implementation, this would send command to ATEM via Agent API
-        // For now, return success with transition rate from device settings
         var transitionRate = device.AtemTransitionDefaultRate ?? 30;
+
+        // Queue command for agent to execute
+        var payload = new
+        {
+            commandType = "ATEM",
+            atemCommand = GetAtemCommandForDestination(request.Destination, "AUTO"),
+            deviceId = deviceId.ToString(),
+            deviceIp = device.Ip,
+            devicePort = device.Port,
+            inputId = request.InputId,
+            destination = request.Destination,
+            transitionRate = transitionRate
+        };
+
+        var command = new AgentCommand
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _tenant.TenantId,
+            AgentId = agent.Id,
+            DeviceId = deviceId,
+            Verb = "ATEM_AUTO",
+            Payload = JsonSerializer.Serialize(payload),
+            CreatedUtc = DateTime.UtcNow,
+            DueUtc = DateTime.UtcNow
+        };
+
+        await _queueService.EnqueueCommandAsync(command, ct);
+        
+        _logger.LogInformation("Queued ATEM AUTO command {CommandId} for agent {AgentId}", command.Id, agent.Id);
         
         return Ok(new AtemControlResponse
         {
             Success = true,
-            Message = $"AUTO transition to input {request.InputId} on {request.Destination} (rate: {transitionRate} frames)"
+            Message = $"AUTO transition command queued for input {request.InputId} on {request.Destination} (rate: {transitionRate} frames)"
         });
     }
 
     /// <summary>
-    /// Mock input data for ATEM switcher
-    /// In production, this would come from the actual ATEM device
+    /// Map destination to ATEM command name
     /// </summary>
-    private List<AtemInputDto> GetMockInputs()
+    private string GetAtemCommandForDestination(string destination, string transition)
     {
-        return new List<AtemInputDto>
+        // For Program, use the main commands
+        if (destination.Equals("Program", StringComparison.OrdinalIgnoreCase))
         {
-            new() { InputId = 1, Name = "Camera 1", Type = "SDI" },
-            new() { InputId = 2, Name = "Camera 2", Type = "SDI" },
-            new() { InputId = 3, Name = "Camera 3", Type = "SDI" },
-            new() { InputId = 4, Name = "Camera 4", Type = "SDI" },
-            new() { InputId = 5, Name = "HDMI 1", Type = "HDMI" },
-            new() { InputId = 6, Name = "HDMI 2", Type = "HDMI" },
-            new() { InputId = 7, Name = "Graphics", Type = "Internal" },
-            new() { InputId = 8, Name = "Media Player", Type = "Internal" }
-        };
-    }
-
-    /// <summary>
-    /// Mock destination data for ATEM switcher
-    /// In production, this would come from the actual ATEM device
-    /// </summary>
-    private List<AtemDestinationDto> GetMockDestinations()
-    {
-        return new List<AtemDestinationDto>
-        {
-            new() { Id = "Program", Name = "Program", CurrentInputId = 1 },
-            new() { Id = "Aux1", Name = "Aux 1", CurrentInputId = 2 },
-            new() { Id = "Aux2", Name = "Aux 2", CurrentInputId = 3 },
-            new() { Id = "Aux3", Name = "Aux 3", CurrentInputId = 4 }
-        };
+            return transition == "CUT" ? "CUT_TO_PROGRAM" : "FADE_TO_PROGRAM";
+        }
+        
+        // For Aux outputs, use set_aux commands
+        return transition == "CUT" ? $"SET_AUX_{destination.ToUpperInvariant()}" : $"FADE_AUX_{destination.ToUpperInvariant()}";
     }
 }

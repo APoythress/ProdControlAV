@@ -98,6 +98,9 @@ builder.Services.AddHttpClient<ICommandService, CommandService>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(10);
 });
+
+// ATEM Connection Manager for LibAtem integration
+builder.Services.AddSingleton<AtemConnectionManager>();
 // Additional HTTP client for JWT auth service
 builder.Services.AddHttpClient("JwtAuth", c => {
     c.Timeout = TimeSpan.FromMinutes(5);
