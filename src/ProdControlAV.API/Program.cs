@@ -368,6 +368,8 @@ builder.Services.AddSwaggerGen(options =>
 var app = builder.Build();
 
 // Apply pending database migrations automatically on startup
+// Note: Database.Migrate() uses SQL Server's locking mechanisms to prevent race conditions
+// in multi-instance deployments. Only one instance will apply migrations; others will wait.
 using (var scope = app.Services.CreateScope())
 {
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();

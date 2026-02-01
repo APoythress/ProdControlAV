@@ -15,6 +15,18 @@ Database migrations are **automatically applied** when the application starts. W
 
 This ensures that the database schema is always up-to-date with the deployed code, eliminating the need for manual database updates after deployments.
 
+### Multi-Instance Deployments
+
+Entity Framework Core's `Database.Migrate()` uses SQL Server's built-in locking mechanisms via the `__EFMigrationsHistory` table to prevent race conditions when multiple container instances start simultaneously. Only one instance will apply the migration; others will wait and verify the migration is complete.
+
+### Startup Time Considerations
+
+For large or complex migrations:
+- Migrations run synchronously during container startup
+- Azure Container Apps startup probes may need adjustment for long-running migrations
+- Consider scaling to 1 instance temporarily for major schema changes
+- For very large migrations (>2 minutes), apply manually during a maintenance window using the optional SQL scripts
+
 ## 🛠️ Manual Migration Scripts (Optional)
 
 While migrations are applied automatically at startup, you may still want to generate SQL scripts for the following scenarios:
@@ -120,12 +132,20 @@ If migration fails, the container will not start and will log the error for inve
 - [ ] Review Entity Framework migrations in code
 - [ ] Test migrations on staging environment first
 - [ ] Verify application compatibility with schema changes
-- [ ] Monitor container logs during deployment
+- [ ] For complex migrations, review estimated execution time
+- [ ] Consider scaling to 1 instance temporarily for major schema changes
 
 ### During Deployment
 - [ ] Monitor container startup logs for migration progress
 - [ ] Watch for any errors during migration execution
 - [ ] Verify container health after startup
+- [ ] If deployment has multiple instances, expect only one to apply migrations
+
+### For Large Migrations (>2 minutes)
+- [ ] Consider applying migrations manually during a maintenance window
+- [ ] Use the optional SQL script generation for pre-deployment review
+- [ ] Temporarily scale to 1 instance to avoid multiple containers waiting
+- [ ] Increase Azure Container Apps startup probe timeout if needed
 
 ### After Deployment
 - [ ] Verify all features work correctly
