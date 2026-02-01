@@ -36,7 +36,7 @@
 
                 <div class="ui-grid cols-3">
                     <UiField Label="Client Name">
-                        <input class="input" @bind="_managementData.Name" />
+                        <input class="input" @bind="_editClientName" @bind:event="oninput" />
                     </UiField>
 
                     <UiField Label="Subscription Plan">
@@ -83,6 +83,7 @@
                               rows="4" 
                               maxlength="@_maxNoteCharacters"
                               @bind="_newNoteText"
+                              @bind:event="oninput"
                               placeholder="Enter note (max @_maxNoteCharacters characters)"></textarea>
                     <small class="muted">@(_newNoteText?.Length ?? 0) / @_maxNoteCharacters characters</small>
                 </UiField>
@@ -288,6 +289,9 @@
     private string? _newNoteText;
     private int _maxNoteCharacters = 500;
     
+    // Editable fields (not bound to immutable record)
+    private string _editClientName = "";
+    
     // Modal states
     private bool _showSlugConfirmation = false;
     private bool _showAddAgentModal = false;
@@ -323,6 +327,7 @@
             if (managementResponse.IsSuccessStatusCode)
             {
                 _managementData = await managementResponse.Content.ReadFromJsonAsync<TenantManagementDto>();
+                _editClientName = _managementData?.Name ?? "";
                 _selectedSubscriptionPlanId = _managementData?.SubscriptionPlanId;
                 _selectedStatusId = _managementData?.TenantStatusId;
                 _previousStatusId = _selectedStatusId;
@@ -367,13 +372,14 @@
         try
         {
             // Update name if changed
-            if (_managementData.Name != TenantName)
+            if (_editClientName != _managementData.Name)
             {
                 var nameResponse = await Http.PutAsJsonAsync($"api/tenants/{TenantId}/name", 
-                    new { Name = _managementData.Name });
+                    new { Name = _editClientName });
                 if (!nameResponse.IsSuccessStatusCode)
                 {
                     _error = "Failed to update tenant name";
+                    _saving = false;
                     return;
                 }
             }
@@ -386,6 +392,7 @@
                 if (!subResponse.IsSuccessStatusCode)
                 {
                     _error = "Failed to update subscription plan";
+                    _saving = false;
                     return;
                 }
             }
