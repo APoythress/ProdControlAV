@@ -100,7 +100,28 @@
                     </UiField>
 
                     <UiField Label="Location">
-                        <input class="input" id="deviceLocation" @bind="_deviceForm.Location" placeholder="Enter device location (optional)" />
+                        @if (_agentLocations.Count == 0)
+                        {
+                            <input class="input" id="deviceLocation" @bind="_deviceForm.Location" placeholder="No agents with locations available" disabled />
+                        }
+                        else if (_agentLocations.Count == 1 && _agentLocations[0].LocationName != null)
+                        {
+                            <input class="input" id="deviceLocation" value="@_agentLocations[0].LocationName" disabled />
+                        }
+                        else
+                        {
+                            <select class="input" id="deviceLocation" @bind="_deviceForm.Location">
+                                <option value="">-- Select Location --</option>
+                                @foreach (var agent in _agentLocations)
+                                {
+                                    <option value="@agent.LocationName">@agent.LocationName</option>
+                                }
+                            </select>
+                        }
+                    </UiField>
+
+                    <UiField Label="Sub Location">
+                        <input class="input" id="deviceSubLocation" @bind="_deviceForm.SubLocation" placeholder="e.g., Studio A, Room 101 (optional)" />
                     </UiField>
 
                 </div>
@@ -389,6 +410,10 @@
         private DashboardDeviceDto? _selectedDevice;
         private bool _isDeviceModalOpen;
         
+        // Agent location data
+        private List<AgentLocationDto> _agentLocations = new();
+        private bool _hasMultipleLocations = false;
+        
         // ATEM Control Modal
         private bool _isAtemControlModalOpen;
         private DashboardDeviceDto? _selectedAtemDevice;
@@ -402,6 +427,7 @@
             public string Ip { get; set; } = "";
             public bool AllowTelNet { get; set; }
             public string Location { get; set; } = "";
+            public string SubLocation { get; set; } = "";
             public int Port { get; set; } = 80;
             public bool AtemEnabled { get; set; }
             public int? AtemTransitionDefaultRate { get; set; }
@@ -420,6 +446,9 @@
         {
             _selectedDevice = device;
             
+            // Load agents for location dropdown
+            await LoadAgentsAsync();
+            
             // Initialize form with device data
             _deviceForm = new DeviceForm
             {
@@ -428,6 +457,7 @@
                 Ip = device.Ip,
                 AllowTelNet = device.AllowTelNet,
                 Location = device.Location ?? "",
+                SubLocation = device.SubLocation ?? "",
                 Port = device.Port,
                 AtemEnabled = device.AtemEnabled ?? false,
                 AtemTransitionDefaultRate = device.AtemTransitionDefaultRate,
@@ -459,10 +489,41 @@
         
         private void CloseDeviceModal() => _isDeviceModalOpen = false;
         
+        private async Task LoadAgentsAsync()
+        {
+            try
+            {
+                // Get current tenant ID from the API response (we'll use a placeholder approach)
+                // In a real scenario, this would come from the authenticated user's claims
+                var response = await Http.GetAsync("api/agents");
+                if (response.IsSuccessStatusCode)
+                {
+                    var agents = await response.Content.ReadFromJsonAsync<List<AgentLocationDto>>() ?? new();
+                    _agentLocations = agents.Where(a => !string.IsNullOrWhiteSpace(a.LocationName))
+                        .DistinctBy(a => a.LocationName)
+                        .ToList();
+                    _hasMultipleLocations = _agentLocations.Count > 1;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error loading agents: {ex.Message}");
+                _agentLocations = new();
+                _hasMultipleLocations = false;
+            }
+        }
+        
         private void OpenAtemControlModal(DashboardDeviceDto device)
         {
             _selectedAtemDevice = device;
             _isAtemControlModalOpen = true;
+        }
+
+        // DTOs
+        public class AgentLocationDto
+        {
+            public Guid Id { get; set; }
+            public string? LocationName { get; set; }
         }
 
         // DTO matching API response
@@ -477,6 +538,7 @@
             public string Ip { get; set; } = "";
             public int Port { get; set; }
             public string? Location { get; set; }
+            public string? SubLocation { get; set; }
             public Guid TenantId { get; set; }
             public bool Status { get; set; }
             public bool? RecordingStatus { get; set; }
@@ -507,6 +569,7 @@
                     Ip = _deviceForm.Ip,
                     Port = _deviceForm.Port,
                     Location = _deviceForm.Location,
+                    SubLocation = _deviceForm.SubLocation,
                     AtemEnabled = _deviceForm.AtemEnabled,
                     AtemTransitionDefaultRate = _deviceForm.AtemTransitionDefaultRate,
                     AtemTransitionDefaultType = _deviceForm.AtemTransitionDefaultType
@@ -525,6 +588,7 @@
                         _devices[deviceIndex].Port = _deviceForm.Port;
                         _devices[deviceIndex].AllowTelNet = _deviceForm.AllowTelNet;
                         _devices[deviceIndex].Location = _deviceForm.Location;
+                        _devices[deviceIndex].SubLocation = _deviceForm.SubLocation;
                         _devices[deviceIndex].AtemEnabled = _deviceForm.AtemEnabled;
                         _devices[deviceIndex].AtemTransitionDefaultRate = _deviceForm.AtemTransitionDefaultRate;
                         _devices[deviceIndex].AtemTransitionDefaultType = _deviceForm.AtemTransitionDefaultType;
@@ -536,6 +600,7 @@
                     _selectedDevice.Port = _deviceForm.Port;
                     _selectedDevice.AllowTelNet = _deviceForm.AllowTelNet;
                     _selectedDevice.Location = _deviceForm.Location;
+                    _selectedDevice.SubLocation = _deviceForm.SubLocation;
                     _selectedDevice.AtemEnabled = _deviceForm.AtemEnabled;
                     _selectedDevice.AtemTransitionDefaultRate = _deviceForm.AtemTransitionDefaultRate;
                     _selectedDevice.AtemTransitionDefaultType = _deviceForm.AtemTransitionDefaultType;

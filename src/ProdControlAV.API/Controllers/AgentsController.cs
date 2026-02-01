@@ -790,4 +790,50 @@ public sealed class AgentsController : ControllerBase
             return StatusCode(500, new { error = "Failed to update recording status", details = ex.Message });
         }
     }
+
+    /// <summary>
+    /// DTO for agent location information
+    /// </summary>
+    public sealed class AgentLocationDto
+    {
+        public Guid Id { get; set; }
+        public string? LocationName { get; set; }
+    }
+
+    /// <summary>
+    /// Gets all agents for the current tenant (for device location dropdown)
+    /// GET /api/agents
+    /// </summary>
+    [HttpGet]
+    [Authorize(Policy = "TenantMember")]
+    [ProducesResponseType<List<AgentLocationDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetAgents(CancellationToken ct)
+    {
+        try
+        {
+            // Get tenant ID from claims
+            var tenantIdClaim = User.FindFirst("tenant_id")?.Value;
+            if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out var tenantId))
+            {
+                return Unauthorized(new { error = "invalid_tenant_claim" });
+            }
+
+            var agents = await _db.Agents
+                .Where(a => a.TenantId == tenantId)
+                .Select(a => new AgentLocationDto
+                {
+                    Id = a.Id,
+                    LocationName = a.LocationName
+                })
+                .ToListAsync(ct);
+
+            return Ok(agents);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[GET-AGENTS] Error getting agents");
+            return StatusCode(500, new { error = "Failed to get agents", details = ex.Message });
+        }
+    }
 }
