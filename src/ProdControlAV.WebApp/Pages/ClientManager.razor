@@ -2,6 +2,7 @@
 @using System.Net.Http
 @using System.Net.Http.Json
 @using ProdControlAV.WebApp.Components.Ui
+@using ProdControlAV.WebApp.Components
 
 @inject HttpClient Http
 @inject IJSRuntime JsRuntime
@@ -66,6 +67,11 @@
     }
 </div>
 
+<ManageClientModal @bind-IsOpen="_isManageModalOpen"
+                   TenantId="_selectedTenantId"
+                   TenantName="@(_selectedTenant?.Name ?? "")"
+                   OnSaved="@HandleModalSaved" />
+
 <style>
     .command-table .command-header,
     .command-table .command-row {
@@ -103,6 +109,9 @@
     private List<TenantWithStats> _tenants = new();
     private bool _loading = true;
     private string? _error;
+    private bool _isManageModalOpen = false;
+    private Guid _selectedTenantId;
+    private TenantWithStats? _selectedTenant;
 
     protected override async Task OnInitializedAsync()
     {
@@ -152,8 +161,14 @@
 
     private void ManageTenant(TenantWithStats tenant)
     {
-        // Placeholder - functionality to be added later
-        Console.WriteLine($"Manage tenant: {tenant.Name}");
+        _selectedTenant = tenant;
+        _selectedTenantId = tenant.TenantId;
+        _isManageModalOpen = true;
+    }
+
+    private async Task HandleModalSaved()
+    {
+        await LoadTenants();
     }
 
     private class TenantWithStats
