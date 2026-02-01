@@ -23,6 +23,49 @@ public class TenantsController : ControllerBase
 
     public record CreateTenantRequest(string Name, string Slug);
 
+    public record TenantWithStats
+    {
+        public Guid TenantId { get; set; }
+        public string Name { get; set; } = default!;
+        public string Slug { get; set; } = default!;
+        public DateTime CreatedUtc { get; set; }
+        public int DeviceCount { get; set; }
+        public string? Status { get; set; }
+        public string? Subscription { get; set; }
+    }
+
+    [Authorize]
+    [HttpGet("all")]
+    public async Task<ActionResult<List<TenantWithStats>>> GetAll(CancellationToken ct)
+    {
+        // Get all tenants with their related data
+        var tenants = await _db.Tenants
+            .Include(t => t.TenantStatus)
+            .Include(t => t.SubscriptionPlan)
+            .ToListAsync(ct);
+
+        // Get device counts for all tenants in a single query
+        var deviceCounts = await _db.Devices
+            .GroupBy(d => d.TenantId)
+            .Select(g => new { TenantId = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+
+        var deviceCountDict = deviceCounts.ToDictionary(dc => dc.TenantId, dc => dc.Count);
+
+        var result = tenants.Select(tenant => new TenantWithStats
+        {
+            TenantId = tenant.TenantId,
+            Name = tenant.Name,
+            Slug = tenant.Slug,
+            CreatedUtc = tenant.CreatedUtc,
+            DeviceCount = deviceCountDict.TryGetValue(tenant.TenantId, out var count) ? count : 0,
+            Status = tenant.TenantStatus?.TenantStatusText ?? "Active",
+            Subscription = tenant.SubscriptionPlan?.SubscriptionPlanText ?? "N/A"
+        }).ToList();
+
+        return Ok(result);
+    }
+
     [Authorize]
     [HttpPost]
     public async Task<ActionResult<Tenant>> Create([FromBody] CreateTenantRequest req, CancellationToken ct)

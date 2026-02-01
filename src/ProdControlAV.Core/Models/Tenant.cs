@@ -17,4 +17,15 @@ public class Tenant
     public string Slug { get; set; } = default!;
 
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
+
+    // Foreign keys for new relationships
+    public int? TenantStatusId { get; set; }
+    public int? SubscriptionPlanId { get; set; }
+
+    // Navigation properties
+    [ForeignKey("TenantStatusId")]
+    public TenantStatus? TenantStatus { get; set; }
+
+    [ForeignKey("SubscriptionPlanId")]
+    public TenantSubscriptionPlan? SubscriptionPlan { get; set; }
 }

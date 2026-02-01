@@ -1,0 +1,169 @@
+@page "/clientmanager"
+@using System.Net.Http
+@using System.Net.Http.Json
+@using ProdControlAV.WebApp.Components.Ui
+
+@inject HttpClient Http
+@inject IJSRuntime JsRuntime
+
+<div class="container mt-5">
+    @if (_loading)
+    {
+        <div class="text-center">
+            <div class="spinner-border text-light" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    }
+    else if (_error != null)
+    {
+        <div class="alert alert-danger">
+            @_error
+        </div>
+    }
+    else if (!_tenants.Any())
+    {
+        <div class="alert alert-info">
+            No clients found.
+        </div>
+    }
+    else
+    {
+        <UiCard Title="Clients"
+                SubTitle="Client management console"
+                Variant="card pad accent-blue">
+
+            <div class="command-table">
+
+                <div class="command-header">
+                    <span>Client Name</span>
+                    <span>Device Count</span>
+                    <span>Status</span>
+                    <span>Subscription</span>
+                    <span></span>
+                </div>
+
+                @foreach (var tenant in _tenants)
+                {
+                    <div class="command-row">
+                        <span>@tenant.Name</span>
+                        <span class="muted">@tenant.DeviceCount</span>
+
+                        <div> @tenant.Status</div>
+
+                        <span class="muted">@tenant.Subscription</span>
+
+                        <UiButton Variant="btn btn-primary"
+                                  OnClick="@(() => ManageTenant(tenant))">
+                            Manage
+                        </UiButton>
+                    </div>
+                }
+
+            </div>
+
+        </UiCard>
+    }
+</div>
+
+<style>
+    .command-table .command-header,
+    .command-table .command-row {
+        display: grid;
+        /* adjust column widths to match your layout */
+        grid-template-columns: 2fr 120px 140px 140px 120px;
+        align-items: center;          /* vertically center content */
+        column-gap: 1rem;
+    }
+
+    /* make header and rows have consistent padding */
+    .command-table .command-header {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid rgba(255,255,255,0.03);
+        font-weight: 600;
+    }
+
+    .command-table .command-row {
+        padding: 0.75rem 1rem;
+    }
+
+    /* normalize inline elements inside cells */
+    .command-table .command-header span,
+    .command-table .command-row span,
+    .command-table .command-row .muted,
+    .command-table .command-row .btn {
+        margin: 0;
+        padding: 0;
+        display: block;
+        line-height: 1;
+    }
+</style>
+
+@code {
+    private List<TenantWithStats> _tenants = new();
+    private bool _loading = true;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTenants();
+    }
+
+    private async Task LoadTenants()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            var response = await Http.GetAsync("api/tenants/all");
+            
+            if (response.IsSuccessStatusCode)
+            {
+                _tenants = await response.Content.ReadFromJsonAsync<List<TenantWithStats>>() ?? new List<TenantWithStats>();
+            }
+            else
+            {
+                _error = $"Failed to load tenants: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Error loading tenants: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private string GetStatusColor(string? status)
+    {
+        return status?.ToLowerInvariant() switch
+        {
+            "active" => "green",
+            "pending" => "yellow",
+            "terminated" => "red",
+            _ => "blue"
+        };
+    }
+
+    private void ManageTenant(TenantWithStats tenant)
+    {
+        // Placeholder - functionality to be added later
+        Console.WriteLine($"Manage tenant: {tenant.Name}");
+    }
+
+    private class TenantWithStats
+    {
+        public Guid TenantId { get; set; }
+        public string Name { get; set; } = default!;
+        public string Slug { get; set; } = default!;
+        public DateTime CreatedUtc { get; set; }
+        public int DeviceCount { get; set; }
+        public string? Status { get; set; }
+        public string? Subscription { get; set; }
+    }
+}

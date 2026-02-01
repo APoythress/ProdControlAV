@@ -22,6 +22,8 @@ public class AppDbContext : DbContext
     public DbSet<Command> Commands => Set<Command>();
     public DbSet<CommandTemplate> CommandTemplates => Set<CommandTemplate>();
     public DbSet<UserPermission> UserPermissions => Set<UserPermission>();
+    public DbSet<TenantStatus> TenantStatuses => Set<TenantStatus>();
+    public DbSet<TenantSubscriptionPlan> TenantSubscriptionPlans => Set<TenantSubscriptionPlan>();
 // Ensure you already have: Devices, DeviceStatusHistory
 
 
@@ -103,6 +105,33 @@ public class AppDbContext : DbContext
                 .WithMany(u => u.Permissions)
                 .HasForeignKey(x => x.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<TenantStatus>(e =>
+        {
+            e.HasKey(x => x.TenantStatusId);
+            e.Property(x => x.TenantStatusText).HasMaxLength(25).IsRequired();
+        });
+
+        b.Entity<TenantSubscriptionPlan>(e =>
+        {
+            e.HasKey(x => x.SubscriptionPlanId);
+            e.Property(x => x.SubscriptionPlanText).HasMaxLength(25).IsRequired();
+        });
+
+        b.Entity<Tenant>(e =>
+        {
+            e.HasKey(x => x.TenantId);
+            e.Property(x => x.Name).HasMaxLength(250).IsRequired();
+            e.Property(x => x.Slug).HasMaxLength(250).IsRequired();
+            e.HasOne(x => x.TenantStatus)
+                .WithMany()
+                .HasForeignKey(x => x.TenantStatusId)
+                .OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.SubscriptionPlan)
+                .WithMany()
+                .HasForeignKey(x => x.SubscriptionPlanId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 }
