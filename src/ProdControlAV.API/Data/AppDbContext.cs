@@ -23,7 +23,7 @@ public class AppDbContext : DbContext
     public DbSet<CommandTemplate> CommandTemplates => Set<CommandTemplate>();
     public DbSet<UserPermission> UserPermissions => Set<UserPermission>();
     public DbSet<TenantStatus> TenantStatuses => Set<TenantStatus>();
-    public DbSet<TenantSubscriptionPlan> SubscriptionPlans => Set<TenantSubscriptionPlan>();
+    public DbSet<TenantSubscriptionPlan> TenantSubscriptionPlans => Set<TenantSubscriptionPlan>();
 // Ensure you already have: Devices, DeviceStatusHistory
 
 
