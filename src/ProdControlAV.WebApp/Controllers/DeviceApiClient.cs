@@ -40,7 +40,8 @@ public class DeviceApiClient
             Ip = device.Ip,
             Port = device.Port,
             Location = device.Location,
-            PingFrequencySeconds = device.PingFrequencySeconds
+            PingFrequencySeconds = device.PingFrequencySeconds,
+            SmsAlertsEnabled = device.SmsAlertsEnabled
         };
         var response = await _http.PutAsJsonAsync($"api/devices/{device.Id}", dto, ct);
         response.EnsureSuccessStatusCode();

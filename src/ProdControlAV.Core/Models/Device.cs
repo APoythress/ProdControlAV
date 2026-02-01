@@ -24,4 +24,7 @@ public class Device
     public bool? AtemEnabled { get; set; } // Enable ATEM control for this device
     public int? AtemTransitionDefaultRate { get; set; } // Default transition rate in frames (e.g., 30)
     public string? AtemTransitionDefaultType { get; set; } // Default transition type: "mix" or "cut"
+    
+    // SMS notification settings (per-device)
+    public bool SmsAlertsEnabled { get; set; } = true; // Enable SMS alerts for this device (default true)
 }
