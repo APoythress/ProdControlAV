@@ -42,6 +42,7 @@ public class CommandService : ICommandService
     private readonly ILogger<CommandService> _logger;
     private readonly ApiOptions _api;
     private readonly IJwtAuthService _jwtAuth;
+    private readonly AtemConnectionManager _atemManager;
 
     // Explicit JsonSerializerOptions with a TypeInfoResolver to opt-out of the reflection-disabled behavior
     private static readonly JsonSerializerOptions s_jsonOptions = new()
@@ -67,12 +68,18 @@ public class CommandService : ICommandService
         DefaultVersionPolicy = System.Net.Http.HttpVersionPolicy.RequestVersionOrLower
     };
 
-    public CommandService(HttpClient http, ILogger<CommandService> logger, IOptions<ApiOptions> api, IJwtAuthService jwtAuth)
+    public CommandService(
+        HttpClient http, 
+        ILogger<CommandService> logger, 
+        IOptions<ApiOptions> api, 
+        IJwtAuthService jwtAuth,
+        AtemConnectionManager atemManager)
     {
         _http = http;
         _logger = logger;
         _api = api.Value;
         _jwtAuth = jwtAuth;
+        _atemManager = atemManager;
         _http.BaseAddress = new Uri(_api.BaseUrl);
     }
 
@@ -611,22 +618,48 @@ public class CommandService : ICommandService
     }
     
     /// <summary>
-    /// Executes an ATEM command from the payload.
-    /// 
-    /// Note: This implementation uses a stub approach where ATEM commands are executed
-    /// inline without injecting IAtemConnection. This is intentional because:
-    /// 1. ATEM connections are device-specific (each ATEM device needs its own connection)
-    /// 2. The current architecture doesn't support device-specific service instances
-    /// 3. Future enhancement: Create a device registry that maps device IDs to IAtemConnection instances
-    /// 
-    /// For production use with real ATEM hardware, replace TODO sections with actual
-    /// LibAtem API calls via a device-specific connection manager.
+    /// Executes an ATEM command from the payload using LibAtem.
     /// </summary>
     private async Task<AtemCommandResult> ExecuteAtemCommandAsync(JsonElement payload, CancellationToken ct)
     {
         try
         {
-            // Extract ATEM command details from payload with validation
+            // Extract device information
+            if (!payload.TryGetProperty("deviceId", out var deviceIdProp))
+            {
+                return new AtemCommandResult
+                {
+                    Success = false,
+                    Message = "Missing required property: deviceId",
+                    Response = null
+                };
+            }
+
+            if (!Guid.TryParse(deviceIdProp.GetString(), out var deviceId))
+            {
+                return new AtemCommandResult
+                {
+                    Success = false,
+                    Message = "Invalid deviceId format",
+                    Response = null
+                };
+            }
+
+            // Extract device connection info from payload (should be added by API)
+            string? deviceIp = payload.TryGetProperty("deviceIp", out var ipProp) ? ipProp.GetString() : null;
+            int devicePort = payload.TryGetProperty("devicePort", out var portProp) ? portProp.GetInt32() : 9910;
+
+            if (string.IsNullOrEmpty(deviceIp))
+            {
+                return new AtemCommandResult
+                {
+                    Success = false,
+                    Message = "Missing required property: deviceIp",
+                    Response = null
+                };
+            }
+
+            // Extract ATEM command details
             if (!payload.TryGetProperty("atemCommand", out var atemCommandProp))
             {
                 return new AtemCommandResult
@@ -639,7 +672,7 @@ public class CommandService : ICommandService
             
             var atemCommand = atemCommandProp.GetString();
             
-            _logger.LogInformation("Executing ATEM command: {AtemCommand}", atemCommand);
+            _logger.LogInformation("Executing ATEM command: {AtemCommand} for device {DeviceId}", atemCommand, deviceId);
             
             // Parse command and parameters
             switch (atemCommand?.ToUpperInvariant())
@@ -656,17 +689,16 @@ public class CommandService : ICommandService
                         };
                     }
                     
-                    var inputId = inputIdProp.GetInt32();
-                    // TODO: Execute via device-specific IAtemConnection instance
-                    // var deviceId = payload.GetProperty("deviceId").GetString();
-                    // var atemConnection = _deviceConnectionRegistry.GetAtemConnection(deviceId);
-                    // await atemConnection.CutToProgramAsync(inputId, ct);
+                    var inputId = inputIdProp.GetInt64();
+                    var success = await _atemManager.CutToProgramAsync(deviceId, deviceIp, devicePort, inputId, ct);
                     
                     return new AtemCommandResult
                     {
-                        Success = true,
-                        Message = $"Cut to Program input {inputId} executed successfully",
-                        Response = $"{{\"command\":\"CutToProgram\",\"inputId\":{inputId}}}"
+                        Success = success,
+                        Message = success 
+                            ? $"Cut to Program input {inputId} executed successfully"
+                            : $"Failed to execute Cut to Program input {inputId}",
+                        Response = success ? $"{{\"command\":\"CutToProgram\",\"inputId\":{inputId}}}" : null
                     };
                 }
                 
@@ -682,27 +714,31 @@ public class CommandService : ICommandService
                         };
                     }
                     
-                    var inputId = inputIdProp.GetInt32();
+                    var inputId = inputIdProp.GetInt64();
                     int? transitionRate = null;
                     if (payload.TryGetProperty("transitionRate", out var rateProp) && rateProp.ValueKind != JsonValueKind.Null)
                     {
                         transitionRate = rateProp.GetInt32();
                     }
                     
-                    // TODO: Execute via device-specific IAtemConnection instance
-                    // var deviceId = payload.GetProperty("deviceId").GetString();
-                    // var atemConnection = _deviceConnectionRegistry.GetAtemConnection(deviceId);
-                    // await atemConnection.FadeToProgramAsync(inputId, transitionRate, ct);
+                    var success = await _atemManager.AutoToProgramAsync(deviceId, deviceIp, devicePort, inputId, transitionRate, ct);
                     
                     return new AtemCommandResult
                     {
-                        Success = true,
-                        Message = $"Fade to Program input {inputId} (rate: {transitionRate ?? 30}) executed successfully",
-                        Response = $"{{\"command\":\"FadeToProgram\",\"inputId\":{inputId},\"transitionRate\":{transitionRate ?? 30}}}"
+                        Success = success,
+                        Message = success
+                            ? $"Fade to Program input {inputId} (rate: {transitionRate ?? 30}) executed successfully"
+                            : $"Failed to execute Fade to Program input {inputId}",
+                        Response = success ? $"{{\"command\":\"FadeToProgram\",\"inputId\":{inputId},\"transitionRate\":{transitionRate ?? 30}}}" : null
                     };
                 }
                 
-                case "SET_PREVIEW":
+                case "SET_AUX_AUX1":
+                case "SET_AUX_AUX2":
+                case "SET_AUX_AUX3":
+                case "FADE_AUX_AUX1":
+                case "FADE_AUX_AUX2":
+                case "FADE_AUX_AUX3":
                 {
                     if (!payload.TryGetProperty("inputId", out var inputIdProp))
                     {
@@ -714,59 +750,18 @@ public class CommandService : ICommandService
                         };
                     }
                     
-                    var inputId = inputIdProp.GetInt32();
-                    // TODO: Execute via device-specific IAtemConnection instance
-                    // var deviceId = payload.GetProperty("deviceId").GetString();
-                    // var atemConnection = _deviceConnectionRegistry.GetAtemConnection(deviceId);
-                    // await atemConnection.SetPreviewAsync(inputId, ct);
+                    var inputId = inputIdProp.GetInt64();
+                    var auxIndex = atemCommand!.EndsWith("AUX1") ? 0 : atemCommand.EndsWith("AUX2") ? 1 : 2;
+                    
+                    var success = await _atemManager.SetAuxOutputAsync(deviceId, deviceIp, devicePort, auxIndex, inputId, ct);
                     
                     return new AtemCommandResult
                     {
-                        Success = true,
-                        Message = $"Set Preview to input {inputId} executed successfully",
-                        Response = $"{{\"command\":\"SetPreview\",\"inputId\":{inputId}}}"
-                    };
-                }
-                
-                case "LIST_MACROS":
-                {
-                    // TODO: Execute via device-specific IAtemConnection instance
-                    // var deviceId = payload.GetProperty("deviceId").GetString();
-                    // var atemConnection = _deviceConnectionRegistry.GetAtemConnection(deviceId);
-                    // var macros = await atemConnection.ListMacrosAsync(ct);
-                    // var macrosJson = JsonSerializer.Serialize(macros, s_jsonOptions);
-                    
-                    return new AtemCommandResult
-                    {
-                        Success = true,
-                        Message = "Macro list retrieved successfully",
-                        Response = "{\"macros\":[]}"
-                    };
-                }
-                
-                case "RUN_MACRO":
-                {
-                    if (!payload.TryGetProperty("macroId", out var macroIdProp))
-                    {
-                        return new AtemCommandResult
-                        {
-                            Success = false,
-                            Message = "Missing required property: macroId",
-                            Response = null
-                        };
-                    }
-                    
-                    var macroId = macroIdProp.GetInt32();
-                    // TODO: Execute via device-specific IAtemConnection instance
-                    // var deviceId = payload.GetProperty("deviceId").GetString();
-                    // var atemConnection = _deviceConnectionRegistry.GetAtemConnection(deviceId);
-                    // await atemConnection.RunMacroAsync(macroId, ct);
-                    
-                    return new AtemCommandResult
-                    {
-                        Success = true,
-                        Message = $"Macro {macroId} executed successfully",
-                        Response = $"{{\"command\":\"RunMacro\",\"macroId\":{macroId}}}"
+                        Success = success,
+                        Message = success
+                            ? $"Set Aux{auxIndex + 1} to input {inputId} executed successfully"
+                            : $"Failed to set Aux{auxIndex + 1} to input {inputId}",
+                        Response = success ? $"{{\"command\":\"SetAux{auxIndex + 1}\",\"inputId\":{inputId}}}" : null
                     };
                 }
                 

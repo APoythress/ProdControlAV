@@ -32,7 +32,8 @@ public class CommandServiceTests
             ApiKey = "test-key"
         };
 
-        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object);
+        var mockAtemManager = new Mock<AtemConnectionManager>(Mock.Of<ILogger<AtemConnectionManager>>());
+        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object, mockAtemManager.Object);
 
         var command = new CommandEnvelope
         {
@@ -74,7 +75,8 @@ public class CommandServiceTests
             ApiKey = "test-key"
         };
 
-        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object);
+        var mockAtemManager = new Mock<AtemConnectionManager>(Mock.Of<ILogger<AtemConnectionManager>>());
+        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object, mockAtemManager.Object);
 
         var command = new CommandEnvelope
         {
@@ -119,7 +121,8 @@ public class CommandServiceTests
             ApiKey = "test-key"
         };
 
-        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object);
+        var mockAtemManager = new Mock<AtemConnectionManager>(Mock.Of<ILogger<AtemConnectionManager>>());
+        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object, mockAtemManager.Object);
 
         // Create a REST command payload pointing to a non-existent device
         // Note: This is an integration-style test that uses the real HttpClient behavior
@@ -228,7 +231,8 @@ public class CommandServiceTests
             ApiKey = "test-key-with-at-least-32-characters-for-security"
         };
 
-        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object);
+        var mockAtemManager = new Mock<AtemConnectionManager>(Mock.Of<ILogger<AtemConnectionManager>>());
+        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object, mockAtemManager.Object);
 
         var payload = System.Text.Json.JsonSerializer.Serialize(new
         {
@@ -278,7 +282,8 @@ public class CommandServiceTests
             ApiKey = "test-key-with-at-least-32-characters-for-security"
         };
 
-        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object);
+        var mockAtemManager = new Mock<AtemConnectionManager>(Mock.Of<ILogger<AtemConnectionManager>>());
+        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object, mockAtemManager.Object);
 
         var payload = System.Text.Json.JsonSerializer.Serialize(new
         {
@@ -329,7 +334,8 @@ public class CommandServiceTests
             ApiKey = "test-key-with-at-least-32-characters-for-security"
         };
 
-        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object);
+        var mockAtemManager = new Mock<AtemConnectionManager>(Mock.Of<ILogger<AtemConnectionManager>>());
+        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object, mockAtemManager.Object);
 
         var payload = System.Text.Json.JsonSerializer.Serialize(new
         {
@@ -379,7 +385,8 @@ public class CommandServiceTests
             ApiKey = "test-key-with-at-least-32-characters-for-security"
         };
 
-        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object);
+        var mockAtemManager = new Mock<AtemConnectionManager>(Mock.Of<ILogger<AtemConnectionManager>>());
+        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object, mockAtemManager.Object);
 
         var payload = System.Text.Json.JsonSerializer.Serialize(new
         {
@@ -424,7 +431,8 @@ public class CommandServiceTests
             ApiKey = "test-key-with-at-least-32-characters-for-security"
         };
 
-        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object);
+        var mockAtemManager = new Mock<AtemConnectionManager>(Mock.Of<ILogger<AtemConnectionManager>>());
+        var service = new CommandService(mockHttpClient.Object, mockLogger.Object, Options.Create(apiOptions), mockJwtAuth.Object, mockAtemManager.Object);
 
         var payload = System.Text.Json.JsonSerializer.Serialize(new
         {

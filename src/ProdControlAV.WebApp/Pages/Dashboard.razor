@@ -4,6 +4,7 @@
 @using System.Threading
 @using ProdControlAV.Core.Models
 @using ProdControlAV.WebApp.Components.Ui
+@using ProdControlAV.WebApp.Components
 
 @implements IAsyncDisposable
 
@@ -40,6 +41,18 @@
                             <UiBadge Color="@(device.RecordingStatus.Value ? "red" : "purple")" ShowDot="false">
                                 @(device.RecordingStatus.Value ? "Recording" : "Idle")
                             </UiBadge>
+                        </div>
+                    }
+
+                    @if ((device.Type == "ATEM" || device.Type == "Switcher") && device.AtemEnabled == true)
+                    {
+                        <div class="mt-2 row between">
+                            <span class="muted">Control</span>
+                            <span class="badge purple clickable-badge" 
+                                  @onclick="@(() => OpenAtemControlModal(device))"
+                                  @onclick:stopPropagation="true">
+                                CONTROL
+                            </span>
                         </div>
                     }
                 </UiCard>
@@ -162,6 +175,11 @@
     </Footer>
 
 </UiModal>
+
+<!-- ATEM Control Modal -->
+<AtemControlModal @bind-IsOpen="_isAtemControlModalOpen"
+                  DeviceId="@(_selectedAtemDevice != null ? _selectedAtemDevice.Id : Guid.Empty)"
+                  DeviceName="@(_selectedAtemDevice?.Name ?? "")" />
 
 
     <!-- Delete Device Confirmation Modal -->
@@ -327,6 +345,25 @@
 
 </div>
 
+<style>
+    .clickable-badge {
+        transition: transform 140ms cubic-bezier(.2,.8,.2,1), 
+                    background 140ms cubic-bezier(.2,.8,.2,1),
+                    border-color 140ms cubic-bezier(.2,.8,.2,1);
+        user-select: none;
+    }
+    
+    .clickable-badge:hover {
+        transform: translateY(-1px);
+        background: rgba(139,92,255,.20) !important;
+        border-color: rgba(139,92,255,.35) !important;
+    }
+    
+    .clickable-badge:active {
+        transform: translateY(0);
+    }
+</style>
+
 @code {
     // ========== Page Load ==========
     protected override async Task OnInitializedAsync()
@@ -351,6 +388,10 @@
         private DeviceForm _deviceForm = new();
         private DashboardDeviceDto? _selectedDevice;
         private bool _isDeviceModalOpen;
+        
+        // ATEM Control Modal
+        private bool _isAtemControlModalOpen;
+        private DashboardDeviceDto? _selectedAtemDevice;
 
         
         // Classes
@@ -417,6 +458,12 @@
         }
         
         private void CloseDeviceModal() => _isDeviceModalOpen = false;
+        
+        private void OpenAtemControlModal(DashboardDeviceDto device)
+        {
+            _selectedAtemDevice = device;
+            _isAtemControlModalOpen = true;
+        }
 
         // DTO matching API response
         public class DashboardDeviceDto
