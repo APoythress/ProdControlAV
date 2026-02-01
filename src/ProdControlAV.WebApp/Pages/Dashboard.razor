@@ -499,8 +499,8 @@
                 if (response.IsSuccessStatusCode)
                 {
                     var agents = await response.Content.ReadFromJsonAsync<List<AgentLocationDto>>() ?? new();
+                    // Only include agents with non-empty location names, preserve all agents
                     _agentLocations = agents.Where(a => !string.IsNullOrWhiteSpace(a.LocationName))
-                        .DistinctBy(a => a.LocationName)
                         .ToList();
                     _hasMultipleLocations = _agentLocations.Count > 1;
                 }

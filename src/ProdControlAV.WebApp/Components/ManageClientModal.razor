@@ -569,9 +569,9 @@
 
     private string GetTruncatedNoteText(string text)
     {
-        const int maxLength = 80;
-        if (text.Length <= maxLength) return text;
-        return text.Substring(0, maxLength) + "...";
+        const int MaxNoteTruncationLength = 80;
+        if (text.Length <= MaxNoteTruncationLength) return text;
+        return text.Substring(0, MaxNoteTruncationLength) + "...";
     }
 
     // DTOs matching the API

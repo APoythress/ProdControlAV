@@ -251,20 +251,23 @@ public class TenantsController : ControllerBase
     [HttpPost("{id}/regenerate-slug")]
     public async Task<ActionResult<RegenerateSlugResponse>> RegenerateSlug(Guid id, CancellationToken ct)
     {
+        const int SlugLength = 16;
+        const int MaxAttempts = 10;
+        
         var tenant = await _db.Tenants.FindAsync(new object?[] { id }, ct);
         if (tenant is null)
             return NotFound(new { error = "tenant_not_found" });
 
-        var newSlug = Guid.NewGuid().ToString("N")[..16];
+        var newSlug = Guid.NewGuid().ToString("N")[..SlugLength];
         
         var attempts = 0;
-        while (await _db.Tenants.AnyAsync(t => t.Slug == newSlug, ct) && attempts < 10)
+        while (await _db.Tenants.AnyAsync(t => t.Slug == newSlug, ct) && attempts < MaxAttempts)
         {
-            newSlug = Guid.NewGuid().ToString("N")[..16];
+            newSlug = Guid.NewGuid().ToString("N")[..SlugLength];
             attempts++;
         }
 
-        if (attempts >= 10)
+        if (attempts >= MaxAttempts)
             return StatusCode(500, new { error = "failed_to_generate_unique_slug" });
 
         tenant.Slug = newSlug;
@@ -361,12 +364,17 @@ public class TenantsController : ControllerBase
     [HttpGet("{id}/notes")]
     public async Task<ActionResult<ClientNotesResponse>> GetNotes(Guid id, [FromQuery] int page = 1, [FromQuery] int pageSize = 15, CancellationToken ct = default)
     {
+        const int MinPage = 1;
+        const int MinPageSize = 1;
+        const int MaxPageSize = 100;
+        const int DefaultPageSize = 15;
+        
         var tenant = await _db.Tenants.FindAsync(new object?[] { id }, ct);
         if (tenant is null)
             return NotFound(new { error = "tenant_not_found" });
 
-        if (page < 1) page = 1;
-        if (pageSize < 1 || pageSize > 100) pageSize = 15;
+        if (page < MinPage) page = MinPage;
+        if (pageSize < MinPageSize || pageSize > MaxPageSize) pageSize = DefaultPageSize;
 
         var totalCount = await _db.ClientNotes
             .Where(n => n.TenantId == id)

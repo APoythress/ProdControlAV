@@ -792,21 +792,12 @@ public sealed class AgentsController : ControllerBase
     }
 
     /// <summary>
-    /// DTO for agent location information
-    /// </summary>
-    public sealed class AgentLocationDto
-    {
-        public Guid Id { get; set; }
-        public string? LocationName { get; set; }
-    }
-
-    /// <summary>
     /// Gets all agents for the current tenant (for device location dropdown)
     /// GET /api/agents
     /// </summary>
     [HttpGet]
     [Authorize(Policy = "TenantMember")]
-    [ProducesResponseType<List<AgentLocationDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<List<ProdControlAV.API.Models.AgentDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> GetAgents(CancellationToken ct)
     {
@@ -821,11 +812,7 @@ public sealed class AgentsController : ControllerBase
 
             var agents = await _db.Agents
                 .Where(a => a.TenantId == tenantId)
-                .Select(a => new AgentLocationDto
-                {
-                    Id = a.Id,
-                    LocationName = a.LocationName
-                })
+                .Select(a => new ProdControlAV.API.Models.AgentDto(a.Id, a.Name, a.LocationName, a.LastSeenUtc, a.Version))
                 .ToListAsync(ct);
 
             return Ok(agents);
