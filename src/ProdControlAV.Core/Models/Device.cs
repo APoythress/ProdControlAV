@@ -13,6 +13,7 @@ public class Device
     public string Ip { get; set; }
     public int Port { get; set; }
     public string? Location { get; set; }
+    public string? SubLocation { get; set; }
     public Guid TenantId { get; set; }
     public bool Status { get; set; }
     public DateTimeOffset? LastChecked { get; set; }

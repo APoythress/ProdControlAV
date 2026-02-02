@@ -1,59 +1,80 @@
+// C#
 using System;
 using System.IO;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
 
-/// <summary>
-/// Design-time factory for EF migrations and tooling support.
-/// This allows EF tools to create the DbContext without running the full application.
-/// </summary>
-public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<AppDbContext>
+namespace ProdControlAV.API.Data
 {
-    public AppDbContext CreateDbContext(string[] args)
+    public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<AppDbContext>
     {
-        // Build configuration from standard ASP.NET Core sources
-        var configuration = new ConfigurationBuilder()
-            .SetBasePath(Directory.GetCurrentDirectory())
-            .AddJsonFile("appsettings.json", optional: false)
-            .AddJsonFile("appsettings.Development.json", optional: true)
-            .AddJsonFile("appsettings.Production.json", optional: true)
-            .AddJsonFile("appsettings.ScriptGeneration.json", optional: true)
-            .AddJsonFile("appsettings.Migration.json", optional: true)
-            .AddEnvironmentVariables()
-            .Build();
-
-        var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
-        
-        // Determine provider and connection string
-        ConfigureDatabase(optionsBuilder, configuration, args);
-
-        // Create a design-time tenant provider 
-        var designTimeTenantProvider = new DesignTimeTenantProvider();
-        
-        return new AppDbContext(optionsBuilder.Options, designTimeTenantProvider);
-    }
-
-    private static void ConfigureDatabase(DbContextOptionsBuilder<AppDbContext> optionsBuilder, IConfiguration configuration, string[] args)
-    {
-        var connectionString = configuration.GetConnectionString("DefaultConnection");
-        
-        // Require connection string for SQL Server
-        if (string.IsNullOrEmpty(connectionString))
+        public AppDbContext CreateDbContext(string[] args)
         {
-            throw new InvalidOperationException("Default connection string is required for SQL Server database.");
+            var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
+            var basePath = Directory.GetCurrentDirectory();
+
+            var configuration = new ConfigurationBuilder()
+                .SetBasePath(basePath)
+                .AddJsonFile("appsettings.json", optional: true)
+                .AddJsonFile($"appsettings.{env}.json", optional: true)
+                .AddEnvironmentVariables()
+                .Build();
+
+            // Resolve connection string from args, config, or env
+            var connectionString = ResolveConnectionString(args, configuration);
+
+            // Mask preview for logging (avoid printing passwords)
+            var preview = connectionString == null ? "<null>" :
+                (connectionString.Length > 64 ? connectionString.Substring(0, 64) + "..." : connectionString);
+
+            Console.WriteLine($"DesignTimeDbContextFactory: env='{env}', basePath='{basePath}', DefaultConnection length={(connectionString?.Length ?? 0)}, preview='{preview}'");
+
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                throw new InvalidOperationException(
+                    "Connection string 'DefaultConnection' not found or empty. " +
+                    "Ensure `appsettings.json` (or env) contains ConnectionStrings:DefaultConnection, " +
+                    "or pass --connection \"<conn>\" to dotnet ef, or set environment variable ConnectionStrings__DefaultConnection.");
+            }
+
+            var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
+            try
+            {
+                optionsBuilder.UseSqlServer(connectionString);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new InvalidOperationException($"Invalid connection string format. Preview: '{preview}'. SqlClient error: {ex.Message}", ex);
+            }
+
+            var designTimeTenantProvider = new DesignTimeTenantProvider();
+            return new AppDbContext(optionsBuilder.Options, designTimeTenantProvider);
         }
 
-        // Always use SQL Server
-        optionsBuilder.UseSqlServer(connectionString);
-}
-}
+        private static string ResolveConnectionString(string[] args, IConfiguration configuration)
+        {
+            if (args != null)
+            {
+                foreach (var a in args)
+                {
+                    if (a.StartsWith("--connection=", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return a.Substring("--connection=".Length).Trim('"');
+                    }
+                }
+            }
 
-/// <summary>
-/// Design-time implementation of ITenantProvider for EF migrations.
-/// Uses a default tenant ID since migrations apply to all tenants.
-/// </summary>
-public class DesignTimeTenantProvider : ITenantProvider
-{
-    public Guid TenantId => Guid.Empty; // Use empty GUID for design-time migrations
+            // Standard config key
+            var cs = configuration.GetConnectionString("DefaultConnection");
+            if (!string.IsNullOrWhiteSpace(cs)) return cs;
+
+            // Environment variable fallback (Docker / CI friendly)
+            cs = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
+            if (!string.IsNullOrWhiteSpace(cs)) return cs;
+
+            cs = Environment.GetEnvironmentVariable("DEFAULT_CONNECTION");
+            return cs;
+        }
+    }
 }

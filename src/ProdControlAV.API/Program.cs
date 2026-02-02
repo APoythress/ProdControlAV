@@ -315,6 +315,9 @@ builder.Services.AddScoped<IAtemStateStore>(sp => {
 builder.Services.Configure<ActivityMonitorOptions>(builder.Configuration.GetSection("ActivityMonitor"));
 builder.Services.AddSingleton<IActivityMonitor, DistributedActivityMonitor>();
 
+// Client Notes Configuration
+builder.Services.Configure<ClientNotesOptions>(builder.Configuration.GetSection("ClientNotes"));
+
 // Twilio SMS service for notifications
 builder.Services.Configure<TwilioConfig>(builder.Configuration.GetSection("Twilio"));
 builder.Services.AddSingleton<ISmsService, TwilioSmsService>();

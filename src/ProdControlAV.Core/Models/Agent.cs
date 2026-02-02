@@ -13,4 +13,5 @@ public class Agent
     public string? LastIp { get; set; }
     public DateTime? LastSeenUtc { get; set; }
     public string? Version { get; set; }
+    public string? LocationName { get; set; }
 }

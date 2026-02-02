@@ -1,0 +1,234 @@
+@page "/clientnotes/{tenantId:guid}"
+@using System.Net.Http
+@using System.Net.Http.Json
+@using ProdControlAV.WebApp.Components.Ui
+
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<div class="container mt-5">
+    <UiCard Title="@($"{_tenantName} Notes")"
+            SubTitle="View all client notes"
+            Variant="card pad accent-blue">
+
+        @if (_loading)
+        {
+            <div class="text-center">
+                <div class="spinner-border text-light" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        }
+        else if (_error != null)
+        {
+            <div class="alert alert-danger">
+                @_error
+            </div>
+        }
+        else if (!_notes.Any())
+        {
+            <div class="alert alert-info">
+                No notes found for this client.
+            </div>
+        }
+        else
+        {
+            <div class="notes-list">
+                @foreach (var note in _notes)
+                {
+                    <div class="note-card">
+                        <div class="note-header">
+                            <span class="note-date">@note.CreatedUtc.ToString("MMM dd, yyyy hh:mm tt") UTC</span>
+                            <span class="note-author">by @note.CreatedBy</span>
+                        </div>
+                        <div class="note-content">
+                            @note.NoteText
+                        </div>
+                    </div>
+                }
+            </div>
+
+            @if (_totalPages > 1)
+            {
+                <div class="pagination-controls mt-4">
+                    <UiButton Variant="btn btn-secondary"
+                              Disabled="@(_currentPage <= 1)"
+                              OnClick="@PreviousPage">
+                        Previous
+                    </UiButton>
+
+                    <span class="pagination-info">
+                        Page @_currentPage of @_totalPages (@_totalCount total notes)
+                    </span>
+
+                    <UiButton Variant="btn btn-secondary"
+                              Disabled="@(_currentPage >= _totalPages)"
+                              OnClick="@NextPage">
+                        Next
+                    </UiButton>
+                </div>
+            }
+        }
+
+        <div class="mt-3">
+            <UiButton Variant="btn btn-link"
+                      OnClick="@GoBack">
+                ← Back to Client Manager
+            </UiButton>
+        </div>
+
+    </UiCard>
+</div>
+
+<style>
+    .notes-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .note-card {
+        padding: 1rem;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .note-header {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 0.75rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .note-date {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.9);
+    }
+
+    .note-author {
+        font-size: 0.875rem;
+        color: rgba(255, 255, 255, 0.6);
+    }
+
+    .note-content {
+        font-size: 0.95rem;
+        line-height: 1.6;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+
+    .pagination-controls {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 1.5rem;
+    }
+
+    .pagination-info {
+        font-size: 0.875rem;
+        color: rgba(255, 255, 255, 0.7);
+    }
+</style>
+
+@code {
+    [Parameter] public Guid TenantId { get; set; }
+
+    private List<ClientNoteDto> _notes = new();
+    private bool _loading = true;
+    private string? _error;
+    private string _tenantName = "Client";
+    
+    private int _currentPage = 1;
+    private int _pageSize = 15;
+    private int _totalCount = 0;
+    private int _totalPages = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadNotes();
+    }
+
+    private async Task LoadNotes()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            // Load tenant name
+            var tenantResponse = await Http.GetAsync($"api/tenants/{TenantId}");
+            if (tenantResponse.IsSuccessStatusCode)
+            {
+                var tenant = await tenantResponse.Content.ReadFromJsonAsync<TenantDto>();
+                _tenantName = tenant?.Name ?? "Client";
+            }
+
+            // Load notes with pagination
+            var notesResponse = await Http.GetAsync($"api/tenants/{TenantId}/notes?page={_currentPage}&pageSize={_pageSize}");
+            
+            if (notesResponse.IsSuccessStatusCode)
+            {
+                var response = await notesResponse.Content.ReadFromJsonAsync<ClientNotesResponse>();
+                if (response != null)
+                {
+                    _notes = response.Notes;
+                    _totalCount = response.TotalCount;
+                    _totalPages = response.TotalPages;
+                    _currentPage = response.CurrentPage;
+                    _pageSize = response.PageSize;
+                }
+            }
+            else
+            {
+                _error = $"Failed to load notes: {notesResponse.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Error loading notes: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task NextPage()
+    {
+        if (_currentPage < _totalPages)
+        {
+            _currentPage++;
+            await LoadNotes();
+        }
+    }
+
+    private async Task PreviousPage()
+    {
+        if (_currentPage > 1)
+        {
+            _currentPage--;
+            await LoadNotes();
+        }
+    }
+
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/clientmanager");
+    }
+
+    // DTOs
+    private record TenantDto(Guid TenantId, string Name, string Slug);
+    
+    private record ClientNoteDto(Guid Id, string NoteText, DateTime CreatedUtc, string CreatedBy);
+    
+    private record ClientNotesResponse(
+        List<ClientNoteDto> Notes,
+        int TotalCount,
+        int PageSize,
+        int CurrentPage,
+        int TotalPages
+    );
+}

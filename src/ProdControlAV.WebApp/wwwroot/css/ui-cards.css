@@ -191,7 +191,7 @@
 .ui-modal{
     width: min(980px, 96vw);
     max-height: 88vh;
-    overflow: auto;
+    /*overflow: hidden;*/
     border-radius: 22px;
     border: 1px solid rgba(255,255,255,.12);
 
@@ -205,9 +205,11 @@
             inset 0 1px 0 rgba(255,255,255,.06);
 
     transform: translateY(10px) scale(.985);
-    opacity: 0;
+    /*opacity: 0;*/
     transition: transform 160ms cubic-bezier(.2,.8,.2,1), opacity 160ms cubic-bezier(.2,.8,.2,1);
     position: relative;
+    display: flex;
+    flex-direction: column;
 }
 
 .ui-modal-backdrop.show .ui-modal{
@@ -260,6 +262,20 @@
 
 .ui-modal-body{
     padding: 16px 18px;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.ui-modal-body::-webkit-scrollbar {
+    display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.ui-modal-body {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
 }
 
 .ui-modal-footer{
