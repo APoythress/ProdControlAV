@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 using ProdControlAV.Core.Interfaces;
+using ProdControlAV.API.Data;
 
 namespace ProdControlAV.Tests;
 
@@ -86,7 +87,7 @@ public class DatabaseConfigurationTests
             
             // Act & Assert
             var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateDbContext(Array.Empty<string>()));
-            Assert.Contains("Default connection string is required", exception.Message);
+            Assert.Contains("Connection string 'DefaultConnection' not found or empty", exception.Message);
         }
         finally
         {

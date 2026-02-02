@@ -7,6 +7,14 @@ using Microsoft.Extensions.Configuration;
 
 namespace ProdControlAV.API.Data
 {
+    /// <summary>
+    /// Design-time tenant provider that returns Guid.Empty for EF Core tooling scenarios
+    /// </summary>
+    internal class DesignTimeTenantProvider : ITenantProvider
+    {
+        public Guid TenantId => Guid.Empty;
+    }
+
     public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<AppDbContext>
     {
         public AppDbContext CreateDbContext(string[] args)
