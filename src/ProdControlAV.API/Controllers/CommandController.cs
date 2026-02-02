@@ -268,7 +268,12 @@ public class CommandController : ControllerBase
             MonitorRecordingStatus: command.MonitorRecordingStatus,
             StatusEndpoint: command.StatusEndpoint,
             StatusPollingIntervalSeconds: command.StatusPollingIntervalSeconds,
-            Status: "Pending"
+            Status: "Pending",
+            AttemptCount: 0,
+            AtemFunction: command.AtemFunction,
+            AtemInputId: command.AtemInputId,
+            AtemTransitionRate: command.AtemTransitionRate,
+            AtemMacroId: command.AtemMacroId
         );
 
         await _queueStore.EnqueueAsync(queuedCommand, ct);

@@ -589,7 +589,7 @@ public sealed class AgentsController : ControllerBase
                 {
                     CommandId = firstCmd.CommandId,
                     DeviceId = firstCmd.DeviceId,
-                    Verb = firstCmd.CommandType, // REST or Telnet
+                    Verb = firstCmd.CommandType, // REST, Telnet, or ATEM
                     Payload = System.Text.Json.JsonSerializer.Serialize(new
                     {
                         commandName = firstCmd.CommandName,
@@ -603,7 +603,12 @@ public sealed class AgentsController : ControllerBase
                         deviceType = firstCmd.DeviceType,
                         monitorRecordingStatus = firstCmd.MonitorRecordingStatus,
                         statusEndpoint = firstCmd.StatusEndpoint,
-                        statusPollingIntervalSeconds = firstCmd.StatusPollingIntervalSeconds
+                        statusPollingIntervalSeconds = firstCmd.StatusPollingIntervalSeconds,
+                        // ATEM-specific fields
+                        atemFunction = firstCmd.AtemFunction,
+                        atemInputId = firstCmd.AtemInputId,
+                        atemTransitionRate = firstCmd.AtemTransitionRate,
+                        atemMacroId = firstCmd.AtemMacroId
                     })
                 };
 

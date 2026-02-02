@@ -660,17 +660,26 @@ public class CommandService : ICommandService
             }
 
             // Extract ATEM command details
-            if (!payload.TryGetProperty("atemCommand", out var atemCommandProp))
+            // Try "atemCommand" first (from AtemController), then "atemFunction" (from Commands page)
+            string? atemCommand = null;
+            if (payload.TryGetProperty("atemCommand", out var atemCommandProp))
+            {
+                atemCommand = atemCommandProp.GetString();
+            }
+            else if (payload.TryGetProperty("atemFunction", out var atemFunctionProp))
+            {
+                atemCommand = atemFunctionProp.GetString();
+            }
+            
+            if (string.IsNullOrEmpty(atemCommand))
             {
                 return new AtemCommandResult
                 {
                     Success = false,
-                    Message = "Missing required property: atemCommand",
+                    Message = "Missing required property: atemCommand or atemFunction",
                     Response = null
                 };
             }
-            
-            var atemCommand = atemCommandProp.GetString();
             
             _logger.LogInformation("Executing ATEM command: {AtemCommand} for device {DeviceId}", atemCommand, deviceId);
             
@@ -678,18 +687,28 @@ public class CommandService : ICommandService
             switch (atemCommand?.ToUpperInvariant())
             {
                 case "CUT_TO_PROGRAM":
+                case "CUTTOPROGRAM":
                 {
-                    if (!payload.TryGetProperty("inputId", out var inputIdProp))
+                    // Try "inputId" first, then "atemInputId" (from Commands page)
+                    long inputId;
+                    if (payload.TryGetProperty("inputId", out var inputIdProp))
+                    {
+                        inputId = inputIdProp.GetInt64();
+                    }
+                    else if (payload.TryGetProperty("atemInputId", out var atemInputIdProp))
+                    {
+                        inputId = atemInputIdProp.GetInt32();
+                    }
+                    else
                     {
                         return new AtemCommandResult
                         {
                             Success = false,
-                            Message = "Missing required property: inputId",
+                            Message = "Missing required property: inputId or atemInputId",
                             Response = null
                         };
                     }
                     
-                    var inputId = inputIdProp.GetInt64();
                     var success = await _atemManager.CutToProgramAsync(deviceId, deviceIp, devicePort, inputId, ct);
                     
                     return new AtemCommandResult
@@ -703,22 +722,37 @@ public class CommandService : ICommandService
                 }
                 
                 case "FADE_TO_PROGRAM":
+                case "FADETOPROGRAM":
                 {
-                    if (!payload.TryGetProperty("inputId", out var inputIdProp))
+                    // Try "inputId" first, then "atemInputId" (from Commands page)
+                    long inputId;
+                    if (payload.TryGetProperty("inputId", out var inputIdProp2))
+                    {
+                        inputId = inputIdProp2.GetInt64();
+                    }
+                    else if (payload.TryGetProperty("atemInputId", out var atemInputIdProp2))
+                    {
+                        inputId = atemInputIdProp2.GetInt32();
+                    }
+                    else
                     {
                         return new AtemCommandResult
                         {
                             Success = false,
-                            Message = "Missing required property: inputId",
+                            Message = "Missing required property: inputId or atemInputId",
                             Response = null
                         };
                     }
                     
-                    var inputId = inputIdProp.GetInt64();
                     int? transitionRate = null;
+                    // Try "transitionRate" first, then "atemTransitionRate" (from Commands page)
                     if (payload.TryGetProperty("transitionRate", out var rateProp) && rateProp.ValueKind != JsonValueKind.Null)
                     {
                         transitionRate = rateProp.GetInt32();
+                    }
+                    else if (payload.TryGetProperty("atemTransitionRate", out var atemRateProp) && atemRateProp.ValueKind != JsonValueKind.Null)
+                    {
+                        transitionRate = atemRateProp.GetInt32();
                     }
                     
                     var success = await _atemManager.AutoToProgramAsync(deviceId, deviceIp, devicePort, inputId, transitionRate, ct);
@@ -730,6 +764,30 @@ public class CommandService : ICommandService
                             ? $"Fade to Program input {inputId} (rate: {transitionRate ?? 30}) executed successfully"
                             : $"Failed to execute Fade to Program input {inputId}",
                         Response = success ? $"{{\"command\":\"FadeToProgram\",\"inputId\":{inputId},\"transitionRate\":{transitionRate ?? 30}}}" : null
+                    };
+                }
+                
+                case "SETPREVIEW":
+                {
+                    // SetPreview not yet implemented in AtemConnectionManager
+                    _logger.LogWarning("SetPreview ATEM function not yet implemented");
+                    return new AtemCommandResult
+                    {
+                        Success = false,
+                        Message = "SetPreview function is not yet implemented",
+                        Response = null
+                    };
+                }
+                
+                case "RUNMACRO":
+                {
+                    // RunMacro not yet implemented in AtemConnectionManager
+                    _logger.LogWarning("RunMacro ATEM function not yet implemented");
+                    return new AtemCommandResult
+                    {
+                        Success = false,
+                        Message = "RunMacro function is not yet implemented",
+                        Response = null
                     };
                 }
                 
