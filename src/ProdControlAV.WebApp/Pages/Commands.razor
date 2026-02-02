@@ -121,6 +121,7 @@
                             <select class="form-select" id="commandType" @bind="commandForm.CommandType" required>
                                 <option value="REST">REST API</option>
                                 <option value="Telnet">Telnet</option>
+                                <option value="ATEM">ATEM Function</option>
                             </select>
                         </div>
                         @if (commandForm.CommandType == "REST")
@@ -138,14 +139,63 @@
                         }
                     </div>
 
+                    @if (commandForm.CommandType == "ATEM")
+                    {
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="atemFunction" class="form-label">ATEM Function <span class="text-danger">*</span></label>
+                                <select class="form-select" id="atemFunction" @bind="commandForm.AtemFunction" required>
+                                    <option value="">-- Select Function --</option>
+                                    <option value="CutToProgram">Cut to Program</option>
+                                    <option value="FadeToProgram">Fade to Program</option>
+                                    <option value="SetPreview">Set Preview</option>
+                                    <option value="RunMacro">Run Macro</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        @if (commandForm.AtemFunction == "CutToProgram" || commandForm.AtemFunction == "FadeToProgram" || commandForm.AtemFunction == "SetPreview")
+                        {
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="atemInputId" class="form-label">Input ID <span class="text-danger">*</span></label>
+                                    <input type="number" class="form-control" id="atemInputId" @bind="commandForm.AtemInputId" min="1" max="20" required>
+                                    <div class="form-text">Input source ID (1-20)</div>
+                                </div>
+                            </div>
+                        }
+
+                        @if (commandForm.AtemFunction == "FadeToProgram")
+                        {
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="atemTransitionRate" class="form-label">Transition Rate (frames)</label>
+                                    <input type="number" class="form-control" id="atemTransitionRate" @bind="commandForm.AtemTransitionRate" min="1" max="250" placeholder="30">
+                                    <div class="form-text">Optional: Transition duration in frames (default: 30)</div>
+                                </div>
+                            </div>
+                        }
+
+                        @if (commandForm.AtemFunction == "RunMacro")
+                        {
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="atemMacroId" class="form-label">Macro ID <span class="text-danger">*</span></label>
+                                    <input type="number" class="form-control" id="atemMacroId" @bind="commandForm.AtemMacroId" min="0" required>
+                                    <div class="form-text">Macro ID to execute</div>
+                                </div>
+                            </div>
+                        }
+                    }
+
                     <div class="row mb-3">
                         <div class="col-12">
                             <label for="commandData" class="form-label">
-                                @(commandForm.CommandType == "REST" ? "API Endpoint Path" : "Telnet Command")
+                                @(commandForm.CommandType == "REST" ? "API Endpoint Path" : commandForm.CommandType == "ATEM" ? "Notes (Optional)" : "Telnet Command")
                             </label>
                             <input type="text" class="form-control" id="commandData" 
                                    @bind="commandForm.CommandData" 
-                                   placeholder="@(commandForm.CommandType == "REST" ? "/api/power/on" : "power on")">
+                                   placeholder="@(commandForm.CommandType == "REST" ? "/api/power/on" : commandForm.CommandType == "ATEM" ? "Additional notes" : "power on")">
                         </div>
                     </div>
 
@@ -417,7 +467,11 @@
             RequireDeviceOnline = cmd.RequireDeviceOnline,
             MonitorRecordingStatus = cmd.MonitorRecordingStatus,
             StatusEndpoint = cmd.StatusEndpoint,
-            StatusPollingIntervalSeconds = cmd.StatusPollingIntervalSeconds
+            StatusPollingIntervalSeconds = cmd.StatusPollingIntervalSeconds,
+            AtemFunction = cmd.AtemFunction,
+            AtemInputId = cmd.AtemInputId,
+            AtemTransitionRate = cmd.AtemTransitionRate,
+            AtemMacroId = cmd.AtemMacroId
         };
         modalMessage = null;
         await ShowModal("commandModal");
@@ -437,6 +491,32 @@
             modalMessage = "Device is required";
             modalMessageCss = "alert-danger";
             return;
+        }
+
+        // Validate ATEM-specific fields
+        if (commandForm.CommandType == "ATEM")
+        {
+            if (string.IsNullOrWhiteSpace(commandForm.AtemFunction))
+            {
+                modalMessage = "ATEM Function is required";
+                modalMessageCss = "alert-danger";
+                return;
+            }
+
+            if ((commandForm.AtemFunction == "CutToProgram" || commandForm.AtemFunction == "FadeToProgram" || commandForm.AtemFunction == "SetPreview")
+                && !commandForm.AtemInputId.HasValue)
+            {
+                modalMessage = "Input ID is required for this ATEM function";
+                modalMessageCss = "alert-danger";
+                return;
+            }
+
+            if (commandForm.AtemFunction == "RunMacro" && !commandForm.AtemMacroId.HasValue)
+            {
+                modalMessage = "Macro ID is required for this ATEM function";
+                modalMessageCss = "alert-danger";
+                return;
+            }
         }
 
         isSaving = true;
@@ -462,7 +542,11 @@
                     RequireDeviceOnline = commandForm.RequireDeviceOnline,
                     MonitorRecordingStatus = commandForm.MonitorRecordingStatus,
                     StatusEndpoint = commandForm.StatusEndpoint,
-                    StatusPollingIntervalSeconds = commandForm.StatusPollingIntervalSeconds
+                    StatusPollingIntervalSeconds = commandForm.StatusPollingIntervalSeconds,
+                    AtemFunction = commandForm.AtemFunction,
+                    AtemInputId = commandForm.AtemInputId,
+                    AtemTransitionRate = commandForm.AtemTransitionRate,
+                    AtemMacroId = commandForm.AtemMacroId
                 };
                 response = await Http.PutAsJsonAsync($"api/commands/{editingCommand.CommandId}", updateDto);
             }
@@ -482,7 +566,11 @@
                     RequireDeviceOnline = commandForm.RequireDeviceOnline,
                     MonitorRecordingStatus = commandForm.MonitorRecordingStatus,
                     StatusEndpoint = commandForm.StatusEndpoint,
-                    StatusPollingIntervalSeconds = commandForm.StatusPollingIntervalSeconds
+                    StatusPollingIntervalSeconds = commandForm.StatusPollingIntervalSeconds,
+                    AtemFunction = commandForm.AtemFunction,
+                    AtemInputId = commandForm.AtemInputId,
+                    AtemTransitionRate = commandForm.AtemTransitionRate,
+                    AtemMacroId = commandForm.AtemMacroId
                 };
                 response = await Http.PostAsJsonAsync("api/commands", createDto);
             }
@@ -623,6 +711,7 @@
         {
             "REST" => "bg-primary",
             "Telnet" => "bg-info",
+            "ATEM" => "bg-success",
             _ => "bg-secondary"
         };
     }
@@ -649,6 +738,12 @@
         public bool MonitorRecordingStatus { get; set; } = false;
         public string? StatusEndpoint { get; set; }
         public int StatusPollingIntervalSeconds { get; set; } = 60;
+        
+        // ATEM-specific fields
+        public string? AtemFunction { get; set; }
+        public int? AtemInputId { get; set; }
+        public int? AtemTransitionRate { get; set; }
+        public int? AtemMacroId { get; set; }
     }
 
     private class DashboardDeviceDto

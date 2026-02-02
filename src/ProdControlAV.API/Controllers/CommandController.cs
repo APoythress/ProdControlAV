@@ -116,6 +116,10 @@ public class CommandController : ControllerBase
             MonitorRecordingStatus = dto.MonitorRecordingStatus ?? false,
             StatusEndpoint = dto.StatusEndpoint?.Trim(),
             StatusPollingIntervalSeconds = dto.StatusPollingIntervalSeconds ?? 60,
+            AtemFunction = dto.AtemFunction?.Trim(),
+            AtemInputId = dto.AtemInputId,
+            AtemTransitionRate = dto.AtemTransitionRate,
+            AtemMacroId = dto.AtemMacroId,
             CreatedUtc = DateTimeOffset.UtcNow
         };
 
@@ -167,6 +171,18 @@ public class CommandController : ControllerBase
         
         if (dto.StatusPollingIntervalSeconds.HasValue)
             command.StatusPollingIntervalSeconds = dto.StatusPollingIntervalSeconds.Value;
+
+        if (dto.AtemFunction is not null)
+            command.AtemFunction = dto.AtemFunction.Trim();
+        
+        if (dto.AtemInputId.HasValue)
+            command.AtemInputId = dto.AtemInputId.Value;
+        
+        if (dto.AtemTransitionRate.HasValue)
+            command.AtemTransitionRate = dto.AtemTransitionRate.Value;
+        
+        if (dto.AtemMacroId.HasValue)
+            command.AtemMacroId = dto.AtemMacroId.Value;
 
         command.UpdatedUtc = DateTimeOffset.UtcNow;
 
@@ -278,7 +294,11 @@ public class CommandController : ControllerBase
         bool? RequireDeviceOnline,
         bool? MonitorRecordingStatus,
         string? StatusEndpoint,
-        int? StatusPollingIntervalSeconds);
+        int? StatusPollingIntervalSeconds,
+        string? AtemFunction,
+        int? AtemInputId,
+        int? AtemTransitionRate,
+        int? AtemMacroId);
 
     public record UpdateCommandDto(
         string? CommandName,
@@ -291,7 +311,11 @@ public class CommandController : ControllerBase
         bool? RequireDeviceOnline,
         bool? MonitorRecordingStatus,
         string? StatusEndpoint,
-        int? StatusPollingIntervalSeconds);
+        int? StatusPollingIntervalSeconds,
+        string? AtemFunction,
+        int? AtemInputId,
+        int? AtemTransitionRate,
+        int? AtemMacroId);
 
     // Legacy DeviceAction endpoints for backward compatibility
     [HttpGet("getqueue/{deviceId}")]
