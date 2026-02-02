@@ -726,13 +726,13 @@ public class CommandService : ICommandService
                 {
                     // Try "inputId" first, then "atemInputId" (from Commands page)
                     long inputId;
-                    if (payload.TryGetProperty("inputId", out var inputIdProp2))
+                    if (payload.TryGetProperty("inputId", out var inputIdProp))
                     {
-                        inputId = inputIdProp2.GetInt64();
+                        inputId = inputIdProp.GetInt64();
                     }
-                    else if (payload.TryGetProperty("atemInputId", out var atemInputIdProp2))
+                    else if (payload.TryGetProperty("atemInputId", out var atemInputIdProp))
                     {
-                        inputId = atemInputIdProp2.GetInt32();
+                        inputId = atemInputIdProp.GetInt32();
                     }
                     else
                     {
