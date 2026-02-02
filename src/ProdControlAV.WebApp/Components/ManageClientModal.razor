@@ -3,6 +3,7 @@
 @using ProdControlAV.WebApp.Components.Ui
 @using Microsoft.JSInterop
 @using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Forms
 
 @inject HttpClient Http
 @inject IJSRuntime JsRuntime
@@ -33,33 +34,40 @@
             <UiCard Title="Client Details"
                     SubTitle="Basic information"
                     Variant="card pad card-muted">
-
+                
+                <!-- Client Name, Subscription Plan, and Status -->               
                 <div class="ui-grid cols-3">
+                    <!-- Client Name -->
                     <UiField Label="Client Name">
-                        <input class="input" @bind="_editClientName" @bind:event="oninput" />
+                        <input class="input" 
+                               @bind-value="_editClientName" 
+                               @bind-value:event="oninput"/>
                     </UiField>
-
+                    
+                    <!-- Subscription Plan -->                   
                     <UiField Label="Subscription Plan">
-                        <select class="input" @bind="_selectedSubscriptionPlanId">
+                        <InputSelect class="input" TValue="int?" @bind-Value="_selectedSubscriptionPlanId">
                             <option value="">-- Select Plan --</option>
                             @foreach (var plan in _subscriptionPlans)
                             {
                                 <option value="@plan.SubscriptionPlanId">@plan.SubscriptionPlanText</option>
                             }
-                        </select>
+                        </InputSelect>
                     </UiField>
 
+                    <!-- Status -->                   
                     <UiField Label="Client Status">
-                        <select class="input" @bind="_selectedStatusId">
+                        <InputSelect class="input" TValue="int?" @bind-value="_selectedStatusId">
                             <option value="">-- Select Status --</option>
                             @foreach (var status in _statuses)
                             {
                                 <option value="@status.TenantStatusId">@status.TenantStatusText</option>
                             }
-                        </select>
+                        </InputSelect>
                     </UiField>
                 </div>
-
+                
+                <!-- Slug and Add Agent Buttons -->               
                 <div class="ui-grid cols-2 mt-3">
                     <UiButton Variant="btn btn-warning"
                               OnClick="@ShowGenerateSlugConfirmation">
@@ -82,8 +90,8 @@
                     <textarea class="input" 
                               rows="4" 
                               maxlength="@_maxNoteCharacters"
-                              @bind="_newNoteText"
-                              @bind:event="oninput"
+                              @bind-value="_newNoteText"
+                              @bind-value:event="oninput"
                               placeholder="Enter note (max @_maxNoteCharacters characters)"></textarea>
                     <small class="muted">@(_newNoteText?.Length ?? 0) / @_maxNoteCharacters characters</small>
                 </UiField>
@@ -364,6 +372,11 @@
 
     private async Task SaveChanges()
     {
+        await JsRuntime.InvokeVoidAsync("console.log", "SaveChanges invoked for TenantId: " + TenantId);
+        await JsRuntime.InvokeVoidAsync("console.log","_managementData :" + _managementData);
+        await JsRuntime.InvokeVoidAsync("console.log","_editClientName :" + _editClientName);
+        await JsRuntime.InvokeVoidAsync("console.log","_selectedSubscriptionPlanId :" + _selectedSubscriptionPlanId);
+        await JsRuntime.InvokeVoidAsync("console.log","_selectedStatusId :" + _selectedStatusId);
         if (_managementData == null) return;
 
         _saving = true;

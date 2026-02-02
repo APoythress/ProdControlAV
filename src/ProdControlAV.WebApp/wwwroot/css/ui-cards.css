@@ -191,7 +191,7 @@
 .ui-modal{
     width: min(980px, 96vw);
     max-height: 88vh;
-    overflow: hidden;
+    /*overflow: hidden;*/
     border-radius: 22px;
     border: 1px solid rgba(255,255,255,.12);
 
@@ -205,12 +205,11 @@
             inset 0 1px 0 rgba(255,255,255,.06);
 
     transform: translateY(10px) scale(.985);
-    opacity: 0;
+    /*opacity: 0;*/
     transition: transform 160ms cubic-bezier(.2,.8,.2,1), opacity 160ms cubic-bezier(.2,.8,.2,1);
     position: relative;
     display: flex;
     flex-direction: column;
-}
 }
 
 .ui-modal-backdrop.show .ui-modal{
