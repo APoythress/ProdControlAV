@@ -231,7 +231,7 @@ public class CommandController : ControllerBase
         if (command.RequireDeviceOnline)
         {
             var deviceStatus = await _deviceStatusStore.GetDeviceStatusAsync(tenantId, device.Id, ct);
-            if (deviceStatus is null || deviceStatus.Status != "online")
+            if (deviceStatus is null || deviceStatus.Status != "ONLINE")
             {
                 return BadRequest(new { 
                     error = "device_offline", 

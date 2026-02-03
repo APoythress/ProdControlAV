@@ -27,7 +27,7 @@
                         Class="device-card"
                         @onclick="@(() => OpenDeviceModal(device))">
                     
-                    @if ((device.Type == "ATEM" || device.Type == "Switcher") && device.AtemEnabled == true && _atemStates.TryGetValue(device.Id, out var atemState))
+                    @if (device.Type == "Video" && device.AtemEnabled == true && _atemStates.TryGetValue(device.Id, out var atemState))
                     {
                         <div style="position: absolute; top: 12px; right: 12px;">
                             <UiBadge Color="cyan" ShowDot="false">@GetAtemProgramSourceName(atemState)</UiBadge>
@@ -51,7 +51,7 @@
                         </div>
                     }
 
-                    @if ((device.Type == "ATEM" || device.Type == "Switcher") && device.AtemEnabled == true)
+                    @if (device.Type == "Video" && device.AtemEnabled == true)
                     {
                         <div class="mt-2 row between">
                             <span class="muted">Control</span>
