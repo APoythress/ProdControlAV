@@ -747,7 +747,7 @@
             var atemDevices = _devices.Where(d => 
                 (d.Type == "ATEM" || d.Type == "Switcher") && 
                 d.AtemEnabled == true && 
-                d.Status == true).ToList();
+                d.Status).ToList();
             
             foreach (var device in atemDevices)
             {
@@ -759,10 +759,10 @@
                         _atemStates[device.Id] = state;
                     }
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                     // ATEM state not available - this is expected if agent hasn't polled yet
-                    Console.WriteLine($"Could not fetch ATEM state for {device.Name}: {ex.Message}");
+                    // Silently ignore as this is not an error condition
                 }
             }
         }
