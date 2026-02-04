@@ -263,49 +263,7 @@ public sealed class AgentsController : ControllerBase
         }
     }
 
-    public sealed class CommandPullRequest { public int Max { get; set; } = 10; }
     public sealed class CommandPullResponse { public List<CommandEnvelope> Commands { get; set; } = new(); }
-
-    /// <summary>
-    /// Legacy SQL-based command polling endpoint. DEPRECATED: Use /commands/receive instead for queue-based polling.
-    /// This endpoint will be removed in a future version. It causes SQL load and should not be used in production.
-    /// </summary>
-    [HttpPost("commands/next")]
-    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
-    [Obsolete("Use /api/agents/commands/receive instead. This endpoint polls SQL directly and should not be used in production.")]
-    public async Task<ActionResult<CommandPullResponse>> Next([FromBody] CommandPullRequest req, CancellationToken ct)
-    {
-        _logger.LogWarning("[COMMANDS/NEXT] DEPRECATED endpoint called. This endpoint polls SQL directly and causes unnecessary load. Migrate to /api/agents/commands/receive for queue-based polling.");
-        _logger.LogInformation("[COMMANDS/NEXT] Headers: {Headers}", HttpContext.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString()));
-        _logger.LogInformation("[COMMANDS/NEXT] Body: {Body}", req);
-        var agentIdClaim = GetAgentIdFromClaims();
-        var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenantId" || c.Type.EndsWith("/tenantId"))?.Value;
-        _logger.LogInformation("[COMMANDS/NEXT] Extracted claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
-        if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
-        {
-            _logger.LogWarning("[COMMANDS/NEXT] Invalid token claims: sub={Sub}, tenantId={TenantId}", agentIdClaim, tenantIdClaim);
-            return Unauthorized(new { error = "invalid_token_claims" });
-        }
-        var cmds = await _db.AgentCommands
-            .Where(c => c.AgentId == agentId && c.TenantId == tenantId && c.TakenUtc == null)
-            .OrderBy(c => c.CreatedUtc)
-            .Take(Math.Clamp(req.Max, 1, 50))
-            .ToListAsync(ct);
-        var now = DateTime.UtcNow;
-        cmds.ForEach(c => c.TakenUtc = now);
-        await _db.SaveChangesAsync(ct);
-        _logger.LogInformation("[COMMANDS/NEXT] Returning {Count} commands for AgentId={AgentId}, TenantId={TenantId}", cmds.Count, agentId, tenantId);
-        return Ok(new CommandPullResponse
-        {
-            Commands = cmds.Select(c => new CommandEnvelope
-            {
-                CommandId = c.Id,
-                DeviceId = c.DeviceId,
-                Verb = c.Verb,
-                Payload = c.Payload
-            }).ToList()
-        });
-    }
 
     public sealed class CommandCompleteRequest { public Guid CommandId { get; set; } public bool Success { get; set; } public string? Message { get; set; } public int? DurationMs { get; set; } }
 

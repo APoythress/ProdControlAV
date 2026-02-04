@@ -151,6 +151,7 @@ public class CommandService : ICommandService
         string? deviceIp = null;
         int devicePort = 80;
         string? deviceType = null;
+        Guid deviceId = command.DeviceId;
 
         try
         {
@@ -209,7 +210,7 @@ public class CommandService : ICommandService
                 else if (commandType == "ATEM")
                 {
                     // Execute ATEM command
-                    var result = await ExecuteAtemCommandAsync(payloadJson, ct);
+                    var result = await ExecuteAtemCommandAsync(payloadJson, deviceId, ct);
                     success = result.Success;
                     message = result.Message;
                     response = result.Response;
@@ -620,27 +621,17 @@ public class CommandService : ICommandService
     /// <summary>
     /// Executes an ATEM command from the payload using LibAtem.
     /// </summary>
-    private async Task<AtemCommandResult> ExecuteAtemCommandAsync(JsonElement payload, CancellationToken ct)
+    private async Task<AtemCommandResult> ExecuteAtemCommandAsync(JsonElement payload, Guid deviceId, CancellationToken ct)
     {
         try
         {
             // Extract device information
-            if (!payload.TryGetProperty("deviceId", out var deviceIdProp))
+            if (deviceId == Guid.Empty)
             {
                 return new AtemCommandResult
                 {
                     Success = false,
                     Message = "Missing required property: deviceId",
-                    Response = null
-                };
-            }
-
-            if (!Guid.TryParse(deviceIdProp.GetString(), out var deviceId))
-            {
-                return new AtemCommandResult
-                {
-                    Success = false,
-                    Message = "Invalid deviceId format",
                     Response = null
                 };
             }
@@ -666,7 +657,7 @@ public class CommandService : ICommandService
             {
                 atemCommand = atemCommandProp.GetString();
             }
-            else if (payload.TryGetProperty("atemFunction", out var atemFunctionProp))
+            else if (payload.TryGetProperty("atemFunction", out var atemFunctionProp)) // atemFunction is in the table store but not in payload
             {
                 atemCommand = atemFunctionProp.GetString();
             }

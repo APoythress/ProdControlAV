@@ -91,6 +91,7 @@
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
+                    <!-- Command Name and Device Selector -->
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label for="commandName" class="form-label">Command Name <span class="text-danger">*</span></label>
@@ -108,6 +109,7 @@
                         </div>
                     </div>
 
+                    <!-- Command Description -->
                     <div class="row mb-3">
                         <div class="col-12">
                             <label for="description" class="form-label">Description</label>
@@ -115,6 +117,7 @@
                         </div>
                     </div>
 
+                    <!-- Command Type -->
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label for="commandType" class="form-label">Command Type <span class="text-danger">*</span></label>
@@ -139,6 +142,7 @@
                         }
                     </div>
 
+                    <!-- ATEM Command Fields --> -->
                     @if (commandForm.CommandType == "ATEM")
                     {
                         <div class="row mb-3">
@@ -188,13 +192,14 @@
                         }
                     }
 
+                    <!-- REST Command Fields -->
                     <div class="row mb-3">
                         <div class="col-12">
                             <label for="commandData" class="form-label">
                                 @(commandForm.CommandType == "REST" ? "API Endpoint Path" : commandForm.CommandType == "ATEM" ? "Notes (Optional)" : "Telnet Command")
                             </label>
-                            <input type="text" class="form-control" id="commandData" 
-                                   @bind="commandForm.CommandData" 
+                            <input type="text" class="form-control" id="commandData"
+                                   @bind="commandForm.CommandData"
                                    placeholder="@(commandForm.CommandType == "REST" ? "/api/power/on" : commandForm.CommandType == "ATEM" ? "Additional notes" : "power on")">
                         </div>
                     </div>
@@ -218,6 +223,8 @@
                         </div>
                     }
 
+                    <!-- Require Device Online -->
+                    <div class="row mb-3"></div>
                     <div class="row mb-3">
                         <div class="col-12">
                             <div class="form-check">
@@ -229,6 +236,7 @@
                         </div>
                     </div>
 
+                    <!-- Video Options -->
                     @if (GetSelectedDeviceType() == "Video")
                     {
                         <div class="row mb-3">
@@ -247,7 +255,7 @@
                             <div class="row mb-3">
                                 <div class="col-md-8">
                                     <label for="statusEndpoint" class="form-label">Status Check Endpoint</label>
-                                    <input type="text" class="form-control" id="statusEndpoint" @bind="commandForm.StatusEndpoint" 
+                                    <input type="text" class="form-control" id="statusEndpoint" @bind="commandForm.StatusEndpoint"
                                            placeholder="/api/recording/status">
                                     <div class="form-text">Endpoint to check recording status</div>
                                 </div>
