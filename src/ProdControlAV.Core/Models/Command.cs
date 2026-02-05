@@ -24,18 +24,11 @@ public class Command
     public string? Description { get; set; }
     
     /// <summary>
-    /// Command type: "REST" for HTTP API calls, "Telnet" for telnet commands
+    /// Command type: "REST" for HTTP API calls, "Telnet" for telnet commands, "ATEM" for ATEM switcher functions
     /// </summary>
     [Required]
     [MaxLength(50)]
-    public string CommandType { get; set; } = "REST";
-    
-    /// <summary>
-    /// For REST commands: the API endpoint path (e.g., "/api/power/on")
-    /// For Telnet commands: the command string to send
-    /// </summary>
-    [MaxLength(2000)]
-    public string? CommandData { get; set; }
+    public string CommandType { get; set; }
     
     /// <summary>
     /// HTTP method for REST commands (GET, POST, PUT, DELETE, PATCH)
@@ -52,6 +45,13 @@ public class Command
     /// Optional headers for REST commands (JSON format: {"key":"value"})
     /// </summary>
     public string? RequestHeaders { get; set; }
+    
+    /// <summary>
+    /// For REST commands: the API endpoint path (e.g., "/api/power/on")
+    /// For Telnet commands: the command string to send
+    /// </summary>
+    [MaxLength(2000)]
+    public string? CommandData { get; set; }
     
     public DateTimeOffset CreatedUtc { get; set; } = DateTimeOffset.UtcNow;
     
@@ -77,4 +77,25 @@ public class Command
     /// Polling interval in seconds for recording status monitoring (default: 60 seconds)
     /// </summary>
     public int StatusPollingIntervalSeconds { get; set; } = 60;
+    
+    /// <summary>
+    /// For ATEM commands: the ATEM function to execute (e.g., "CutToProgram", "FadeToProgram", "SetPreview", "RunMacro")
+    /// </summary>
+    [MaxLength(100)]
+    public string? AtemFunction { get; set; }
+    
+    /// <summary>
+    /// For ATEM commands: input ID parameter (used by CutToProgram, FadeToProgram, SetPreview)
+    /// </summary>
+    public int? AtemInputId { get; set; }
+    
+    /// <summary>
+    /// For ATEM commands: transition rate in frames (used by FadeToProgram)
+    /// </summary>
+    public int? AtemTransitionRate { get; set; }
+    
+    /// <summary>
+    /// For ATEM commands: macro ID parameter (used by RunMacro)
+    /// </summary>
+    public int? AtemMacroId { get; set; }
 }

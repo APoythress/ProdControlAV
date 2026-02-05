@@ -27,7 +27,11 @@ namespace ProdControlAV.Infrastructure.Services
         string? StatusEndpoint = null,
         int StatusPollingIntervalSeconds = 60,
         string Status = "Pending",
-        int AttemptCount = 0);
+        int AttemptCount = 0,
+        string? AtemFunction = null,
+        int? AtemInputId = null,
+        int? AtemTransitionRate = null,
+        int? AtemMacroId = null);
 
     /// <summary>
     /// Represents command execution history in Table Storage

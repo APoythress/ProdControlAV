@@ -116,6 +116,10 @@ public class CommandController : ControllerBase
             MonitorRecordingStatus = dto.MonitorRecordingStatus ?? false,
             StatusEndpoint = dto.StatusEndpoint?.Trim(),
             StatusPollingIntervalSeconds = dto.StatusPollingIntervalSeconds ?? 60,
+            AtemFunction = dto.AtemFunction?.Trim(),
+            AtemInputId = dto.AtemInputId,
+            AtemTransitionRate = dto.AtemTransitionRate,
+            AtemMacroId = dto.AtemMacroId,
             CreatedUtc = DateTimeOffset.UtcNow
         };
 
@@ -168,6 +172,18 @@ public class CommandController : ControllerBase
         if (dto.StatusPollingIntervalSeconds.HasValue)
             command.StatusPollingIntervalSeconds = dto.StatusPollingIntervalSeconds.Value;
 
+        if (dto.AtemFunction is not null)
+            command.AtemFunction = dto.AtemFunction.Trim();
+        
+        if (dto.AtemInputId.HasValue)
+            command.AtemInputId = dto.AtemInputId.Value;
+        
+        if (dto.AtemTransitionRate.HasValue)
+            command.AtemTransitionRate = dto.AtemTransitionRate.Value;
+        
+        if (dto.AtemMacroId.HasValue)
+            command.AtemMacroId = dto.AtemMacroId.Value;
+
         command.UpdatedUtc = DateTimeOffset.UtcNow;
 
         await _db.SaveChangesAsync(ct);
@@ -214,8 +230,8 @@ public class CommandController : ControllerBase
         // Check device online status if required
         if (command.RequireDeviceOnline)
         {
-            var deviceStatus = await _deviceStatusStore.GetDeviceStatusAsync(tenantId, device.Id, ct);
-            if (deviceStatus is null || deviceStatus.Status != "online")
+            var deviceStatus = await _deviceStatusStore.GetDeviceStatusAsync(tenantId, device.Id, ct); //TODO - Devices already tracks status - this is a non-needed table
+            if (deviceStatus is null || deviceStatus.Status != "ONLINE")
             {
                 return BadRequest(new { 
                     error = "device_offline", 
@@ -252,7 +268,12 @@ public class CommandController : ControllerBase
             MonitorRecordingStatus: command.MonitorRecordingStatus,
             StatusEndpoint: command.StatusEndpoint,
             StatusPollingIntervalSeconds: command.StatusPollingIntervalSeconds,
-            Status: "Pending"
+            Status: "Pending",
+            AttemptCount: 0,
+            AtemFunction: command.AtemFunction,
+            AtemInputId: command.AtemInputId,
+            AtemTransitionRate: command.AtemTransitionRate,
+            AtemMacroId: command.AtemMacroId
         );
 
         await _queueStore.EnqueueAsync(queuedCommand, ct);
@@ -278,7 +299,11 @@ public class CommandController : ControllerBase
         bool? RequireDeviceOnline,
         bool? MonitorRecordingStatus,
         string? StatusEndpoint,
-        int? StatusPollingIntervalSeconds);
+        int? StatusPollingIntervalSeconds,
+        string? AtemFunction,
+        int? AtemInputId,
+        int? AtemTransitionRate,
+        int? AtemMacroId);
 
     public record UpdateCommandDto(
         string? CommandName,
@@ -291,19 +316,9 @@ public class CommandController : ControllerBase
         bool? RequireDeviceOnline,
         bool? MonitorRecordingStatus,
         string? StatusEndpoint,
-        int? StatusPollingIntervalSeconds);
-
-    // Legacy DeviceAction endpoints for backward compatibility
-    [HttpGet("getqueue/{deviceId}")]
-    public async Task<IActionResult> GetQueueLegacy(string deviceId)
-    {
-        return Ok(new List<object>()); // Legacy endpoint - returns empty for now
-    }
-
-    [HttpPost("execute/{commandId:guid}")]
-    public async Task<IActionResult> ExecuteLegacy(Guid commandId, CancellationToken ct)
-    {
-        // Redirect to new trigger endpoint
-        return await Trigger(commandId, ct);
-    }
+        int? StatusPollingIntervalSeconds,
+        string? AtemFunction,
+        int? AtemInputId,
+        int? AtemTransitionRate,
+        int? AtemMacroId);
 }

@@ -26,6 +26,13 @@
                         Variant="@GetDeviceCardVariant(device)"
                         Class="device-card"
                         @onclick="@(() => OpenDeviceModal(device))">
+                    
+                    @if (device.Type == "Video" && device.AtemEnabled == true && _atemStates.TryGetValue(device.Id, out var atemState))
+                    {
+                        <div style="position: absolute; top: 12px; right: 12px;">
+                            <UiBadge Color="cyan" ShowDot="false">@GetAtemProgramSourceName(atemState)</UiBadge>
+                        </div>
+                    }
 
                     <div class="row between">
                         <span class="muted">Status</span>
@@ -44,7 +51,7 @@
                         </div>
                     }
 
-                    @if ((device.Type == "ATEM" || device.Type == "Switcher") && device.AtemEnabled == true)
+                    @if (device.Type == "Video" && device.AtemEnabled == true)
                     {
                         <div class="mt-2 row between">
                             <span class="muted">Control</span>
@@ -395,6 +402,9 @@
             _commands = await GetCommandsAcync() ?? new();
             if (_commands != null) _loading = false;
             UpdateCommandsAndDevicesLists();
+            
+            // Load ATEM states for ATEM devices
+            await LoadAtemStatesAsync();
         }
         finally
         {
@@ -417,6 +427,9 @@
         // ATEM Control Modal
         private bool _isAtemControlModalOpen;
         private DashboardDeviceDto? _selectedAtemDevice;
+        
+        // ATEM States - stores current program source for each ATEM device
+        private Dictionary<Guid, AtemStateDto> _atemStates = new();
 
         
         // Classes
@@ -432,6 +445,26 @@
             public bool AtemEnabled { get; set; }
             public int? AtemTransitionDefaultRate { get; set; }
             public string? AtemTransitionDefaultType { get; set; }
+        }
+        
+        public class AtemStateDto
+        {
+            public List<AtemInputDto> Inputs { get; set; } = new();
+            public List<AtemDestinationDto> Destinations { get; set; } = new();
+        }
+        
+        public class AtemInputDto
+        {
+            public long InputId { get; set; }
+            public string Name { get; set; } = string.Empty;
+            public string Type { get; set; } = string.Empty;
+        }
+        
+        public class AtemDestinationDto
+        {
+            public string Id { get; set; } = string.Empty;
+            public string Name { get; set; } = string.Empty;
+            public long? CurrentInputId { get; set; }
         }
         
         // Get logic
@@ -707,6 +740,45 @@
         }
         
         // helper logic
+        private async Task LoadAtemStatesAsync()
+        {
+            if (_devices == null) return;
+            
+            var atemDevices = _devices.Where(d => 
+                (d.Type == "ATEM" || d.Type == "Switcher") && 
+                d.AtemEnabled == true && 
+                d.Status).ToList();
+            
+            foreach (var device in atemDevices)
+            {
+                try
+                {
+                    var state = await Http.GetFromJsonAsync<AtemStateDto>($"api/atem/{device.Id}/state");
+                    if (state != null)
+                    {
+                        _atemStates[device.Id] = state;
+                    }
+                }
+                catch (Exception)
+                {
+                    // ATEM state not available - this is expected if agent hasn't polled yet
+                    // Silently ignore as this is not an error condition
+                }
+            }
+        }
+        
+        private string GetAtemProgramSourceName(AtemStateDto state)
+        {
+            var programDest = state.Destinations.FirstOrDefault(d => d.Id == "Program");
+            if (programDest?.CurrentInputId == null)
+            {
+                return "N/A";
+            }
+            
+            var input = state.Inputs.FirstOrDefault(i => i.InputId == programDest.CurrentInputId.Value);
+            return input?.Name ?? $"Input {programDest.CurrentInputId}";
+        }
+
         private string GetDeviceStatusColor(DashboardDeviceDto d)
             => d.Status ? "green" : "red";
 
@@ -947,6 +1019,9 @@
                             _loading = false;
                         
                         UpdateCommandsAndDevicesLists();
+                        
+                        // Refresh ATEM states
+                        await LoadAtemStatesAsync();
 
                         await InvokeAsync(StateHasChanged);
                     }

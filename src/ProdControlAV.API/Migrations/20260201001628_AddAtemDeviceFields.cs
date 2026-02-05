@@ -10,122 +10,109 @@ namespace ProdControlAV.API.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<bool>(
-                name: "AtemEnabled",
-                table: "Devices",
-                type: "bit",
-                nullable: true);
+            // Add columns if they do not already exist (idempotent)
+            migrationBuilder.Sql(@"IF NOT EXISTS(SELECT * FROM sys.columns WHERE Name = N'AtemEnabled' AND Object_ID = Object_ID(N'dbo.Devices'))
+BEGIN
+    ALTER TABLE dbo.Devices ADD AtemEnabled bit NULL;
+END");
 
-            migrationBuilder.AddColumn<int>(
-                name: "AtemTransitionDefaultRate",
-                table: "Devices",
-                type: "int",
-                nullable: true);
+            migrationBuilder.Sql(@"IF NOT EXISTS(SELECT * FROM sys.columns WHERE Name = N'AtemTransitionDefaultRate' AND Object_ID = Object_ID(N'dbo.Devices'))
+BEGIN
+    ALTER TABLE dbo.Devices ADD AtemTransitionDefaultRate int NULL;
+END");
 
-            migrationBuilder.AddColumn<string>(
-                name: "AtemTransitionDefaultType",
-                table: "Devices",
-                type: "nvarchar(max)",
-                nullable: true);
+            migrationBuilder.Sql(@"IF NOT EXISTS(SELECT * FROM sys.columns WHERE Name = N'AtemTransitionDefaultType' AND Object_ID = Object_ID(N'dbo.Devices'))
+BEGIN
+    ALTER TABLE dbo.Devices ADD AtemTransitionDefaultType nvarchar(max) NULL;
+END");
 
-            migrationBuilder.AddColumn<bool>(
-                name: "RecordingStatus",
-                table: "Devices",
-                type: "bit",
-                nullable: true);
+            migrationBuilder.Sql(@"IF NOT EXISTS(SELECT * FROM sys.columns WHERE Name = N'RecordingStatus' AND Object_ID = Object_ID(N'dbo.Devices'))
+BEGIN
+    ALTER TABLE dbo.Devices ADD RecordingStatus bit NULL;
+END");
 
-            migrationBuilder.AlterColumn<string>(
-                name: "Description",
-                table: "CommandTemplates",
-                type: "nvarchar(500)",
-                maxLength: 500,
-                nullable: false,
-                defaultValue: "",
-                oldClrType: typeof(string),
-                oldType: "nvarchar(500)",
-                oldMaxLength: 500,
-                oldNullable: true);
+            // Alter column Description on CommandTemplates - only if it's currently nullable
+            migrationBuilder.Sql(@"IF EXISTS(SELECT * FROM sys.columns WHERE Name = N'Description' AND Object_ID = Object_ID(N'dbo.CommandTemplates'))
+AND EXISTS(SELECT 1 FROM sys.columns c JOIN sys.tables t ON c.object_id = t.object_id WHERE c.name = N'Description' AND t.name = N'CommandTemplates' AND c.is_nullable = 1)
+BEGIN
+    ALTER TABLE dbo.CommandTemplates ALTER COLUMN Description nvarchar(500) NOT NULL;
+    -- Set default empty string for existing NULLs
+    UPDATE dbo.CommandTemplates SET Description = '' WHERE Description IS NULL;
+END");
 
-            migrationBuilder.AlterColumn<bool>(
-                name: "RequireDeviceOnline",
-                table: "Commands",
-                type: "bit",
-                nullable: false,
-                oldClrType: typeof(bool),
-                oldType: "bit",
-                oldDefaultValue: true);
+            // Change RequireDeviceOnline default - safest is to update existing nulls and remove default if necessary
+            migrationBuilder.Sql(@"-- Ensure no NULLs exist for RequireDeviceOnline before enforcing non-null
+IF EXISTS(SELECT 1 FROM sys.columns c JOIN sys.tables t ON c.object_id = t.object_id WHERE c.name = N'RequireDeviceOnline' AND t.name = N'Commands')
+BEGIN
+    UPDATE dbo.Commands SET RequireDeviceOnline = 0 WHERE RequireDeviceOnline IS NULL;
+END");
 
-            migrationBuilder.AddColumn<bool>(
-                name: "MonitorRecordingStatus",
-                table: "Commands",
-                type: "bit",
-                nullable: false,
-                defaultValue: false);
+            migrationBuilder.Sql(@"IF NOT EXISTS(SELECT * FROM sys.columns WHERE Name = N'MonitorRecordingStatus' AND Object_ID = Object_ID(N'dbo.Commands'))
+BEGIN
+    ALTER TABLE dbo.Commands ADD MonitorRecordingStatus bit NOT NULL CONSTRAINT DF_Commands_MonitorRecordingStatus DEFAULT(0);
+END");
 
-            migrationBuilder.AddColumn<string>(
-                name: "StatusEndpoint",
-                table: "Commands",
-                type: "nvarchar(500)",
-                maxLength: 500,
-                nullable: true);
+            migrationBuilder.Sql(@"IF NOT EXISTS(SELECT * FROM sys.columns WHERE Name = N'StatusEndpoint' AND Object_ID = Object_ID(N'dbo.Commands'))
+BEGIN
+    ALTER TABLE dbo.Commands ADD StatusEndpoint nvarchar(500) NULL;
+END");
 
-            migrationBuilder.AddColumn<int>(
-                name: "StatusPollingIntervalSeconds",
-                table: "Commands",
-                type: "int",
-                nullable: false,
-                defaultValue: 0);
+            migrationBuilder.Sql(@"IF NOT EXISTS(SELECT * FROM sys.columns WHERE Name = N'StatusPollingIntervalSeconds' AND Object_ID = Object_ID(N'dbo.Commands'))
+BEGIN
+    ALTER TABLE dbo.Commands ADD StatusPollingIntervalSeconds int NOT NULL CONSTRAINT DF_Commands_StatusPollingIntervalSeconds DEFAULT(0);
+END");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropColumn(
-                name: "AtemEnabled",
-                table: "Devices");
+            // Drop columns if they exist
+            migrationBuilder.Sql(@"IF EXISTS(SELECT * FROM sys.columns WHERE Name = N'AtemEnabled' AND Object_ID = Object_ID(N'dbo.Devices'))
+BEGIN
+    ALTER TABLE dbo.Devices DROP COLUMN AtemEnabled;
+END");
 
-            migrationBuilder.DropColumn(
-                name: "AtemTransitionDefaultRate",
-                table: "Devices");
+            migrationBuilder.Sql(@"IF EXISTS(SELECT * FROM sys.columns WHERE Name = N'AtemTransitionDefaultRate' AND Object_ID = Object_ID(N'dbo.Devices'))
+BEGIN
+    ALTER TABLE dbo.Devices DROP COLUMN AtemTransitionDefaultRate;
+END");
 
-            migrationBuilder.DropColumn(
-                name: "AtemTransitionDefaultType",
-                table: "Devices");
+            migrationBuilder.Sql(@"IF EXISTS(SELECT * FROM sys.columns WHERE Name = N'AtemTransitionDefaultType' AND Object_ID = Object_ID(N'dbo.Devices'))
+BEGIN
+    ALTER TABLE dbo.Devices DROP COLUMN AtemTransitionDefaultType;
+END");
 
-            migrationBuilder.DropColumn(
-                name: "RecordingStatus",
-                table: "Devices");
+            migrationBuilder.Sql(@"IF EXISTS(SELECT * FROM sys.columns WHERE Name = N'RecordingStatus' AND Object_ID = Object_ID(N'dbo.Devices'))
+BEGIN
+    ALTER TABLE dbo.Devices DROP COLUMN RecordingStatus;
+END");
 
-            migrationBuilder.DropColumn(
-                name: "MonitorRecordingStatus",
-                table: "Commands");
+            migrationBuilder.Sql(@"IF EXISTS(SELECT * FROM sys.columns WHERE Name = N'MonitorRecordingStatus' AND Object_ID = Object_ID(N'dbo.Commands'))
+BEGIN
+    ALTER TABLE dbo.Commands DROP COLUMN MonitorRecordingStatus;
+END");
 
-            migrationBuilder.DropColumn(
-                name: "StatusEndpoint",
-                table: "Commands");
+            migrationBuilder.Sql(@"IF EXISTS(SELECT * FROM sys.columns WHERE Name = N'StatusEndpoint' AND Object_ID = Object_ID(N'dbo.Commands'))
+BEGIN
+    ALTER TABLE dbo.Commands DROP COLUMN StatusEndpoint;
+END");
 
-            migrationBuilder.DropColumn(
-                name: "StatusPollingIntervalSeconds",
-                table: "Commands");
+            migrationBuilder.Sql(@"IF EXISTS(SELECT * FROM sys.columns WHERE Name = N'StatusPollingIntervalSeconds' AND Object_ID = Object_ID(N'dbo.Commands'))
+BEGIN
+    ALTER TABLE dbo.Commands DROP COLUMN StatusPollingIntervalSeconds;
+END");
 
-            migrationBuilder.AlterColumn<string>(
-                name: "Description",
-                table: "CommandTemplates",
-                type: "nvarchar(500)",
-                maxLength: 500,
-                nullable: true,
-                oldClrType: typeof(string),
-                oldType: "nvarchar(500)",
-                oldMaxLength: 500);
+            // Revert Description nullable if column exists
+            migrationBuilder.Sql(@"IF EXISTS(SELECT * FROM sys.columns c JOIN sys.tables t ON c.object_id = t.object_id WHERE c.name = N'Description' AND t.name = N'CommandTemplates')
+BEGIN
+    ALTER TABLE dbo.CommandTemplates ALTER COLUMN Description nvarchar(500) NULL;
+END");
 
-            migrationBuilder.AlterColumn<bool>(
-                name: "RequireDeviceOnline",
-                table: "Commands",
-                type: "bit",
-                nullable: false,
-                defaultValue: true,
-                oldClrType: typeof(bool),
-                oldType: "bit");
+            // Reapply default on RequireDeviceOnline if necessary
+            migrationBuilder.Sql(@"IF EXISTS(SELECT * FROM sys.columns c JOIN sys.tables t ON c.object_id = t.object_id WHERE c.name = N'RequireDeviceOnline' AND t.name = N'Commands')
+BEGIN
+    -- No-op: database may already have the default set; further adjustments can be done manually
+END");
         }
     }
 }

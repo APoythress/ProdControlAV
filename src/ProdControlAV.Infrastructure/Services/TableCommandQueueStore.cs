@@ -37,6 +37,8 @@ namespace ProdControlAV.Infrastructure.Services
                 ["CommandType"] = command.CommandType,
                 ["CommandData"] = command.CommandData,
                 ["HttpMethod"] = command.HttpMethod,
+                ["AtemFunction"] = command.AtemFunction,
+                ["AtemInputId"] = command.AtemInputId,
                 ["RequestBody"] = command.RequestBody,
                 ["RequestHeaders"] = command.RequestHeaders,
                 ["QueuedUtc"] = command.QueuedUtc,

@@ -15,11 +15,11 @@ namespace ProdControlAV.API.Migrations
                 name: "FK_UserTenants_Tenants_TenantId",
                 table: "UserTenants");
 
-            migrationBuilder.AddColumn<string>(
-                name: "Location",
-                table: "Devices",
-                type: "nvarchar(max)",
-                nullable: true);
+            // Add Location column only if it does not already exist (protect against manual or out-of-band schema changes)
+            migrationBuilder.Sql(@"IF NOT EXISTS(SELECT * FROM sys.columns WHERE Name = N'Location' AND Object_ID = Object_ID(N'dbo.Devices'))
+BEGIN
+    ALTER TABLE dbo.Devices ADD Location nvarchar(max) NULL;
+END");
 
             migrationBuilder.AddColumn<DateTime>(
                 name: "DueUtc",
@@ -42,9 +42,11 @@ namespace ProdControlAV.API.Migrations
                 name: "FK_UserTenants_Tenants_TenantId",
                 table: "UserTenants");
 
-            migrationBuilder.DropColumn(
-                name: "Location",
-                table: "Devices");
+            // Drop Location only if it exists to keep Down idempotent and safe
+            migrationBuilder.Sql(@"IF EXISTS(SELECT * FROM sys.columns WHERE Name = N'Location' AND Object_ID = Object_ID(N'dbo.Devices'))
+BEGIN
+    ALTER TABLE dbo.Devices DROP COLUMN Location;
+END");
 
             migrationBuilder.DropColumn(
                 name: "DueUtc",
