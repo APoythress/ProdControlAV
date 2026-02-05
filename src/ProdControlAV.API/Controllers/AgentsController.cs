@@ -545,7 +545,36 @@ public sealed class AgentsController : ControllerBase
                 _logger.LogInformation("[COMMANDS/POLL] Returning command {CommandId} for execution (attempt {AttemptCount} of 3)", 
                     firstCmd.CommandId, currentAttempt);
 
-                return Ok(new { command = commandPayload.First() });
+                // Create CommandEnvelope with properly serialized payload containing all fields
+                var envelope = new CommandEnvelope
+                {
+                    CommandId = firstCmd.CommandId,
+                    DeviceId = firstCmd.DeviceId,
+                    Verb = firstCmd.CommandType,
+                    Payload = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        deviceId = firstCmd.DeviceId,
+                        commandName = firstCmd.CommandName,
+                        commandType = firstCmd.CommandType,
+                        commandData = firstCmd.CommandData,
+                        httpMethod = firstCmd.HttpMethod,
+                        requestBody = firstCmd.RequestBody,
+                        requestHeaders = firstCmd.RequestHeaders,
+                        deviceIp = firstCmd.DeviceIp,
+                        devicePort = firstCmd.DevicePort,
+                        deviceType = firstCmd.DeviceType,
+                        monitorRecordingStatus = firstCmd.MonitorRecordingStatus,
+                        statusEndpoint = firstCmd.StatusEndpoint,
+                        statusPollingIntervalSeconds = firstCmd.StatusPollingIntervalSeconds,
+                        // ATEM-specific fields
+                        atemFunction = firstCmd.AtemFunction,
+                        atemInputId = firstCmd.AtemInputId,
+                        atemTransitionRate = firstCmd.AtemTransitionRate,
+                        atemMacroId = firstCmd.AtemMacroId
+                    })
+                };
+
+                return Ok(new { command = envelope });
             }
 
             return Ok(new { command = (CommandEnvelope?)null });
