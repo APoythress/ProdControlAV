@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -453,6 +454,7 @@ public sealed class AgentsController : ControllerBase
             return StatusCode(500, new { error = "failed_to_receive_command" });
         }
     }
+    
 
     /// <summary>
     /// Poll CommandQueue table for pending commands (Table Storage-based)
@@ -488,16 +490,16 @@ public sealed class AgentsController : ControllerBase
             }
             
             // Get all pending commands for this tenant from Table Storage
-            var pendingCommands = new List<CommandQueueDto>();
+            var commandPayload = new List<CommandQueueDto>();
             await foreach (var cmd in queueStore.GetPendingForTenantAsync(tenantId, ct))
             {
-                pendingCommands.Add(cmd);
+                commandPayload.Add(cmd);
             }
 
             // Return first command if available
-            if (pendingCommands.Any())
+            if (commandPayload.Any())
             {
-                var firstCmd = pendingCommands.First();
+                var firstCmd = commandPayload.First();
                 
                 // Check if command has exceeded max retry attempts (3 attempts)
                 // AttemptCount logic:
@@ -542,35 +544,8 @@ public sealed class AgentsController : ControllerBase
                 
                 _logger.LogInformation("[COMMANDS/POLL] Returning command {CommandId} for execution (attempt {AttemptCount} of 3)", 
                     firstCmd.CommandId, currentAttempt);
-                
-                var envelope = new CommandEnvelope
-                {
-                    CommandId = firstCmd.CommandId,
-                    DeviceId = firstCmd.DeviceId,
-                    Verb = firstCmd.CommandType, // REST, Telnet, or ATEM
-                    Payload = System.Text.Json.JsonSerializer.Serialize(new
-                    {
-                        commandName = firstCmd.CommandName,
-                        commandType = firstCmd.CommandType,
-                        commandData = firstCmd.CommandData,
-                        httpMethod = firstCmd.HttpMethod,
-                        requestBody = firstCmd.RequestBody,
-                        requestHeaders = firstCmd.RequestHeaders,
-                        deviceIp = firstCmd.DeviceIp,
-                        devicePort = firstCmd.DevicePort,
-                        deviceType = firstCmd.DeviceType,
-                        monitorRecordingStatus = firstCmd.MonitorRecordingStatus,
-                        statusEndpoint = firstCmd.StatusEndpoint,
-                        statusPollingIntervalSeconds = firstCmd.StatusPollingIntervalSeconds,
-                        // ATEM-specific fields
-                        atemFunction = firstCmd.AtemFunction,
-                        atemInputId = firstCmd.AtemInputId,
-                        atemTransitionRate = firstCmd.AtemTransitionRate,
-                        atemMacroId = firstCmd.AtemMacroId
-                    })
-                };
 
-                return Ok(new { command = envelope });
+                return Ok(new { command = commandPayload.First() });
             }
 
             return Ok(new { command = (CommandEnvelope?)null });

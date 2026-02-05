@@ -230,7 +230,7 @@ public class CommandController : ControllerBase
         // Check device online status if required
         if (command.RequireDeviceOnline)
         {
-            var deviceStatus = await _deviceStatusStore.GetDeviceStatusAsync(tenantId, device.Id, ct);
+            var deviceStatus = await _deviceStatusStore.GetDeviceStatusAsync(tenantId, device.Id, ct); //TODO - Devices already tracks status - this is a non-needed table
             if (deviceStatus is null || deviceStatus.Status != "ONLINE")
             {
                 return BadRequest(new { 
@@ -321,18 +321,4 @@ public class CommandController : ControllerBase
         int? AtemInputId,
         int? AtemTransitionRate,
         int? AtemMacroId);
-
-    // Legacy DeviceAction endpoints for backward compatibility
-    [HttpGet("getqueue/{deviceId}")]
-    public async Task<IActionResult> GetQueueLegacy(string deviceId)
-    {
-        return Ok(new List<object>()); // Legacy endpoint - returns empty for now
-    }
-
-    [HttpPost("execute/{commandId:guid}")]
-    public async Task<IActionResult> ExecuteLegacy(Guid commandId, CancellationToken ct)
-    {
-        // Redirect to new trigger endpoint
-        return await Trigger(commandId, ct);
-    }
 }

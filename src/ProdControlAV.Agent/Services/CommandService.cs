@@ -8,7 +8,9 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ProdControlAV.Core.Models;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
+using ProdControlAV.Infrastructure.Services;
 
 namespace ProdControlAV.Agent.Services;
 
@@ -68,6 +70,19 @@ public class CommandService : ICommandService
         DefaultVersionPolicy = System.Net.Http.HttpVersionPolicy.RequestVersionOrLower
     };
 
+    private class CommandPayload
+    {
+        public string? MonitorRecordingStatus { get; set; }
+        public string DeviceIp { get; set; }
+        public string? DevicePort { get; set; } = "80";
+        public string DeviceType { get; set; }
+        public string StatusEndpoint { get; set; }
+        public string? CommandType { get; set; }
+        public string? AtemFunction { get; set; }
+        public string? AtemInputId { get; set; }
+        public string? AtemTransitionRate { get; set; }
+    }
+    
     public CommandService(
         HttpClient http, 
         ILogger<CommandService> logger, 
@@ -108,14 +123,20 @@ public class CommandService : ICommandService
                 return new List<CommandEnvelope>();
             }
 
+            // AgentsController.PollCommandQueue()
             var responseJson = await res.Content.ReadFromJsonAsync<JsonElement>(s_jsonOptions, ct);
             
             // Check if command is null (no messages available)
-            if (!responseJson.TryGetProperty("command", out var commandProp) || 
-                commandProp.ValueKind == JsonValueKind.Null)
-            {
+            if (!responseJson.TryGetProperty("command", out var commandProp))
                 return new List<CommandEnvelope>();
-            }
+
+            if (!commandProp.TryGetProperty("payload", out var payloadProp))
+                return new List<CommandEnvelope>();
+
+            string payloadJson = payloadProp.GetString();
+            
+            // var atemFunction = payloadProp.TryGetProperty("atemFunction", out var functionProp) ? functionProp.GetString() : null;
+            // var payload = JsonSerializer.Deserialize<CommandPayload>(payloadJson);
 
             // Parse the command from the response
             var command = new CommandEnvelope
@@ -123,7 +144,7 @@ public class CommandService : ICommandService
                 CommandId = Guid.Parse(commandProp.GetProperty("commandId").GetString()!),
                 DeviceId = Guid.Parse(commandProp.GetProperty("deviceId").GetString()!),
                 Verb = commandProp.GetProperty("verb").GetString()!,
-                Payload = commandProp.TryGetProperty("payload", out var payload) ? payload.GetString() : null
+                Payload = payloadJson
             };
 
             return new List<CommandEnvelope> { command };
@@ -653,7 +674,7 @@ public class CommandService : ICommandService
             // Extract ATEM command details
             // Try "atemCommand" first (from AtemController), then "atemFunction" (from Commands page)
             string? atemCommand = null;
-            if (payload.TryGetProperty("atemCommand", out var atemCommandProp))
+            if (payload.TryGetProperty("atemCommand", out var atemCommandProp))// missing data here
             {
                 atemCommand = atemCommandProp.GetString();
             }

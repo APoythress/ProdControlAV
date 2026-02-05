@@ -28,14 +28,7 @@ public class Command
     /// </summary>
     [Required]
     [MaxLength(50)]
-    public string CommandType { get; set; } = "REST";
-    
-    /// <summary>
-    /// For REST commands: the API endpoint path (e.g., "/api/power/on")
-    /// For Telnet commands: the command string to send
-    /// </summary>
-    [MaxLength(2000)]
-    public string? CommandData { get; set; }
+    public string CommandType { get; set; }
     
     /// <summary>
     /// HTTP method for REST commands (GET, POST, PUT, DELETE, PATCH)
@@ -52,6 +45,13 @@ public class Command
     /// Optional headers for REST commands (JSON format: {"key":"value"})
     /// </summary>
     public string? RequestHeaders { get; set; }
+    
+    /// <summary>
+    /// For REST commands: the API endpoint path (e.g., "/api/power/on")
+    /// For Telnet commands: the command string to send
+    /// </summary>
+    [MaxLength(2000)]
+    public string? CommandData { get; set; }
     
     public DateTimeOffset CreatedUtc { get; set; } = DateTimeOffset.UtcNow;
     

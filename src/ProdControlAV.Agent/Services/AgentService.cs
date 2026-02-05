@@ -171,7 +171,6 @@ public sealed class AgentService : BackgroundService
         }
     }
 
-
     private void EnsureState(IEnumerable<Device> devices)
     {
         foreach (var d in devices)
