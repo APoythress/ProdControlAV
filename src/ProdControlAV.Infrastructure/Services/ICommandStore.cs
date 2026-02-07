@@ -20,18 +20,18 @@ namespace ProdControlAV.Infrastructure.Services
         string? RequestHeaders,
         DateTimeOffset QueuedUtc,
         Guid QueuedByUserId,
-        string? DeviceIp = null,
-        int? DevicePort = null,
-        string? DeviceType = null,
-        bool MonitorRecordingStatus = false,
-        string? StatusEndpoint = null,
+        string? DeviceIp,
+        int? DevicePort,
+        string? DeviceType,
+        bool MonitorRecordingStatus,
+        string? StatusEndpoint,
+        string? AtemFunction,
+        int? AtemInputId,
+        int? AtemTransitionRate,
+        int? AtemMacroId,
         int StatusPollingIntervalSeconds = 60,
         string Status = "Pending",
-        int AttemptCount = 0,
-        string? AtemFunction = null,
-        int? AtemInputId = null,
-        int? AtemTransitionRate = null,
-        int? AtemMacroId = null);
+        int AttemptCount = 0);
 
     /// <summary>
     /// Represents command execution history in Table Storage

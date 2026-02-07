@@ -39,18 +39,18 @@ public class CommandPayload
     public Guid DeviceId { get; set; }
     public int? DevicePort { get; set; } = 80;
     public string DeviceType { get; set; }
-    public bool? MonitorRecordingStatus { get; set; }
+    public bool? MonitorRecordingStatus { get; set; } = false;
     public string StatusEndpoint { get; set; }
-    public string? CommandType { get; set; }
-    public string? AtemFunction { get; set; }
-    public long? AtemInputId { get; set; }
-    public int? AtemTransitionRate { get; set; }
+    public string? CommandType { get; set; } = null;
+    public string? AtemFunction { get; set; } = null;
+    public long? AtemInputId { get; set; } = null;
+    public int? AtemTransitionRate { get; set; } = null;
     public int AttemptCount { get; set; }
 }
 
 public interface ICommandService
 {
-    Task<List<CommandPayload>> PollCommandsAsync(CancellationToken ct);
+    Task<CommandPayload> PollCommandsAsync(CancellationToken ct);
     Task ExecuteCommandAsync(CommandPayload command, CancellationToken ct);
 }
 
@@ -139,7 +139,7 @@ public class CommandService : ICommandService
         _http.BaseAddress = new Uri(_api.BaseUrl);
     }
 
-    public async Task<List<CommandPayload>> PollCommandsAsync(CancellationToken ct)
+    public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
     {
         try
         {
@@ -148,7 +148,7 @@ public class CommandService : ICommandService
             if (string.IsNullOrEmpty(token))
             {
                 _logger.LogWarning("Failed to obtain valid JWT token for command polling");
-                return new List<CommandPayload>();
+                return new CommandPayload();
             }
 
             // Use the new Table Storage-based polling endpoint
@@ -161,7 +161,7 @@ public class CommandService : ICommandService
             if (!res.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Failed to poll commands: {StatusCode}", res.StatusCode);
-                return new List<CommandPayload>();
+                return new CommandPayload();
             }
 
             // AgentsController.PollCommandQueue()
@@ -169,15 +169,15 @@ public class CommandService : ICommandService
             
             // Check if command is null (no messages available)
             if (!responseJson.TryGetProperty("command", out var commandProp))
-                return new List<CommandPayload>();
+                return new CommandPayload();
 
             if (!commandProp.TryGetProperty("payload", out var payloadProp) ||
                 payloadProp.ValueKind != JsonValueKind.String)
-                return new List<CommandPayload>();
+                return new CommandPayload();
 
             var payloadJson = payloadProp.GetString();
             if (string.IsNullOrWhiteSpace(payloadJson))
-                return new List<CommandPayload>();
+                return new CommandPayload();
 
             using var payloadDoc = JsonDocument.Parse(payloadJson);
             var root = payloadDoc.RootElement;
@@ -196,15 +196,27 @@ public class CommandService : ICommandService
             var atemTransitionRate = GetIntOrNull(root, "atemTransitionRate");
             var attemptCount = GetIntOrNull(root, "attemptCount"); // may not exist
 
-            
-            // var atemFunction = payloadProp.TryGetProperty("atemFunction", out var functionProp) ? functionProp.GetString() : null;
-            // var payload = JsonSerializer.Deserialize<CommandPayload>(payloadJson);
-
-            // Parse the command from the response
-            var command = new CommandPayload
+            if (!commandProp.TryGetProperty("commandId", out var cmdIdProp) ||
+                string.IsNullOrWhiteSpace(cmdIdProp.GetString()) ||
+                !Guid.TryParse(cmdIdProp.GetString(), out var cmdId))
             {
-                CommandId = Guid.Parse(commandProp.GetProperty("commandId").GetString()!),
-                DeviceId = Guid.Parse(commandProp.GetProperty("deviceId").GetString()!),
+                _logger.LogWarning("Missing or invalid commandId in command property");
+                return new CommandPayload();
+            }
+
+            if (!commandProp.TryGetProperty("deviceId", out var devIdProp) ||
+                string.IsNullOrWhiteSpace(devIdProp.GetString()) ||
+                !Guid.TryParse(devIdProp.GetString(), out var devId))
+            {
+                _logger.LogWarning("Missing or invalid deviceId in command property");
+                return new CommandPayload();
+            }
+            
+            // Parse the command from the response
+            CommandPayload command = new CommandPayload
+            {
+                CommandId = cmdId,
+                DeviceId = devId,
                 DeviceIp = deviceIp,
                 DeviceType = deviceType,
                 MonitorRecordingStatus = monitorRecordingStatus,
@@ -213,69 +225,77 @@ public class CommandService : ICommandService
                 AtemFunction = atemFunction,
                 AtemInputId = atemInputId,
                 AtemTransitionRate = atemTransitionRate,
-                AttemptCount = (int)attemptCount
+                AttemptCount = attemptCount.GetValueOrDefault(0)
             };
 
-            return new List<CommandPayload> { command };
+            var test = command;
+            
+            if (command != null)
+                return command;
+            else 
+                return new CommandPayload();
         }
         catch (OperationCanceledException)
         {
-            return new List<CommandPayload>();
+            return new CommandPayload();;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error polling for commands");
-            return new List<CommandPayload>();
+            return new CommandPayload();;
         }
     }
 
+// csharp
+    // File: 'src/ProdControlAV.Agent/Services/CommandService.cs'
     public async Task ExecuteCommandAsync(CommandPayload command, CancellationToken ct)
     {
+        // Skip if no valid command was polled
+        if (command.CommandId == Guid.Empty)
+        {
+            _logger.LogDebug("No command to execute; skipping history recording.");
+            return;
+        }
+    
         var startTime = DateTime.UtcNow;
         bool success = false;
         string message = "";
         string? response = null;
         int? httpStatusCode = null;
-        bool monitorRecordingStatus = false;
-        string? statusEndpoint = null;
-        string? deviceIp = null;
-        int devicePort = 80;
-        string? deviceType = null;
+    
+        // Use values from the payload
+        bool monitorRecordingStatus = command.MonitorRecordingStatus ?? false;
+        string? statusEndpoint = command.StatusEndpoint;
+        string? deviceIp = command.DeviceIp;
+        int devicePort = command.DevicePort ?? 80;
+        string? deviceType = command.DeviceType;
         Guid deviceId = command.DeviceId;
-
+    
         try
         {
-            if (command.CommandType == "REST")
+            if (string.Equals(command.CommandType, "REST", StringComparison.OrdinalIgnoreCase))
             {
-                // // Execute REST API command
-                // var result = await ExecuteRestCommandAsync(command, ct);
-                // success = result.Success;
-                // message = result.Message;
-                // response = result.Response;
-                // httpStatusCode = result.StatusCode;
+                // Implement REST execution when available
+                message = "REST command execution not implemented";
+                _logger.LogWarning(message);
             }
-            else if (command.CommandType == "Telnet")
+            else if (string.Equals(command.CommandType, "Telnet", StringComparison.OrdinalIgnoreCase))
             {
-                // Execute Telnet command (future implementation)
                 message = "Telnet commands not yet implemented";
-                _logger.LogWarning("Telnet command execution not yet implemented");
+                _logger.LogWarning(message);
             }
-            else if (command.CommandType == "UPDATE")
+            else if (string.Equals(command.CommandType, "UPDATE", StringComparison.OrdinalIgnoreCase))
             {
-                // Trigger agent update
                 _logger.LogInformation("Received UPDATE command, triggering agent update...");
                 message = "Update command received and will be processed by UpdateService";
                 success = true;
-                
-                // Signal update service to check and apply updates
-                // This is done via file system signal since we can't inject UpdateService
+    
                 var updateSignalFile = Path.Combine(Path.GetTempPath(), "prodcontrolav-update-trigger");
                 await File.WriteAllTextAsync(updateSignalFile, DateTime.UtcNow.ToString("O"), ct);
                 _logger.LogInformation("Update trigger signal created at: {SignalFile}", updateSignalFile);
             }
-            else if (command.CommandType == "ATEM")
+            else if (string.Equals(command.CommandType, "ATEM", StringComparison.OrdinalIgnoreCase))
             {
-                // Execute ATEM command
                 var result = await ExecuteAtemCommandAsync(command, ct);
                 success = result.Success;
                 message = result.Message;
@@ -286,12 +306,11 @@ public class CommandService : ICommandService
                 message = $"Unknown command type: {command.CommandType}";
                 _logger.LogWarning(message);
             }
-            
-            // If command was successful and we should monitor recording status, check it
-            if (success && monitorRecordingStatus && !string.IsNullOrEmpty(statusEndpoint) 
-                && !string.IsNullOrEmpty(deviceIp) && deviceType == "Video")
+    
+            if (success && monitorRecordingStatus && !string.IsNullOrEmpty(statusEndpoint)
+                && !string.IsNullOrEmpty(deviceIp) && string.Equals(deviceType, "Video", StringComparison.OrdinalIgnoreCase))
             {
-                await CheckAndUpdateRecordingStatusAsync(command.DeviceId, deviceIp, devicePort, statusEndpoint, ct);
+                await CheckAndUpdateRecordingStatusAsync(deviceId, deviceIp!, devicePort, statusEndpoint!, ct);
             }
         }
         catch (Exception ex)
@@ -299,247 +318,126 @@ public class CommandService : ICommandService
             message = $"Command execution failed: {ex.Message}";
             _logger.LogError(ex, "Error executing command {CommandId}", command.CommandId);
         }
-
+    
         var durationMs = (DateTime.UtcNow - startTime).TotalMilliseconds;
-        
-        // Record execution in CommandHistory table (Table Storage)
-        await RecordCommandHistoryAsync(command.CommandId, command.DeviceId, success, message, response, httpStatusCode, durationMs, ct);
+    
+        await RecordCommandHistoryAsync(command.CommandId, deviceId, success, message, response, httpStatusCode, durationMs, ct);
     }
-
-    private async Task<RestCommandResult> ExecuteRestCommandAsync(JsonElement payload, CancellationToken ct)
-    {
-        string? deviceIp = null;
-        int devicePort = 80;
-        string? httpMethod = null;
-        string? commandData = null;
-        
-        try
-        {
-            commandData = payload.GetProperty("commandData").GetString();
-            httpMethod = payload.GetProperty("httpMethod").GetString() ?? "GET";
-            deviceIp = payload.GetProperty("deviceIp").GetString();
-            devicePort = payload.TryGetProperty("devicePort", out var portProp) && portProp.ValueKind != JsonValueKind.Null 
-                ? portProp.GetInt32() : 80;
-            
-            var requestBody = payload.TryGetProperty("requestBody", out var bodyProp) && bodyProp.ValueKind != JsonValueKind.Null
-                ? bodyProp.GetString() : null;
-            
-            var requestHeaders = payload.TryGetProperty("requestHeaders", out var headersProp) && headersProp.ValueKind != JsonValueKind.Null
-                ? headersProp.GetString() : null;
-
-            // Build the full URL
-            var baseUri = new Uri($"http://{deviceIp}:{devicePort}");
-            var path = commandData?.TrimStart('/') ?? "";
-            var fullUri = new Uri(baseUri, path);
-
-            _logger.LogInformation("Executing REST command: {Method} {Uri}", httpMethod, fullUri);
-
-            using var request = new HttpRequestMessage(new HttpMethod(httpMethod), fullUri);
-
-            // Add custom headers if provided
-            if (!string.IsNullOrEmpty(requestHeaders))
-            {
-                try
-                {
-                    var headers = JsonSerializer.Deserialize<Dictionary<string, string>>(requestHeaders, s_jsonOptions);
-                    if (headers != null)
-                    {
-                        foreach (var (key, value) in headers)
-                        {
-                            request.Headers.TryAddWithoutValidation(key, value);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to parse request headers, continuing without them");
-                }
-            }
-
-            // Add request body if provided
-            if (!string.IsNullOrEmpty(requestBody) && (httpMethod == "POST" || httpMethod == "PUT" || httpMethod == "PATCH"))
-            {
-                request.Content = new StringContent(requestBody, System.Text.Encoding.UTF8, "application/json");
-            }
-
-            using var httpResponse = await s_deviceHttpClient.SendAsync(request, ct);
-            
-            var responseBody = await httpResponse.Content.ReadAsStringAsync(ct);
-            var statusCode = (int)httpResponse.StatusCode;
-            
-            _logger.LogInformation("REST command completed: Status={StatusCode}, Response={Response}", 
-                statusCode, responseBody?.Substring(0, Math.Min(100, responseBody?.Length ?? 0)));
-
-            return new RestCommandResult
-            {
-                Success = httpResponse.IsSuccessStatusCode,
-                Message = httpResponse.IsSuccessStatusCode ? "REST command executed successfully" : $"Device returned status {statusCode}",
-                Response = responseBody,
-                StatusCode = statusCode
-            };
-        }
-        catch (HttpRequestException ex) when (ex.Message.Contains("invalid status line") || ex.Message.Contains("protocol"))
-        {
-            // Device returned malformed HTTP response - common with embedded devices
-            var errorMsg = $"Device at {deviceIp ?? "unknown"}:{devicePort} returned malformed HTTP response. " +
-                          $"The device may not properly support HTTP protocol. Error: {ex.Message}";
-            _logger.LogError(ex, "Malformed HTTP response from device {DeviceIp}:{DevicePort} for command {Method} {Path}", 
-                deviceIp ?? "unknown", devicePort, httpMethod ?? "unknown", commandData ?? "unknown");
-            return new RestCommandResult
-            {
-                Success = false,
-                Message = errorMsg,
-                Response = null,
-                StatusCode = null
-            };
-        }
-        catch (TaskCanceledException)
-        {
-            var errorMsg = $"Request to {deviceIp ?? "unknown"}:{devicePort} timed out after 5 seconds";
-            _logger.LogWarning("REST command timed out for device {DeviceIp}:{DevicePort} - {Method} {Path}", 
-                deviceIp ?? "unknown", devicePort, httpMethod ?? "unknown", commandData ?? "unknown");
-            return new RestCommandResult
-            {
-                Success = false,
-                Message = errorMsg,
-                Response = null,
-                StatusCode = null
-            };
-        }
-        catch (Exception ex)
-        {
-            var errorMsg = $"Error communicating with device at {deviceIp ?? "unknown"}:{devicePort}: {ex.Message}";
-            _logger.LogError(ex, "Error executing REST command for device {DeviceIp}:{DevicePort} - {Method} {Path}", 
-                deviceIp ?? "unknown", devicePort, httpMethod ?? "unknown", commandData ?? "unknown");
-            return new RestCommandResult
-            {
-                Success = false,
-                Message = errorMsg,
-                Response = null,
-                StatusCode = null
-            };
-        }
-    }
-
+    
     private async Task RecordCommandHistoryAsync(
-        Guid commandId, 
-        Guid deviceId, 
-        bool success, 
-        string message, 
+        Guid commandId,
+        Guid deviceId,
+        bool success,
+        string message,
         string? response,
         int? httpStatusCode,
-        double executionTimeMs, 
+        double executionTimeMs,
         CancellationToken ct)
     {
+        // Skip recording if commandId is empty
+        if (commandId == Guid.Empty)
+        {
+            _logger.LogDebug("Skipping command history recording for empty commandId.");
+            return;
+        }
+    
         const int maxRetries = 2;
-        
+    
         for (int attempt = 0; attempt < maxRetries; attempt++)
         {
             try
             {
-                // Get valid JWT token - this will refresh if needed
                 var token = await _jwtAuth.GetValidTokenAsync(ct);
                 if (string.IsNullOrEmpty(token))
                 {
-                    _logger.LogWarning("Failed to obtain valid JWT token for recording command history (attempt {Attempt}/{MaxRetries})", 
+                    _logger.LogWarning("Failed to obtain valid JWT token for recording command history (attempt {Attempt}/{MaxRetries})",
                         attempt + 1, maxRetries);
-                    
+    
                     if (attempt < maxRetries - 1)
                     {
-                        // Force a token refresh before retrying
                         await _jwtAuth.RefreshTokenAsync(ct);
                         await Task.Delay(RetryDelayMs, ct);
                         continue;
                     }
                     return;
                 }
-
+    
                 var historyRequest = new
                 {
                     commandId,
                     deviceId,
-                    commandName = "REST Command", // Will be populated from payload in future
+                    commandName = commandId != Guid.Empty ? "REST Command" : null,
                     success,
                     errorMessage = success ? null : message,
                     response = response?.Length > 2000 ? response.Substring(0, 2000) : response,
                     httpStatusCode,
                     executionTimeMs
                 };
-
+    
                 var endpoint = "/api/agents/commands/history";
-                
+    
                 using var req = new HttpRequestMessage(HttpMethod.Post, endpoint)
                 {
                     Content = JsonContent.Create(historyRequest, options: s_jsonOptions)
                 };
                 req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-
+    
                 using var res = await _http.SendAsync(req, ct);
-                
-                // Handle 401 Unauthorized - check if we're on the last attempt
+    
                 if (res.StatusCode == System.Net.HttpStatusCode.Unauthorized && attempt >= maxRetries - 1)
                 {
-                    // Final attempt still got 401 - log and return instead of throwing
-                    // Note: The command itself was already executed successfully (Success={Success})
-                    // This only affects history recording, not command execution
                     if (success)
                     {
-                        _logger.LogWarning("Command {CommandId} executed successfully, but failed to record history after {MaxRetries} attempts due to 401 Unauthorized. " +
-                            "This is a non-critical issue - the command completed successfully. History recording will be skipped.", 
+                        _logger.LogWarning("Command {CommandId} executed successfully, but failed to record history after {MaxRetries} attempts due to 401 Unauthorized.",
                             commandId, maxRetries);
                     }
                     else
                     {
-                        _logger.LogError("Command {CommandId} failed execution, and also failed to record failure history after {MaxRetries} attempts due to 401 Unauthorized. " +
-                            "This may indicate an authentication issue. The command failure was not recorded in history.", 
+                        _logger.LogError("Command {CommandId} failed execution, and also failed to record failure history after {MaxRetries} attempts due to 401 Unauthorized.",
                             commandId, maxRetries);
                     }
                     return;
                 }
-                
+    
                 if (res.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
-                    // 401 Unauthorized - force token refresh and retry
-                    _logger.LogWarning("Received 401 Unauthorized when recording command history, forcing token refresh (attempt {Attempt}/{MaxRetries})", 
+                    _logger.LogWarning("Received 401 Unauthorized when recording command history, forcing token refresh (attempt {Attempt}/{MaxRetries})",
                         attempt + 1, maxRetries);
                     await _jwtAuth.RefreshTokenAsync(ct);
                     await Task.Delay(RetryDelayMs, ct);
                     continue;
                 }
-                
+    
                 res.EnsureSuccessStatusCode();
-                
+    
                 _logger.LogInformation("Command history recorded for {CommandId}, Success={Success}", commandId, success);
-                return; // Success - exit the retry loop
+                return;
             }
             catch (Exception ex)
             {
                 if (attempt < maxRetries - 1)
                 {
-                    _logger.LogWarning(ex, "Failed to record command history for {CommandId} (attempt {Attempt}/{MaxRetries}), retrying...", 
+                    _logger.LogWarning(ex, "Failed to record command history for {CommandId} (attempt {Attempt}/{MaxRetries}), retrying...",
                         commandId, attempt + 1, maxRetries);
                     await Task.Delay(RetryDelayMs, ct);
                 }
                 else
                 {
-                    // Log with appropriate severity based on command success
                     if (success)
                     {
-                        _logger.LogWarning(ex, "Command {CommandId} executed successfully, but failed to record history after {MaxRetries} attempts. " +
-                            "This is a non-critical issue - the command completed successfully. Error: {Error}", 
+                        _logger.LogWarning(ex, "Command {CommandId} executed successfully, but failed to record history after {MaxRetries} attempts. Error: {Error}",
                             commandId, maxRetries, ex.Message);
                     }
                     else
                     {
-                        _logger.LogError(ex, "Command {CommandId} failed execution, and also failed to record failure history after {MaxRetries} attempts. " +
-                            "The command failure was not recorded in history. Error: {Error}", 
+                        _logger.LogError(ex, "Command {CommandId} failed execution, and also failed to record failure history after {MaxRetries} attempts. Error: {Error}",
                             commandId, maxRetries, ex.Message);
                     }
                 }
             }
         }
     }
-
+    
     private class RestCommandResult
     {
         public bool Success { get; set; }

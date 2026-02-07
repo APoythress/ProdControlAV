@@ -345,6 +345,10 @@ public sealed class AgentHealthController : ControllerBase
                 DeviceType: null,
                 MonitorRecordingStatus: false,
                 StatusEndpoint: null,
+                AtemFunction: null,
+                AtemInputId: null,
+                AtemTransitionRate: null,
+                AtemMacroId: null,
                 StatusPollingIntervalSeconds: 60,
                 Status: "Pending",
                 AttemptCount: 0

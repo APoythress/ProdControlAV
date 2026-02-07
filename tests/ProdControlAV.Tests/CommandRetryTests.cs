@@ -30,6 +30,10 @@ public class CommandRetryTests
             DeviceType: "Video",
             MonitorRecordingStatus: false,
             StatusEndpoint: null,
+            AtemFunction: null,
+            AtemInputId: null,
+            AtemTransitionRate: null,
+            AtemMacroId: null,
             StatusPollingIntervalSeconds: 60,
             Status: "Pending",
             AttemptCount: 2
@@ -55,7 +59,19 @@ public class CommandRetryTests
             RequestBody: null,
             RequestHeaders: null,
             QueuedUtc: DateTimeOffset.UtcNow,
-            QueuedByUserId: Guid.NewGuid()
+            QueuedByUserId: Guid.NewGuid(),
+            DeviceIp: "192.168.1.1",
+            DevicePort: 80,
+            DeviceType: "Video",
+            MonitorRecordingStatus: false,
+            StatusEndpoint: null,
+            AtemFunction: null,
+            AtemInputId: null,
+            AtemTransitionRate: null,
+            AtemMacroId: null,
+            StatusPollingIntervalSeconds: 60,
+            Status: "Pending",
+            AttemptCount: default
         );
         
         // Assert
@@ -84,6 +100,10 @@ public class CommandRetryTests
             DeviceType: "Video",
             MonitorRecordingStatus: false,
             StatusEndpoint: null,
+            AtemFunction: null,
+            AtemInputId: null,
+            AtemTransitionRate: null,
+            AtemMacroId: null,
             StatusPollingIntervalSeconds: 60,
             Status: "Failed",
             AttemptCount: 3
@@ -115,6 +135,10 @@ public class CommandRetryTests
             DeviceType: "Video",
             MonitorRecordingStatus: false,
             StatusEndpoint: null,
+            AtemFunction: null,
+            AtemInputId: null,
+            AtemTransitionRate: null,
+            AtemMacroId: null,
             StatusPollingIntervalSeconds: 60,
             Status: "Processing",
             AttemptCount: 1

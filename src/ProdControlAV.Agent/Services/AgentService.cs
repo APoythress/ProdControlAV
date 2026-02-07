@@ -256,32 +256,8 @@ public sealed class AgentService : BackgroundService
         {
             try
             {
-                var commands = await _commandService.PollCommandsAsync(ct);
-                if (commands.Count > 0)
-                {
-                    _logger.LogInformation("Received {Count} commands to execute", commands.Count);
-
-                    foreach (var command in commands)
-                    {
-                        await _commandService.ExecuteCommandAsync(command, ct);
-                    }
-                    // YAGNI - for now we just execute commands sequentially
-                    // // Execute commands concurrently but limit concurrency
-                    // var semaphore = new SemaphoreSlim(Math.Min(5, commands.Count));
-                    // var tasks = commands.Select(async cmd =>
-                    // {
-                    //     await semaphore.WaitAsync(ct);
-                    //     try
-                    //     {
-                    //         await _commandService.ExecuteCommandAsync(cmd, ct);
-                    //     }
-                    //     finally
-                    //     {
-                    //         semaphore.Release();
-                    //     }
-                    // });
-                    // await Task.WhenAll((IEnumerable<Task>)tasks);
-                }
+                var command = await _commandService.PollCommandsAsync(ct);
+                await _commandService.ExecuteCommandAsync(command, ct);
             }
             catch (OperationCanceledException)
             {

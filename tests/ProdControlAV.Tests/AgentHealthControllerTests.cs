@@ -270,10 +270,56 @@ public class AgentHealthControllerTests
         // Setup pending commands (2 pending)
         var pendingCommands = new List<CommandQueueDto>
         {
-            new CommandQueueDto(Guid.NewGuid(), tenantId, deviceId, "Command1", "REST", null, "GET", null, null, 
-                DateTimeOffset.UtcNow, Guid.NewGuid()),
-            new CommandQueueDto(Guid.NewGuid(), tenantId, deviceId, "Command2", "REST", null, "POST", null, null, 
-                DateTimeOffset.UtcNow, Guid.NewGuid())
+            new CommandQueueDto(
+                Guid.NewGuid(), 
+                tenantId, 
+                deviceId, 
+                "Command1", 
+                "REST", 
+                null, 
+                "GET", 
+                null, 
+                null, 
+                DateTimeOffset.UtcNow, 
+                Guid.NewGuid(),
+                null,
+                null,
+                null,
+                false,
+                null,
+                null,
+                null,
+                null,
+                null,
+                60,
+                "Pending",
+                0
+            ),
+            new CommandQueueDto(
+                Guid.NewGuid(), 
+                tenantId, 
+                deviceId, 
+                "Command2", 
+                "REST", 
+                null, 
+                "GET", 
+                null, 
+                null, 
+                DateTimeOffset.UtcNow, 
+                Guid.NewGuid(),
+                null,
+                null,
+                null,
+                false,
+                null,
+                null,
+                null,
+                null,
+                null,
+                60,
+                "Pending",
+                0
+            ),
         };
 
         commandQueueStoreMock

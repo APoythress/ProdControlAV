@@ -315,6 +315,10 @@ namespace ProdControlAV.Infrastructure.Services
                 e.TryGetValue("DeviceType", out var dtype) ? dtype?.ToString() : null,
                 monitorRecordingStatus,
                 e.TryGetValue("StatusEndpoint", out var endpoint) ? endpoint?.ToString() : null,
+                e.TryGetValue("AtemFunction", out var atemFunction) ? atemFunction?.ToString() : null,
+                e.TryGetValue("AtemInputId", out var atemInputId) && atemInputId != null ? Convert.ToInt32(atemInputId) : 0,
+                e.TryGetValue("AtemTransitionRate", out var atemTransitionRate) && atemTransitionRate != null ? Convert.ToInt32(atemTransitionRate) : 60,
+                e.TryGetValue("AtemMacroId", out var atemMacroId) && atemMacroId != null ? Convert.ToInt32(atemMacroId) : 0,
                 e.TryGetValue("StatusPollingIntervalSeconds", out var interval) && interval != null ? Convert.ToInt32(interval) : 60,
                 e.TryGetValue("Status", out var status) ? status?.ToString() ?? "Pending" : "Pending",
                 attemptCount

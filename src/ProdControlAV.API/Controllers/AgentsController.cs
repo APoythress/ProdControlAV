@@ -594,7 +594,7 @@ public sealed class AgentsController : ControllerBase
     [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme, Policy = "JwtAgent")]
     public async Task<IActionResult> RecordCommandHistory([FromBody] CommandHistoryRequest req, CancellationToken ct)
     {
-        var agentIdClaim = User.FindFirst("sub")?.Value ?? User.FindFirst("agentId")?.Value;
+        var agentIdClaim = GetAgentIdFromClaims();
         var tenantIdClaim = User.FindFirst("tenantId")?.Value;
 
         if (!Guid.TryParse(agentIdClaim, out var agentId) || !Guid.TryParse(tenantIdClaim, out var tenantId))
