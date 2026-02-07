@@ -32,10 +32,26 @@ public class CommandCompleteRequest
     public int? DurationMs { get; set; } 
 }
 
+public class CommandPayload
+{
+    public Guid CommandId { get; set; }
+    public string DeviceIp { get; set; }
+    public Guid DeviceId { get; set; }
+    public int? DevicePort { get; set; } = 80;
+    public string DeviceType { get; set; }
+    public bool? MonitorRecordingStatus { get; set; }
+    public string StatusEndpoint { get; set; }
+    public string? CommandType { get; set; }
+    public string? AtemFunction { get; set; }
+    public long? AtemInputId { get; set; }
+    public int? AtemTransitionRate { get; set; }
+    public int AttemptCount { get; set; }
+}
+
 public interface ICommandService
 {
-    Task<List<CommandEnvelope>> PollCommandsAsync(CancellationToken ct);
-    Task ExecuteCommandAsync(CommandEnvelope command, CancellationToken ct);
+    Task<List<CommandPayload>> PollCommandsAsync(CancellationToken ct);
+    Task ExecuteCommandAsync(CommandPayload command, CancellationToken ct);
 }
 
 public class CommandService : ICommandService
@@ -69,26 +85,51 @@ public class CommandService : ICommandService
         DefaultRequestVersion = new Version(1, 1),
         DefaultVersionPolicy = System.Net.Http.HttpVersionPolicy.RequestVersionOrLower
     };
-
-    private class CommandPayload
-    {
-        public string? MonitorRecordingStatus { get; set; }
-        public string DeviceIp { get; set; }
-        public string? DevicePort { get; set; } = "80";
-        public string DeviceType { get; set; }
-        public string StatusEndpoint { get; set; }
-        public string? CommandType { get; set; }
-        public string? AtemFunction { get; set; }
-        public string? AtemInputId { get; set; }
-        public string? AtemTransitionRate { get; set; }
-    }
     
+    // JSON parsing helper methods
+    static string? GetStringOrNull(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty(name, out var p) || p.ValueKind == JsonValueKind.Null)
+            return null;
+
+        return p.ValueKind == JsonValueKind.String ? p.GetString() : p.ToString();
+    }
+
+    static bool? GetBoolOrNull(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty(name, out var p) || p.ValueKind == JsonValueKind.Null)
+            return null;
+
+        return p.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => null
+        };
+    }
+
+    static int? GetIntOrNull(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty(name, out var p) || p.ValueKind == JsonValueKind.Null)
+            return null;
+
+        return p.ValueKind == JsonValueKind.Number && p.TryGetInt32(out var v) ? v : null;
+    }
+
+    static string RequireString(JsonElement root, string name)
+    {
+        var v = GetStringOrNull(root, name);
+        if (string.IsNullOrWhiteSpace(v))
+            throw new JsonException($"Missing required property '{name}'.");
+        return v;
+    }
+
     public CommandService(
         HttpClient http, 
         ILogger<CommandService> logger, 
         IOptions<ApiOptions> api, 
         IJwtAuthService jwtAuth,
-        AtemConnectionManager atemManager)
+        AtemConnectionManager atemManager) 
     {
         _http = http;
         _logger = logger;
@@ -98,7 +139,7 @@ public class CommandService : ICommandService
         _http.BaseAddress = new Uri(_api.BaseUrl);
     }
 
-    public async Task<List<CommandEnvelope>> PollCommandsAsync(CancellationToken ct)
+    public async Task<List<CommandPayload>> PollCommandsAsync(CancellationToken ct)
     {
         try
         {
@@ -107,7 +148,7 @@ public class CommandService : ICommandService
             if (string.IsNullOrEmpty(token))
             {
                 _logger.LogWarning("Failed to obtain valid JWT token for command polling");
-                return new List<CommandEnvelope>();
+                return new List<CommandPayload>();
             }
 
             // Use the new Table Storage-based polling endpoint
@@ -120,7 +161,7 @@ public class CommandService : ICommandService
             if (!res.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Failed to poll commands: {StatusCode}", res.StatusCode);
-                return new List<CommandEnvelope>();
+                return new List<CommandPayload>();
             }
 
             // AgentsController.PollCommandQueue()
@@ -128,39 +169,67 @@ public class CommandService : ICommandService
             
             // Check if command is null (no messages available)
             if (!responseJson.TryGetProperty("command", out var commandProp))
-                return new List<CommandEnvelope>();
+                return new List<CommandPayload>();
 
-            if (!commandProp.TryGetProperty("payload", out var payloadProp))
-                return new List<CommandEnvelope>();
+            if (!commandProp.TryGetProperty("payload", out var payloadProp) ||
+                payloadProp.ValueKind != JsonValueKind.String)
+                return new List<CommandPayload>();
 
-            string payloadJson = payloadProp.GetString();
+            var payloadJson = payloadProp.GetString();
+            if (string.IsNullOrWhiteSpace(payloadJson))
+                return new List<CommandPayload>();
+
+            using var payloadDoc = JsonDocument.Parse(payloadJson);
+            var root = payloadDoc.RootElement;
+
+            // required
+            var deviceIp = RequireString(root, "deviceIp");
+
+            // optional
+            var deviceType = GetStringOrNull(root, "deviceType");
+            var commandType = GetStringOrNull(root, "commandType");
+            var statusEndpoint = GetStringOrNull(root, "statusEndpoint");
+            var monitorRecordingStatus = GetBoolOrNull(root, "monitorRecordingStatus") ?? false;
+
+            var atemFunction = GetStringOrNull(root, "atemFunction");
+            var atemInputId = GetIntOrNull(root, "atemInputId");
+            var atemTransitionRate = GetIntOrNull(root, "atemTransitionRate");
+            var attemptCount = GetIntOrNull(root, "attemptCount"); // may not exist
+
             
             // var atemFunction = payloadProp.TryGetProperty("atemFunction", out var functionProp) ? functionProp.GetString() : null;
             // var payload = JsonSerializer.Deserialize<CommandPayload>(payloadJson);
 
             // Parse the command from the response
-            var command = new CommandEnvelope
+            var command = new CommandPayload
             {
                 CommandId = Guid.Parse(commandProp.GetProperty("commandId").GetString()!),
                 DeviceId = Guid.Parse(commandProp.GetProperty("deviceId").GetString()!),
-                Verb = commandProp.GetProperty("verb").GetString()!,
-                Payload = payloadJson
+                DeviceIp = deviceIp,
+                DeviceType = deviceType,
+                MonitorRecordingStatus = monitorRecordingStatus,
+                StatusEndpoint = statusEndpoint,
+                CommandType = commandType,
+                AtemFunction = atemFunction,
+                AtemInputId = atemInputId,
+                AtemTransitionRate = atemTransitionRate,
+                AttemptCount = (int)attemptCount
             };
 
-            return new List<CommandEnvelope> { command };
+            return new List<CommandPayload> { command };
         }
         catch (OperationCanceledException)
         {
-            return new List<CommandEnvelope>();
+            return new List<CommandPayload>();
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error polling for commands");
-            return new List<CommandEnvelope>();
+            return new List<CommandPayload>();
         }
     }
 
-    public async Task ExecuteCommandAsync(CommandEnvelope command, CancellationToken ct)
+    public async Task ExecuteCommandAsync(CommandPayload command, CancellationToken ct)
     {
         var startTime = DateTime.UtcNow;
         bool success = false;
@@ -176,94 +245,46 @@ public class CommandService : ICommandService
 
         try
         {
-            // Parse payload to get command details
-            if (!string.IsNullOrEmpty(command.Payload))
+            if (command.CommandType == "REST")
             {
-                var payloadJson = JsonSerializer.Deserialize<JsonElement>(command.Payload, s_jsonOptions);
+                // // Execute REST API command
+                // var result = await ExecuteRestCommandAsync(command, ct);
+                // success = result.Success;
+                // message = result.Message;
+                // response = result.Response;
+                // httpStatusCode = result.StatusCode;
+            }
+            else if (command.CommandType == "Telnet")
+            {
+                // Execute Telnet command (future implementation)
+                message = "Telnet commands not yet implemented";
+                _logger.LogWarning("Telnet command execution not yet implemented");
+            }
+            else if (command.CommandType == "UPDATE")
+            {
+                // Trigger agent update
+                _logger.LogInformation("Received UPDATE command, triggering agent update...");
+                message = "Update command received and will be processed by UpdateService";
+                success = true;
                 
-                var commandType = payloadJson.GetProperty("commandType").GetString();
-                
-                // Extract device info for potential recording status check
-                deviceIp = payloadJson.TryGetProperty("deviceIp", out var ipProp) ? ipProp.GetString() : null;
-                devicePort = payloadJson.TryGetProperty("devicePort", out var portProp) && portProp.ValueKind != JsonValueKind.Null 
-                    ? portProp.GetInt32() : 80;
-                deviceType = payloadJson.TryGetProperty("deviceType", out var typeProp) ? typeProp.GetString() : null;
-                
-                // Check if we should monitor recording status
-                if (payloadJson.TryGetProperty("monitorRecordingStatus", out var monitorProp))
-                {
-                    monitorRecordingStatus = monitorProp.GetBoolean();
-                }
-                
-                if (monitorRecordingStatus && payloadJson.TryGetProperty("statusEndpoint", out var endpointProp))
-                {
-                    statusEndpoint = endpointProp.GetString();
-                }
-                
-                if (commandType == "REST")
-                {
-                    // Execute REST API command
-                    var result = await ExecuteRestCommandAsync(payloadJson, ct);
-                    success = result.Success;
-                    message = result.Message;
-                    response = result.Response;
-                    httpStatusCode = result.StatusCode;
-                }
-                else if (commandType == "Telnet")
-                {
-                    // Execute Telnet command (future implementation)
-                    message = "Telnet commands not yet implemented";
-                    _logger.LogWarning("Telnet command execution not yet implemented");
-                }
-                else if (commandType == "UPDATE")
-                {
-                    // Trigger agent update
-                    _logger.LogInformation("Received UPDATE command, triggering agent update...");
-                    message = "Update command received and will be processed by UpdateService";
-                    success = true;
-                    
-                    // Signal update service to check and apply updates
-                    // This is done via file system signal since we can't inject UpdateService
-                    var updateSignalFile = Path.Combine(Path.GetTempPath(), "prodcontrolav-update-trigger");
-                    await File.WriteAllTextAsync(updateSignalFile, DateTime.UtcNow.ToString("O"), ct);
-                    _logger.LogInformation("Update trigger signal created at: {SignalFile}", updateSignalFile);
-                }
-                else if (commandType == "ATEM")
-                {
-                    // Execute ATEM command
-                    var result = await ExecuteAtemCommandAsync(payloadJson, deviceId, ct);
-                    success = result.Success;
-                    message = result.Message;
-                    response = result.Response;
-                }
-                else
-                {
-                    message = $"Unknown command type: {commandType}";
-                    _logger.LogWarning(message);
-                }
+                // Signal update service to check and apply updates
+                // This is done via file system signal since we can't inject UpdateService
+                var updateSignalFile = Path.Combine(Path.GetTempPath(), "prodcontrolav-update-trigger");
+                await File.WriteAllTextAsync(updateSignalFile, DateTime.UtcNow.ToString("O"), ct);
+                _logger.LogInformation("Update trigger signal created at: {SignalFile}", updateSignalFile);
+            }
+            else if (command.CommandType == "ATEM")
+            {
+                // Execute ATEM command
+                var result = await ExecuteAtemCommandAsync(command, ct);
+                success = result.Success;
+                message = result.Message;
+                response = result.Response;
             }
             else
             {
-                // Legacy command format - execute as before
-                switch (command.Verb?.ToUpperInvariant())
-                {
-                    case "PING":
-                        await ExecutePingCommand(command, ct);
-                        success = true;
-                        message = "Ping command executed successfully";
-                        break;
-                    
-                    case "STATUS":
-                        await ExecuteStatusCommand(command, ct);
-                        success = true;
-                        message = "Status command executed successfully";
-                        break;
-                        
-                    default:
-                        message = $"Unknown or unauthorized command: {command.Verb}";
-                        _logger.LogWarning(message);
-                        break;
-                }
+                message = $"Unknown command type: {command.CommandType}";
+                _logger.LogWarning(message);
             }
             
             // If command was successful and we should monitor recording status, check it
@@ -276,7 +297,7 @@ public class CommandService : ICommandService
         catch (Exception ex)
         {
             message = $"Command execution failed: {ex.Message}";
-            _logger.LogError(ex, "Error executing command {CommandId} - {Verb}", command.CommandId, command.Verb);
+            _logger.LogError(ex, "Error executing command {CommandId}", command.CommandId);
         }
 
         var durationMs = (DateTime.UtcNow - startTime).TotalMilliseconds;
@@ -642,12 +663,12 @@ public class CommandService : ICommandService
     /// <summary>
     /// Executes an ATEM command from the payload using LibAtem.
     /// </summary>
-    private async Task<AtemCommandResult> ExecuteAtemCommandAsync(JsonElement payload, Guid deviceId, CancellationToken ct)
+    private async Task<AtemCommandResult> ExecuteAtemCommandAsync(CommandPayload command, CancellationToken ct)
     {
         try
         {
             // Extract device information
-            if (deviceId == Guid.Empty)
+            if (command.DeviceId == Guid.Empty)
             {
                 return new AtemCommandResult
                 {
@@ -658,8 +679,14 @@ public class CommandService : ICommandService
             }
 
             // Extract device connection info from payload (should be added by API)
-            string? deviceIp = payload.TryGetProperty("deviceIp", out var ipProp) ? ipProp.GetString() : null;
-            int devicePort = payload.TryGetProperty("devicePort", out var portProp) ? portProp.GetInt32() : 9910;
+            string? deviceIp = command.DeviceIp;
+            long inputId = command.AtemInputId ?? 0;
+            int devicePort;
+
+            if (command.DevicePort == null) // default to 9910 if not provided
+                devicePort = 9910;
+            else
+                devicePort = (int)command.DevicePort;
 
             if (string.IsNullOrEmpty(deviceIp))
             {
@@ -672,16 +699,7 @@ public class CommandService : ICommandService
             }
 
             // Extract ATEM command details
-            // Try "atemCommand" first (from AtemController), then "atemFunction" (from Commands page)
-            string? atemCommand = null;
-            if (payload.TryGetProperty("atemCommand", out var atemCommandProp))// missing data here
-            {
-                atemCommand = atemCommandProp.GetString();
-            }
-            else if (payload.TryGetProperty("atemFunction", out var atemFunctionProp)) // atemFunction is in the table store but not in payload
-            {
-                atemCommand = atemFunctionProp.GetString();
-            }
+            string? atemCommand = command.AtemFunction;
             
             if (string.IsNullOrEmpty(atemCommand))
             {
@@ -693,35 +711,24 @@ public class CommandService : ICommandService
                 };
             }
             
-            _logger.LogInformation("Executing ATEM command: {AtemCommand} for device {DeviceId}", atemCommand, deviceId);
+            _logger.LogInformation("Executing ATEM command: {AtemCommand} for device {DeviceId}", atemCommand, command.DeviceId);
             
             // Parse command and parameters
+            if (inputId == null)
+            {
+                return new AtemCommandResult
+                {
+                    Success = false,
+                    Message = "Missing required property: AtemInputId",
+                    Response = null
+                };
+            }
+            
             switch (atemCommand?.ToUpperInvariant())
             {
-                case "CUT_TO_PROGRAM":
                 case "CUTTOPROGRAM":
                 {
-                    // Try "inputId" first, then "atemInputId" (from Commands page)
-                    long inputId;
-                    if (payload.TryGetProperty("inputId", out var inputIdProp))
-                    {
-                        inputId = inputIdProp.GetInt64();
-                    }
-                    else if (payload.TryGetProperty("atemInputId", out var atemInputIdProp))
-                    {
-                        inputId = atemInputIdProp.GetInt32();
-                    }
-                    else
-                    {
-                        return new AtemCommandResult
-                        {
-                            Success = false,
-                            Message = "Missing required property: inputId or atemInputId",
-                            Response = null
-                        };
-                    }
-                    
-                    var success = await _atemManager.CutToProgramAsync(deviceId, deviceIp, devicePort, inputId, ct);
+                    var success = await _atemManager.CutToProgramAsync(command.DeviceId, deviceIp, (int)command.DevicePort, inputId, ct);
                     
                     return new AtemCommandResult
                     {
@@ -733,41 +740,15 @@ public class CommandService : ICommandService
                     };
                 }
                 
-                case "FADE_TO_PROGRAM":
                 case "FADETOPROGRAM":
                 {
-                    // Try "inputId" first, then "atemInputId" (from Commands page)
-                    long inputId;
-                    if (payload.TryGetProperty("inputId", out var inputIdProp))
-                    {
-                        inputId = inputIdProp.GetInt64();
-                    }
-                    else if (payload.TryGetProperty("atemInputId", out var atemInputIdProp))
-                    {
-                        inputId = atemInputIdProp.GetInt32();
-                    }
-                    else
-                    {
-                        return new AtemCommandResult
-                        {
-                            Success = false,
-                            Message = "Missing required property: inputId or atemInputId",
-                            Response = null
-                        };
-                    }
-                    
                     int? transitionRate = null;
-                    // Try "transitionRate" first, then "atemTransitionRate" (from Commands page)
-                    if (payload.TryGetProperty("transitionRate", out var rateProp) && rateProp.ValueKind != JsonValueKind.Null)
-                    {
-                        transitionRate = rateProp.GetInt32();
-                    }
-                    else if (payload.TryGetProperty("atemTransitionRate", out var atemRateProp) && atemRateProp.ValueKind != JsonValueKind.Null)
-                    {
-                        transitionRate = atemRateProp.GetInt32();
-                    }
+                    if (command.AtemTransitionRate == null)
+                        transitionRate = 30; // default to 30fps if not provided
+                    else 
+                        transitionRate = command.AtemTransitionRate;
                     
-                    var success = await _atemManager.AutoToProgramAsync(deviceId, deviceIp, devicePort, inputId, transitionRate, ct);
+                    var success = await _atemManager.AutoToProgramAsync(command.DeviceId, deviceIp, devicePort, inputId, transitionRate, ct);
                     
                     return new AtemCommandResult
                     {
@@ -810,20 +791,8 @@ public class CommandService : ICommandService
                 case "FADE_AUX_AUX2":
                 case "FADE_AUX_AUX3":
                 {
-                    if (!payload.TryGetProperty("inputId", out var inputIdProp))
-                    {
-                        return new AtemCommandResult
-                        {
-                            Success = false,
-                            Message = "Missing required property: inputId",
-                            Response = null
-                        };
-                    }
-                    
-                    var inputId = inputIdProp.GetInt64();
                     var auxIndex = atemCommand!.EndsWith("AUX1") ? 0 : atemCommand.EndsWith("AUX2") ? 1 : 2;
-                    
-                    var success = await _atemManager.SetAuxOutputAsync(deviceId, deviceIp, devicePort, auxIndex, inputId, ct);
+                    var success = await _atemManager.SetAuxOutputAsync(command.DeviceId, deviceIp, devicePort, auxIndex, inputId, ct);
                     
                     return new AtemCommandResult
                     {

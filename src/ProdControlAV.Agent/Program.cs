@@ -88,15 +88,15 @@ builder.Services.AddSingleton<IJwtAuthService, JwtAuthService>();
 // HttpClient(s) - using the singleton JWT service
 builder.Services.AddHttpClient<IStatusPublisher, StatusPublisher>(c =>
 {
-    c.Timeout = TimeSpan.FromSeconds(5);
+    c.Timeout = TimeSpan.FromSeconds(300);
 });
 builder.Services.AddHttpClient<DeviceSource>(c =>
 {
-    c.Timeout = TimeSpan.FromSeconds(5);
+    c.Timeout = TimeSpan.FromSeconds(300);
 });
 builder.Services.AddHttpClient<ICommandService, CommandService>(c =>
 {
-    c.Timeout = TimeSpan.FromSeconds(10);
+    c.Timeout = TimeSpan.FromSeconds(300);
 });
 
 // ATEM Connection Manager for LibAtem integration
