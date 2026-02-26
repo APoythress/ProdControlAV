@@ -21,14 +21,18 @@ namespace ProdControlAV.Infrastructure.Services
         DateTimeOffset? LastSeenUtc = null,
         DateTimeOffset? LastPolledUtc = null,
         double? HealthMetric = null,
-        bool? RecordingStatus = null);
+        bool? RecordingStatus = null,
+        bool SmsAlertsEnabled = true,
+        DateTimeOffset? LastSentSMSUtc = null);
 
     public interface IDeviceStore
     {
         Task UpsertAsync(Guid tenantId, Guid deviceId, string name, string ipAddress, string type, 
-            DateTimeOffset createdUtc, string? model, string? brand, string? location, bool allowTelNet, int port, CancellationToken ct);
+            DateTimeOffset createdUtc, string? model, string? brand, string? location, bool allowTelNet, int port,
+            bool smsAlertsEnabled, CancellationToken ct);
         Task UpsertStatusAsync(Guid tenantId, Guid deviceId, string status, DateTimeOffset lastSeenUtc, DateTimeOffset lastPolledUtc, CancellationToken ct);
         Task UpsertRecordingStatusAsync(Guid tenantId, Guid deviceId, bool recordingStatus, CancellationToken ct);
+        Task UpdateSmsLastSentAsync(Guid tenantId, Guid deviceId, DateTimeOffset? lastSentUtc, CancellationToken ct);
         Task DeleteAsync(Guid tenantId, Guid deviceId, CancellationToken ct);
         IAsyncEnumerable<DeviceDto> GetAllForTenantAsync(Guid tenantId, CancellationToken ct);
     }

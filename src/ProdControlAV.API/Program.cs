@@ -295,6 +295,52 @@ builder.Services.AddScoped<ICommandHistoryStore>(sp => {
 // Agent Auth Store - Table Storage for agent authentication (eliminates SQL dependency for auth)
 builder.Services.AddScoped<IAgentAuthStore, TableAgentAuthStore>();
 
+// SMS notification Table Storage stores (DeviceSmsState, SmsNotificationLog, TenantSmsUsage)
+builder.Services.AddScoped<IDeviceSmsStateStore>(sp => {
+    var tableClient = sp.GetRequiredService<TableServiceClient>().GetTableClient("DeviceSmsState");
+    try {
+        tableClient.CreateIfNotExists();
+        var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("TableSetup");
+        logger.LogInformation("Ensured Azure Table exists: DeviceSmsState");
+    } catch (Exception ex) {
+        var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("TableSetup");
+        logger.LogWarning(ex, "Failed to ensure Azure Table exists: DeviceSmsState");
+    }
+    return new TableDeviceSmsStateStore(sp.GetRequiredService<TableServiceClient>().GetTableClient("DeviceSmsState"));
+});
+
+builder.Services.AddScoped<ISmsNotificationLogStore>(sp => {
+    var tableClient = sp.GetRequiredService<TableServiceClient>().GetTableClient("SmsNotificationLog");
+    try {
+        tableClient.CreateIfNotExists();
+        var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("TableSetup");
+        logger.LogInformation("Ensured Azure Table exists: SmsNotificationLog");
+    } catch (Exception ex) {
+        var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("TableSetup");
+        logger.LogWarning(ex, "Failed to ensure Azure Table exists: SmsNotificationLog");
+    }
+    return new TableSmsNotificationLogStore(sp.GetRequiredService<TableServiceClient>().GetTableClient("SmsNotificationLog"));
+});
+
+builder.Services.AddScoped<ITenantSmsUsageStore>(sp => {
+    var tableClient = sp.GetRequiredService<TableServiceClient>().GetTableClient("TenantSmsUsage");
+    try {
+        tableClient.CreateIfNotExists();
+        var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("TableSetup");
+        logger.LogInformation("Ensured Azure Table exists: TenantSmsUsage");
+    } catch (Exception ex) {
+        var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("TableSetup");
+        logger.LogWarning(ex, "Failed to ensure Azure Table exists: TenantSmsUsage");
+    }
+    return new TableTenantSmsUsageStore(sp.GetRequiredService<TableServiceClient>().GetTableClient("TenantSmsUsage"));
+});
+
 // TableClient for AtemState
 builder.Services.AddScoped<IAtemStateStore>(sp => {
     var tableClient = sp.GetRequiredService<TableServiceClient>().GetTableClient("AtemState");

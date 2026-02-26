@@ -117,7 +117,7 @@ public class TableDeviceStoreTests
         await store.UpsertAsync(
             tenantId, deviceId, "Device1", "192.168.1.1", "Camera", 
             DateTimeOffset.UtcNow, "Model1", "Brand1", "Location1", 
-            false, 80, CancellationToken.None);
+            false, 80, true, CancellationToken.None);
 
         // Assert
         mockTableClient.Verify(x => x.UpsertEntityAsync(

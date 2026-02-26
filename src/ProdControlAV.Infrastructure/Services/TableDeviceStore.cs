@@ -13,7 +13,8 @@ namespace ProdControlAV.Infrastructure.Services
         public TableDeviceStore(TableClient table) => _table = table;
 
         public async Task UpsertAsync(Guid tenantId, Guid deviceId, string name, string ipAddress, string type, 
-            DateTimeOffset createdUtc, string? model, string? brand, string? location, bool allowTelNet, int port, CancellationToken ct)
+            DateTimeOffset createdUtc, string? model, string? brand, string? location, bool allowTelNet, int port,
+            bool smsAlertsEnabled, CancellationToken ct)
         {
             var entity = new TableEntity(tenantId.ToString().ToLowerInvariant(), deviceId.ToString())
             {
@@ -26,10 +27,33 @@ namespace ProdControlAV.Infrastructure.Services
                 ["Brand"] = brand ?? "",
                 ["Location"] = location ?? "",
                 ["AllowTelNet"] = allowTelNet,
-                ["Port"] = port
+                ["Port"] = port,
+                ["SmsAlertsEnabled"] = smsAlertsEnabled
             };
             // Use Merge so we don't wipe out any manual/custom columns that might be present
             await _table.UpsertEntityAsync(entity, TableUpdateMode.Merge, ct);
+        }
+
+        public async Task UpdateSmsLastSentAsync(Guid tenantId, Guid deviceId, DateTimeOffset? lastSentUtc, CancellationToken ct)
+        {
+            var partitionKey = tenantId.ToString().ToLowerInvariant();
+            var rowKey = deviceId.ToString();
+
+            // Use DateTimeOffset.MinValue as the sentinel "cleared/null" value because
+            // Azure Table Storage merge-updates cannot delete individual properties.
+            var entity = new TableEntity(partitionKey, rowKey)
+            {
+                ["LastSentSMSUtc"] = lastSentUtc.HasValue ? (object)lastSentUtc.Value : DateTimeOffset.MinValue
+            };
+
+            try
+            {
+                await _table.UpdateEntityAsync(entity, ETag.All, TableUpdateMode.Merge, ct);
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+                // Device not yet projected – skip silently
+            }
         }
 
         public async Task UpsertStatusAsync(Guid tenantId, Guid deviceId, string status, DateTimeOffset lastSeenUtc, DateTimeOffset lastPolledUtc, CancellationToken ct)
@@ -199,6 +223,31 @@ namespace ProdControlAV.Infrastructure.Services
                     }
                 }
 
+                // SmsAlertsEnabled (bool, default true)
+                bool smsAlertsEnabled = true;
+                if (e.TryGetValue("SmsAlertsEnabled", out v) && v != null)
+                {
+                    if (v is bool bsms) smsAlertsEnabled = bsms;
+                    else
+                    {
+                        var s = Convert.ToString(v);
+                        if (bool.TryParse(s, out var pb)) smsAlertsEnabled = pb;
+                        else if (int.TryParse(s, out var pi)) smsAlertsEnabled = pi != 0;
+                    }
+                }
+
+                // LastSentSMSUtc (nullable DateTimeOffset; DateTimeOffset.MinValue treated as null)
+                DateTimeOffset? lastSentSmsUtc = null;
+                if (e.TryGetValue("LastSentSMSUtc", out v) && v != null)
+                {
+                    DateTimeOffset parsed = DateTimeOffset.MinValue;
+                    if (v is DateTimeOffset dto4) parsed = dto4;
+                    else if (v is DateTime dt4) parsed = new DateTimeOffset(dt4);
+                    else if (v is string s4 && DateTimeOffset.TryParse(s4, out var p4)) parsed = p4;
+                    if (parsed != DateTimeOffset.MinValue)
+                        lastSentSmsUtc = parsed;
+                }
+
                 yield return new DeviceDto(
                     Guid.Parse(e.RowKey),
                     name,
@@ -215,7 +264,9 @@ namespace ProdControlAV.Infrastructure.Services
                     lastSeen,
                     lastPolled,
                     healthMetric,
-                    recordingStatus
+                    recordingStatus,
+                    smsAlertsEnabled,
+                    lastSentSmsUtc
                 );
             }
         }
