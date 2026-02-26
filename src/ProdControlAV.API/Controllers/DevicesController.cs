@@ -181,6 +181,7 @@ public class DevicesController : ControllerBase
                 d.Location,
                 d.AllowTelNet,
                 d.Port,
+                d.SmsAlertsEnabled,
                 CancellationToken.None);
             _logger.LogInformation("Created device {DeviceId} in SQL and Table Storage", d.Id);
         }
@@ -228,6 +229,7 @@ public class DevicesController : ControllerBase
                 d.Location,
                 d.AllowTelNet,
                 d.Port,
+                d.SmsAlertsEnabled,
                 CancellationToken.None);
             _logger.LogInformation("Updated device {DeviceId} in SQL and Table Storage", d.Id);
         }

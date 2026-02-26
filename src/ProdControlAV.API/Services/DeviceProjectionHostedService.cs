@@ -122,6 +122,7 @@ namespace ProdControlAV.API.Services
                             device.Location,
                             device.AllowTelNet,
                             device.Port,
+                            device.SmsAlertsEnabled,
                             ct);
                         _logger.LogInformation("Projected device {DeviceId} for tenant {TenantId}", device.Id, entry.TenantId);
                     }
