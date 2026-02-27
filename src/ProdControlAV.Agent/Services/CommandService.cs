@@ -1,37 +1,11 @@
-using System;
-using System.Collections.Generic;
-using System.Net.Http;
+using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using ProdControlAV.Core.Models;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
-using ProdControlAV.Infrastructure.Services;
+using Microsoft.Extensions.Options;
 
 namespace ProdControlAV.Agent.Services;
-
-public class CommandPullRequest 
-{ 
-    public int Max { get; set; } = 10; 
-}
-
-public class CommandPullResponse 
-{ 
-    public List<CommandEnvelope> Commands { get; set; } = new(); 
-}
-
-public class CommandCompleteRequest 
-{ 
-    public Guid CommandId { get; set; } 
-    public bool Success { get; set; } 
-    public string? Message { get; set; } 
-    public int? DurationMs { get; set; } 
-}
-
 public class CommandPayload
 {
     public Guid CommandId { get; set; }
@@ -83,7 +57,7 @@ public class CommandService : ICommandService
     {
         Timeout = TimeSpan.FromSeconds(5),
         DefaultRequestVersion = new Version(1, 1),
-        DefaultVersionPolicy = System.Net.Http.HttpVersionPolicy.RequestVersionOrLower
+        DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower
     };
     
     // JSON parsing helper methods
@@ -155,7 +129,7 @@ public class CommandService : ICommandService
             var endpoint = "/api/agents/commands/poll";
             
             using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
-            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
             using var res = await _http.SendAsync(req, ct);
             if (!res.IsSuccessStatusCode)
@@ -170,7 +144,7 @@ public class CommandService : ICommandService
             // Check if command is null (no messages available)
             if (!responseJson.TryGetProperty("command", out var commandProp))
                 return new CommandPayload();
-
+            
             if (!commandProp.TryGetProperty("payload", out var payloadProp) ||
                 payloadProp.ValueKind != JsonValueKind.String)
                 return new CommandPayload();
@@ -181,7 +155,19 @@ public class CommandService : ICommandService
 
             using var payloadDoc = JsonDocument.Parse(payloadJson);
             var root = payloadDoc.RootElement;
-
+            
+            // prevent erroring when command queue is empty sometimes combing back as empty json
+            if (root.ValueKind == JsonValueKind.Null || root.ValueKind == JsonValueKind.Undefined)
+            {
+                _logger.LogDebug("Command poll returned null/undefined JSON; treating as no commands.");
+                return new CommandPayload();
+            }
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                _logger.LogWarning("Command poll returned unexpected JSON kind {Kind}; treating as no commands.", root.ValueKind);
+                return new CommandPayload();
+            }
+            
             // required
             var deviceIp = RequireString(root, "deviceIp");
 
@@ -380,11 +366,11 @@ public class CommandService : ICommandService
                 {
                     Content = JsonContent.Create(historyRequest, options: s_jsonOptions)
                 };
-                req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+                req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
     
                 using var res = await _http.SendAsync(req, ct);
     
-                if (res.StatusCode == System.Net.HttpStatusCode.Unauthorized && attempt >= maxRetries - 1)
+                if (res.StatusCode == HttpStatusCode.Unauthorized && attempt >= maxRetries - 1)
                 {
                     if (success)
                     {
@@ -399,7 +385,7 @@ public class CommandService : ICommandService
                     return;
                 }
     
-                if (res.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                if (res.StatusCode == HttpStatusCode.Unauthorized)
                 {
                     _logger.LogWarning("Received 401 Unauthorized when recording command history, forcing token refresh (attempt {Attempt}/{MaxRetries})",
                         attempt + 1, maxRetries);
@@ -436,28 +422,6 @@ public class CommandService : ICommandService
                 }
             }
         }
-    }
-    
-    private class RestCommandResult
-    {
-        public bool Success { get; set; }
-        public string Message { get; set; } = "";
-        public string? Response { get; set; }
-        public int? StatusCode { get; set; }
-    }
-
-    private async Task ExecutePingCommand(CommandEnvelope command, CancellationToken ct)
-    {
-        // For security, this is a controlled ping operation
-        _logger.LogInformation("Executing ping command for device {DeviceId}", command.DeviceId);
-        await Task.Delay(100, ct); // Simulate ping operation
-    }
-
-    private async Task ExecuteStatusCommand(CommandEnvelope command, CancellationToken ct)
-    {
-        // For security, this is a controlled status check operation
-        _logger.LogInformation("Executing status command for device {DeviceId}", command.DeviceId);
-        await Task.Delay(50, ct); // Simulate status check
     }
     
     private async Task CheckAndUpdateRecordingStatusAsync(Guid deviceId, string deviceIp, int devicePort, string statusEndpoint, CancellationToken ct)
@@ -544,7 +508,7 @@ public class CommandService : ICommandService
             {
                 Content = JsonContent.Create(updateRequest, options: s_jsonOptions)
             };
-            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             
             using var res = await _http.SendAsync(req, ct);
             res.EnsureSuccessStatusCode();
