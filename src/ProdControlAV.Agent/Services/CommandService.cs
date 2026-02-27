@@ -141,6 +141,18 @@ public class CommandService : ICommandService
             // AgentsController.PollCommandQueue()
             var responseJson = await res.Content.ReadFromJsonAsync<JsonElement>(s_jsonOptions, ct);
             
+            // prevent erroring when command queue is empty sometimes combing back as empty json
+            if (responseJson.ValueKind == JsonValueKind.Null || responseJson.ValueKind == JsonValueKind.Undefined)
+            {
+                _logger.LogDebug("Command poll returned null/undefined JSON; treating as no commands.");
+                return new CommandPayload();
+            }
+            if (responseJson.ValueKind != JsonValueKind.Object)
+            {
+                _logger.LogWarning("Command poll returned unexpected JSON kind {Kind}; treating as no commands.", responseJson.ValueKind);
+                return new CommandPayload();
+            }
+            
             // Check if command is null (no messages available)
             if (!responseJson.TryGetProperty("command", out var commandProp))
                 return new CommandPayload();
@@ -156,17 +168,6 @@ public class CommandService : ICommandService
             using var payloadDoc = JsonDocument.Parse(payloadJson);
             var root = payloadDoc.RootElement;
             
-            // prevent erroring when command queue is empty sometimes combing back as empty json
-            if (root.ValueKind == JsonValueKind.Null || root.ValueKind == JsonValueKind.Undefined)
-            {
-                _logger.LogDebug("Command poll returned null/undefined JSON; treating as no commands.");
-                return new CommandPayload();
-            }
-            if (root.ValueKind != JsonValueKind.Object)
-            {
-                _logger.LogWarning("Command poll returned unexpected JSON kind {Kind}; treating as no commands.", root.ValueKind);
-                return new CommandPayload();
-            }
             
             // required
             var deviceIp = RequireString(root, "deviceIp");
