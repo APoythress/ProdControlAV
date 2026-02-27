@@ -41,19 +41,39 @@ namespace ProdControlAV.Infrastructure.Services
 
             // Use DateTimeOffset.MinValue as the sentinel "cleared/null" value because
             // Azure Table Storage merge-updates cannot delete individual properties.
-            var entity = new TableEntity(partitionKey, rowKey)
+            if (lastSentUtc == null)
             {
-                ["LastSentSMSUtc"] = lastSentUtc.HasValue ? (object)lastSentUtc.Value : DateTimeOffset.MinValue
+                // Remove the property instead of writing DateTimeOffset.MinValue (which is out of range).
+                try
+                {
+                    var resp = await _table.GetEntityAsync<TableEntity>(partitionKey, rowKey, cancellationToken: ct);
+                    var entity = resp.Value;
+
+                    if (entity.ContainsKey("LastSentSMSUtc"))
+                    {
+                        entity.Remove("LastSentSMSUtc");
+                        // Merge update to remove the property
+                        await _table.UpdateEntityAsync(entity, ETag.All, TableUpdateMode.Merge, ct);
+                    }
+                }
+                catch (RequestFailedException ex) when (ex.Status == 404)
+                {
+                    // Entity doesn't exist — nothing to remove.
+                }
+
+                return;
+            }
+
+            // Ensure value is a sane UTC DateTimeOffset (avoid MinValue)
+            var utcValue = lastSentUtc.Value.ToUniversalTime();
+
+            // Merge only the LastSentSMSUtc property so we don't overwrite other fields.
+            var mergeEntity = new TableEntity(partitionKey, rowKey)
+            {
+                ["LastSentSMSUtc"] = utcValue
             };
 
-            try
-            {
-                await _table.UpdateEntityAsync(entity, ETag.All, TableUpdateMode.Merge, ct);
-            }
-            catch (RequestFailedException ex) when (ex.Status == 404)
-            {
-                // Device not yet projected – skip silently
-            }
+            await _table.UpdateEntityAsync(mergeEntity, ETag.All, TableUpdateMode.Merge, ct);
         }
 
         public async Task UpsertStatusAsync(Guid tenantId, Guid deviceId, string status, DateTimeOffset lastSeenUtc, DateTimeOffset lastPolledUtc, CancellationToken ct)

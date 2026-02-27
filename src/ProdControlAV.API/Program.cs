@@ -1,27 +1,22 @@
-using System;
 using System.IdentityModel.Tokens.Jwt;
-using System.IO;
-using System.Linq;
-using System.Net.Http;
 using System.Text;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.IdentityModel.Tokens;
-using ProdControlAV.API.Models;
-using ProdControlAV.API.Services;
-using ProdControlAV.Infrastructure.Services;
-using ProdControlAV.Core.Interfaces;
-using ProdControlAV.Core.Models;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
-using ProdControlAV.API.Auth;
-using Microsoft.Extensions.Logging;
 using Azure.Data.Tables;
 using Azure.Identity;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
+using ProdControlAV.API.Auth;
+using ProdControlAV.API.Controllers;
+using ProdControlAV.API.Models;
+using ProdControlAV.API.Services;
+using ProdControlAV.Core.Interfaces;
+using ProdControlAV.Core.Models;
+using ProdControlAV.Infrastructure.Services;
+using System.IO;
+using Microsoft.AspNetCore.DataProtection;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -37,6 +32,12 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient();
 builder.Services.AddAntiforgery(o => o.HeaderName = "X-CSRF-TOKEN");
+
+builder.Services
+    .AddDataProtection()
+    .SetApplicationName("ProdControlAV") // must match anywhere that needs to read the same cookies
+    .PersistKeysToFileSystem(new DirectoryInfo(
+        Path.Combine(builder.Environment.ContentRootPath, "..", "..", ".keys"))); // choose a stable path
 
 builder.Services.AddHttpClient("device-commands")
     .ConfigurePrimaryHttpMessageHandler(() =>
@@ -124,7 +125,7 @@ builder.Services
         {
             OnAuthenticationFailed = context =>
             {
-                var logger = context.HttpContext.RequestServices.GetService<ILogger<ProdControlAV.API.Controllers.AgentsController>>();
+                var logger = context.HttpContext.RequestServices.GetService<ILogger<AgentsController>>();
                 if (logger != null)
                 {
                     logger.LogWarning("[JWT AUTH FAILED] {Exception} | Token: {Token}", context.Exception.ToString(), context.Request.Headers["Authorization"]);
@@ -133,7 +134,7 @@ builder.Services
             },
             OnTokenValidated = context =>
             {
-                var logger = context.HttpContext.RequestServices.GetService<ILogger<ProdControlAV.API.Controllers.AgentsController>>();
+                var logger = context.HttpContext.RequestServices.GetService<ILogger<AgentsController>>();
                 if (logger != null)
                 {
                     var claims = context.Principal?.Claims.Select(c => $"{c.Type}={c.Value}").ToList();
@@ -386,12 +387,12 @@ builder.Services.AddHostedService<DeviceOfflineNotificationService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
-    options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+    options.SwaggerDoc("v1", new OpenApiInfo
     {
         Title = "ProdControlAV API",
         Version = "v1",
         Description = "API for monitoring and controlling audio/visual production equipment. Includes multi-tenant authentication and device management endpoints.",
-        Contact = new Microsoft.OpenApi.Models.OpenApiContact
+        Contact = new OpenApiContact
         {
             Name = "ProdControlAV Security Team",
             Email = "security@prodcontrolav.com"
@@ -403,41 +404,41 @@ builder.Services.AddSwaggerGen(options =>
     if (File.Exists(xmlPath))
         options.IncludeXmlComments(xmlPath);
     // Add security definitions for cookie auth and JWT Bearer
-    options.AddSecurityDefinition("cookieAuth", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    options.AddSecurityDefinition("cookieAuth", new OpenApiSecurityScheme
     {
-        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+        Type = SecuritySchemeType.ApiKey,
         Name = "prodcontrolav.auth",
-        In = Microsoft.OpenApi.Models.ParameterLocation.Cookie,
+        In = ParameterLocation.Cookie,
         Description = "Cookie-based authentication for web users."
     });
     
-    options.AddSecurityDefinition("bearerAuth", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    options.AddSecurityDefinition("bearerAuth", new OpenApiSecurityScheme
     {
-        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Type = SecuritySchemeType.Http,
         Scheme = "bearer",
         BearerFormat = "JWT",
         Description = "JWT Bearer authentication for agents."
     });
     
-    options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    options.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
         {
-            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            new OpenApiSecurityScheme
             {
-                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                Reference = new OpenApiReference
                 {
-                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Type = ReferenceType.SecurityScheme,
                     Id = "cookieAuth"
                 }
             },
             new List<string>()
         },
         {
-            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            new OpenApiSecurityScheme
             {
-                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                Reference = new OpenApiReference
                 {
-                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Type = ReferenceType.SecurityScheme,
                     Id = "bearerAuth"
                 }
             },

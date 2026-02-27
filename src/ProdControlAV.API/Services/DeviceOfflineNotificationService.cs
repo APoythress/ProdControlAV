@@ -330,8 +330,7 @@ public class DeviceOfflineNotificationService : BackgroundService
         {
             try
             {
-                var phoneNumber = dataProtection.Unprotect(user.PhoneNumber!);
-                var wasSent = await smsService.SendSmsAsync(phoneNumber, message, ct);
+                var wasSent = await smsService.SendSmsAsync(user.PhoneNumber, message, ct);
                 if (wasSent)
                 {
                     _logger.LogInformation("SMS sent to user {UserId} – {Type} notification for device {DeviceName}",
