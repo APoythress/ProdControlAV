@@ -113,94 +113,88 @@ public class CommandService : ICommandService
         _http.BaseAddress = new Uri(_api.BaseUrl);
     }
 
-    public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
+public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
     {
         try
         {
-            // Get valid JWT token
             var token = await _jwtAuth.GetValidTokenAsync(ct);
             if (string.IsNullOrEmpty(token))
             {
                 _logger.LogWarning("Failed to obtain valid JWT token for command polling");
                 return new CommandPayload();
             }
-
-            // Use the new Table Storage-based polling endpoint
+    
             var endpoint = "/api/agents/commands/poll";
-            
+    
             using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-
+    
             using var res = await _http.SendAsync(req, ct);
             if (!res.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Failed to poll commands: {StatusCode}", res.StatusCode);
                 return new CommandPayload();
             }
-
-            // AgentsController.PollCommandQueue()
-            var responseJson = await res.Content.ReadFromJsonAsync<JsonElement>(s_jsonOptions, ct);
-            
-            // prevent erroring when command queue is empty sometimes combing back as empty json
-            if (responseJson.ValueKind == JsonValueKind.Null || responseJson.ValueKind == JsonValueKind.Undefined)
-            {
-                _logger.LogDebug("Command poll returned null/undefined JSON; treating as no commands.");
+    
+            if (res.StatusCode == HttpStatusCode.NoContent)
                 return new CommandPayload();
-            }
+    
+            var body = await res.Content.ReadAsStringAsync(ct);
+            if (string.IsNullOrWhiteSpace(body))
+                return new CommandPayload();
+    
+            using var responseDoc = JsonDocument.Parse(body);
+            var responseJson = responseDoc.RootElement;
+    
             if (responseJson.ValueKind != JsonValueKind.Object)
-            {
-                _logger.LogWarning("Command poll returned unexpected JSON kind {Kind}; treating as no commands.", responseJson.ValueKind);
                 return new CommandPayload();
-            }
-            
-            // Check if command is null (no messages available)
+    
             if (!responseJson.TryGetProperty("command", out var commandProp))
                 return new CommandPayload();
-            
-            if (!commandProp.TryGetProperty("payload", out var payloadProp) ||
-                payloadProp.ValueKind != JsonValueKind.String)
+    
+            if (commandProp.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
                 return new CommandPayload();
-
+    
+            if (commandProp.ValueKind != JsonValueKind.Object)
+                return new CommandPayload();
+    
+            if (!commandProp.TryGetProperty("payload", out var payloadProp) || payloadProp.ValueKind != JsonValueKind.String)
+                return new CommandPayload();
+    
             var payloadJson = payloadProp.GetString();
             if (string.IsNullOrWhiteSpace(payloadJson))
                 return new CommandPayload();
-
-            using var payloadDoc = JsonDocument.Parse(payloadJson);
+    
+            using var payloadDoc = JsonDocument.Parse(payloadJson!);
             var root = payloadDoc.RootElement;
-            
-            
-            // required
+    
             var deviceIp = RequireString(root, "deviceIp");
-
-            // optional
+    
             var deviceType = GetStringOrNull(root, "deviceType");
             var commandType = GetStringOrNull(root, "commandType");
             var statusEndpoint = GetStringOrNull(root, "statusEndpoint");
             var monitorRecordingStatus = GetBoolOrNull(root, "monitorRecordingStatus") ?? false;
-
+    
             var atemFunction = GetStringOrNull(root, "atemFunction");
             var atemInputId = GetIntOrNull(root, "atemInputId");
             var atemTransitionRate = GetIntOrNull(root, "atemTransitionRate");
-            var attemptCount = GetIntOrNull(root, "attemptCount"); // may not exist
-
-            if (!commandProp.TryGetProperty("commandId", out var cmdIdProp) ||
-                string.IsNullOrWhiteSpace(cmdIdProp.GetString()) ||
-                !Guid.TryParse(cmdIdProp.GetString(), out var cmdId))
-            {
-                _logger.LogWarning("Missing or invalid commandId in command property");
+            var attemptCount = GetIntOrNull(root, "attemptCount");
+    
+            if (!commandProp.TryGetProperty("commandId", out var cmdIdProp) || cmdIdProp.ValueKind != JsonValueKind.String)
                 return new CommandPayload();
-            }
-
-            if (!commandProp.TryGetProperty("deviceId", out var devIdProp) ||
-                string.IsNullOrWhiteSpace(devIdProp.GetString()) ||
-                !Guid.TryParse(devIdProp.GetString(), out var devId))
-            {
-                _logger.LogWarning("Missing or invalid deviceId in command property");
+    
+            var cmdIdStr = cmdIdProp.GetString();
+            if (string.IsNullOrWhiteSpace(cmdIdStr) || !Guid.TryParse(cmdIdStr, out var cmdId))
                 return new CommandPayload();
-            }
-            
-            // Parse the command from the response
-            CommandPayload command = new CommandPayload
+    
+            if (!commandProp.TryGetProperty("deviceId", out var devIdProp) || devIdProp.ValueKind != JsonValueKind.String)
+                return new CommandPayload();
+    
+            var devIdStr = devIdProp.GetString();
+            if (string.IsNullOrWhiteSpace(devIdStr) || !Guid.TryParse(devIdStr, out var devId))
+                return new CommandPayload();
+    
+            return new CommandPayload
             {
                 CommandId = cmdId,
                 DeviceId = devId,
@@ -214,25 +208,19 @@ public class CommandService : ICommandService
                 AtemTransitionRate = atemTransitionRate,
                 AttemptCount = attemptCount.GetValueOrDefault(0)
             };
-
-            var test = command;
-            
-            if (command != null)
-                return command;
-            else 
-                return new CommandPayload();
         }
         catch (OperationCanceledException)
         {
-            return new CommandPayload();;
+            return new CommandPayload();
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error polling for commands");
-            return new CommandPayload();;
+            return new CommandPayload();
         }
     }
-
+    
+    
 // csharp
     // File: 'src/ProdControlAV.Agent/Services/CommandService.cs'
     public async Task ExecuteCommandAsync(CommandPayload command, CancellationToken ct)
