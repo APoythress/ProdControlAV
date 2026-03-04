@@ -101,6 +101,8 @@ builder.Services.AddHttpClient<ICommandService, CommandService>(c =>
 
 // ATEM Connection Manager for LibAtem integration
 builder.Services.AddSingleton<AtemConnectionManager>();
+// HyperDeck Connection Pool for persistent TCP connections
+builder.Services.AddSingleton<HyperDeckConnectionPool>();
 // Additional HTTP client for JWT auth service
 builder.Services.AddHttpClient("JwtAuth", c => {
     c.Timeout = TimeSpan.FromMinutes(5);
