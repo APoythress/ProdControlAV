@@ -184,7 +184,8 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
             var atemInputId = GetIntOrNull(root, "atemInputId");
             var atemTransitionRate = GetIntOrNull(root, "atemTransitionRate");
             var attemptCount = GetIntOrNull(root, "attemptCount");
-            var hyperDeckCommand = GetStringOrNull(root, "hyperDeckCommand");
+            // TODO - this should be more dynamic and less hardcoded, but for now it's fine. Should always be commandData to be reusable and not just for hyperDeck
+            var hyperDeckCommand = GetStringOrNull(root, "commandData");
             var devicePort = GetIntOrNull(root, "devicePort");
     
             if (!commandProp.TryGetProperty("commandId", out var cmdIdProp) || cmdIdProp.ValueKind != JsonValueKind.String)
