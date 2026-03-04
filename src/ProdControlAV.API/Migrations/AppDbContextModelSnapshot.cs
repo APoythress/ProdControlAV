@@ -223,6 +223,9 @@ namespace ProdControlAV.API.Migrations
                     b.Property<int?>("AtemTransitionRate")
                         .HasColumnType("int");
 
+                    b.Property<int?>("AtemChannel")
+                        .HasColumnType("int");
+
                     b.Property<string>("CommandData")
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
@@ -329,6 +332,22 @@ namespace ProdControlAV.API.Migrations
 
                     b.Property<string>("Payload")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("AtemFunction")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int?>("AtemInputId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("AtemTransitionRate")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("AtemMacroId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("AtemChannel")
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 

@@ -98,4 +98,9 @@ public class Command
     /// For ATEM commands: macro ID parameter (used by RunMacro)
     /// </summary>
     public int? AtemMacroId { get; set; }
+
+    /// <summary>
+    /// For ATEM commands: auxiliary output channel index (0-based), used by SetAux and GetAuxSource
+    /// </summary>
+    public int? AtemChannel { get; set; }
 }

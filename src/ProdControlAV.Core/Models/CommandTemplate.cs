@@ -57,4 +57,33 @@ public class CommandTemplate
     /// Whether this template is currently active/visible
     /// </summary>
     public bool IsActive { get; set; } = true;
+
+    // ── ATEM-specific template fields ──────────────────────────────────────────
+
+    /// <summary>
+    /// For ATEM templates: the ATEM function to execute
+    /// (e.g., "CutToProgram", "FadeToProgram", "SetPreview", "SetAux", "RunMacro",
+    /// "GetProgramInput", "GetPreviewInput", "GetAuxSource", "ListMacros")
+    /// </summary>
+    public string? AtemFunction { get; set; }
+
+    /// <summary>
+    /// For ATEM templates: default input ID (used by CutToProgram, FadeToProgram, SetPreview, SetAux)
+    /// </summary>
+    public int? AtemInputId { get; set; }
+
+    /// <summary>
+    /// For ATEM templates: default transition rate in frames (used by FadeToProgram; 0 means use device default)
+    /// </summary>
+    public int? AtemTransitionRate { get; set; }
+
+    /// <summary>
+    /// For ATEM templates: default macro ID (used by RunMacro)
+    /// </summary>
+    public int? AtemMacroId { get; set; }
+
+    /// <summary>
+    /// For ATEM templates: auxiliary output channel index, 0-based (used by SetAux and GetAuxSource)
+    /// </summary>
+    public int? AtemChannel { get; set; }
 }
