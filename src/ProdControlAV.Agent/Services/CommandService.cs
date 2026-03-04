@@ -747,26 +747,26 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
                 command.HyperDeckCommand, command.DeviceId, command.DeviceIp, port);
 
             var connection = await _hyperDeckPool.GetOrCreateAsync(command.DeviceIp, port, ct);
-            var hyperDeckResponse = await connection.SendCommandAsync(command.HyperDeckCommand, ct);
+            var deviceResponse = await connection.SendCommandAsync(command.HyperDeckCommand, ct);
 
-            var success = hyperDeckResponse.StatusCode is >= 200 and < 300;
+            var success = deviceResponse.StatusCode is >= 200 and < 300;
             var responseJson = System.Text.Json.JsonSerializer.Serialize(new
             {
-                statusCode = hyperDeckResponse.StatusCode,
-                statusText = hyperDeckResponse.StatusText,
-                fields = hyperDeckResponse.Fields
+                statusCode = deviceResponse.StatusCode,
+                statusText = deviceResponse.Message,
+                fields = deviceResponse.Data
             }, s_jsonOptions);
 
             _logger.LogInformation(
                 "HyperDeck command '{Command}' completed with status {StatusCode} {StatusText}",
-                command.HyperDeckCommand, hyperDeckResponse.StatusCode, hyperDeckResponse.StatusText);
+                command.HyperDeckCommand, deviceResponse.StatusCode, deviceResponse.Message);
 
             return new CommandResult
             {
                 Success = success,
                 Message = success
-                    ? $"HyperDeck command '{command.HyperDeckCommand}' succeeded: {hyperDeckResponse.StatusCode} {hyperDeckResponse.StatusText}"
-                    : $"HyperDeck command '{command.HyperDeckCommand}' failed: {hyperDeckResponse.StatusCode} {hyperDeckResponse.StatusText}",
+                    ? $"HyperDeck command '{command.HyperDeckCommand}' succeeded: {deviceResponse.StatusCode} {deviceResponse.Message}"
+                    : $"HyperDeck command '{command.HyperDeckCommand}' failed: {deviceResponse.StatusCode} {deviceResponse.Message}",
                 Response = responseJson
             };
         }

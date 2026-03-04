@@ -1,58 +1,47 @@
-using System.Collections.Concurrent;
-
 namespace ProdControlAV.Agent.Services;
 
 /// <summary>
-/// Maintains one persistent <see cref="HyperDeckConnection"/> per device,
-/// keyed by "{host}:{port}".
+/// Typed wrapper around <see cref="DeviceConnectionPool"/> that maintains one
+/// persistent <see cref="HyperDeckConnection"/> per device, keyed by "{host}:{port}".
+///
+/// Delegates all lifecycle management to the shared <see cref="DeviceConnectionPool"/>
+/// using the device-type label "hyperdeck".
 /// </summary>
 public sealed class HyperDeckConnectionPool : IAsyncDisposable
 {
     private readonly ILogger<HyperDeckConnectionPool> _logger;
-    private readonly ConcurrentDictionary<string, HyperDeckConnection> _connections = new();
+    private readonly DeviceConnectionPool _pool;
     private bool _disposed;
 
     public HyperDeckConnectionPool(ILogger<HyperDeckConnectionPool> logger)
     {
         _logger = logger;
+        _pool = new DeviceConnectionPool(
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<DeviceConnectionPool>.Instance);
     }
 
     /// <summary>
-    /// Returns the existing connection for <paramref name="host"/>:<paramref name="port"/>,
-    /// or creates and starts a new one.
+    /// Returns the existing <see cref="HyperDeckConnection"/> for
+    /// <paramref name="host"/>:<paramref name="port"/>, or creates and starts a new one.
     /// </summary>
     public async Task<HyperDeckConnection> GetOrCreateAsync(
         string host, int port, CancellationToken ct = default)
     {
-        var key = $"{host}:{port}";
+        var connection = await _pool.GetOrCreateAsync(
+            deviceType: "hyperdeck",
+            host: host,
+            port: port,
+            factory: () => new HyperDeckConnection(host, port, _logger),
+            ct: ct);
 
-        if (_connections.TryGetValue(key, out var existing))
-            return existing;
-
-        var connection = new HyperDeckConnection(host, port, _logger);
-        if (_connections.TryAdd(key, connection))
-        {
-            _logger.LogInformation("Creating new HyperDeck connection for {Key}", key);
-            await connection.StartAsync(ct);
-            return connection;
-        }
-
-        // Another thread won the race – discard ours and return the winner
-        await connection.DisposeAsync();
-        return _connections[key];
+        return (HyperDeckConnection)connection;
     }
 
+    /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
         if (_disposed) return;
         _disposed = true;
-
-        foreach (var connection in _connections.Values)
-        {
-            try { await connection.DisposeAsync(); }
-            catch { /* best effort */ }
-        }
-
-        _connections.Clear();
+        await _pool.DisposeAsync();
     }
 }
