@@ -5,13 +5,13 @@ using ProdControlAV.Core.Models;
 namespace ProdControlAV.API.Data;
 
 /// <summary>
-/// Seeds the database with pre-defined HyperDeck REST API command templates
+/// Seeds the database with pre-defined command templates for all supported device types.
 /// </summary>
 public static class CommandTemplateSeeder
 {
     /// <summary>
-    /// Gets the list of HyperDeck command templates to seed
-    /// Based on the HyperDeck REST API specification
+    /// Gets the list of HyperDeck command templates to seed.
+    /// Based on the HyperDeck REST API specification.
     /// </summary>
     public static List<CommandTemplate> GetHyperDeckCommandTemplates()
     {
@@ -296,22 +296,207 @@ public static class CommandTemplateSeeder
     }
 
     /// <summary>
-    /// Seeds the database with HyperDeck command templates if they don't exist
+    /// Gets the list of pre-defined ATEM command templates to seed.
+    ///
+    /// For ATEM templates the <see cref="CommandTemplate.HttpMethod"/> is set to <c>"ATEM"</c>
+    /// and <see cref="CommandTemplate.Endpoint"/> contains the function name so that consumers
+    /// can identify the command type without inspecting <see cref="CommandTemplate.AtemFunction"/>.
+    /// The ATEM-specific nullable fields (<see cref="CommandTemplate.AtemFunction"/>,
+    /// <see cref="CommandTemplate.AtemInputId"/>, <see cref="CommandTemplate.AtemTransitionRate"/>,
+    /// <see cref="CommandTemplate.AtemMacroId"/>, <see cref="CommandTemplate.AtemChannel"/>)
+    /// carry the typed parameters that are copied to the corresponding <see cref="Command"/> fields
+    /// when a user creates a command from this template.
+    ///
+    /// NOTE: <see cref="Command.CommandData"/> is <c>null</c> for all ATEM commands — the ATEM
+    /// execution path reads <see cref="Command.AtemFunction"/> and the other ATEM fields instead.
+    /// </summary>
+    public static List<CommandTemplate> GetAtemCommandTemplates()
+    {
+        var templates = new List<CommandTemplate>();
+        int order = 1;
+
+        // ── Program Switching – Cut ───────────────────────────────────────────
+        for (int input = 1; input <= 8; input++)
+        {
+            templates.Add(new CommandTemplate
+            {
+                Id = Guid.Parse($"20000000-0000-0000-0001-{input:D12}"),
+                Category = "Program Switching",
+                Name = $"Cut to Input {input}",
+                Description = $"Immediately cut the program bus to input {input}",
+                HttpMethod = "ATEM",
+                Endpoint = "CutToProgram",
+                DeviceType = "ATEM",
+                DisplayOrder = order++,
+                IsActive = true,
+                AtemFunction = "CutToProgram",
+                AtemInputId = input
+            });
+        }
+
+        // ── Program Switching – Fade/Auto ─────────────────────────────────────
+        for (int input = 1; input <= 8; input++)
+        {
+            templates.Add(new CommandTemplate
+            {
+                Id = Guid.Parse($"20000000-0000-0000-0002-{input:D12}"),
+                Category = "Program Switching",
+                Name = $"Fade to Input {input} (30 frames)",
+                Description = $"Perform a mix/auto transition to input {input} at 30 frames",
+                HttpMethod = "ATEM",
+                Endpoint = "FadeToProgram",
+                DeviceType = "ATEM",
+                DisplayOrder = order++,
+                IsActive = true,
+                AtemFunction = "FadeToProgram",
+                AtemInputId = input,
+                AtemTransitionRate = 30
+            });
+        }
+
+        // ── Preview Routing ───────────────────────────────────────────────────
+        for (int input = 1; input <= 8; input++)
+        {
+            templates.Add(new CommandTemplate
+            {
+                Id = Guid.Parse($"20000000-0000-0000-0003-{input:D12}"),
+                Category = "Preview Routing",
+                Name = $"Set Preview to Input {input}",
+                Description = $"Route input {input} to the preview bus",
+                HttpMethod = "ATEM",
+                Endpoint = "SetPreview",
+                DeviceType = "ATEM",
+                DisplayOrder = order++,
+                IsActive = true,
+                AtemFunction = "SetPreview",
+                AtemInputId = input
+            });
+        }
+
+        // ── Aux Routing – 4 channels × 4 inputs ──────────────────────────────
+        for (int channel = 0; channel < 4; channel++)
+        {
+            for (int input = 1; input <= 4; input++)
+            {
+                templates.Add(new CommandTemplate
+                {
+                    Id = Guid.Parse($"20000000-0000-0000-{channel + 4:D4}-{input:D12}"),
+                    Category = "Aux Routing",
+                    Name = $"Set Aux {channel + 1} to Input {input}",
+                    Description = $"Route input {input} to auxiliary output {channel + 1} (0-based channel index {channel})",
+                    HttpMethod = "ATEM",
+                    Endpoint = "SetAux",
+                    DeviceType = "ATEM",
+                    DisplayOrder = order++,
+                    IsActive = true,
+                    AtemFunction = "SetAux",
+                    AtemInputId = input,
+                    AtemChannel = channel
+                });
+            }
+        }
+
+        // ── Macros ────────────────────────────────────────────────────────────
+        for (int macroId = 1; macroId <= 5; macroId++)
+        {
+            templates.Add(new CommandTemplate
+            {
+                Id = Guid.Parse($"20000000-0000-0000-0008-{macroId:D12}"),
+                Category = "Macros",
+                Name = $"Run Macro {macroId}",
+                Description = $"Execute ATEM macro slot {macroId}",
+                HttpMethod = "ATEM",
+                Endpoint = "RunMacro",
+                DeviceType = "ATEM",
+                DisplayOrder = order++,
+                IsActive = true,
+                AtemFunction = "RunMacro",
+                AtemMacroId = macroId
+            });
+        }
+
+        templates.Add(new CommandTemplate
+        {
+            Id = Guid.Parse("20000000-0000-0000-0008-000000000010"),
+            Category = "Macros",
+            Name = "List Macros",
+            Description = "Retrieve the list of available macros from the ATEM state cache",
+            HttpMethod = "ATEM",
+            Endpoint = "ListMacros",
+            DeviceType = "ATEM",
+            DisplayOrder = order++,
+            IsActive = true,
+            AtemFunction = "ListMacros"
+        });
+
+        // ── Status (read from local state cache – no round-trip) ──────────────
+        templates.Add(new CommandTemplate
+        {
+            Id = Guid.Parse("20000000-0000-0000-0009-000000000001"),
+            Category = "Status",
+            Name = "Get Program Input",
+            Description = "Read the current program-bus input from the local ATEM state cache (ME 0)",
+            HttpMethod = "ATEM",
+            Endpoint = "GetProgramInput",
+            DeviceType = "ATEM",
+            DisplayOrder = order++,
+            IsActive = true,
+            AtemFunction = "GetProgramInput"
+        });
+
+        templates.Add(new CommandTemplate
+        {
+            Id = Guid.Parse("20000000-0000-0000-0009-000000000002"),
+            Category = "Status",
+            Name = "Get Preview Input",
+            Description = "Read the current preview-bus input from the local ATEM state cache (ME 0)",
+            HttpMethod = "ATEM",
+            Endpoint = "GetPreviewInput",
+            DeviceType = "ATEM",
+            DisplayOrder = order++,
+            IsActive = true,
+            AtemFunction = "GetPreviewInput"
+        });
+
+        for (int channel = 0; channel < 2; channel++)
+        {
+            templates.Add(new CommandTemplate
+            {
+                Id = Guid.Parse($"20000000-0000-0000-0009-{channel + 3:D12}"),
+                Category = "Status",
+                Name = $"Get Aux {channel + 1} Source",
+                Description = $"Read the current source for auxiliary output {channel + 1} from the local ATEM state cache",
+                HttpMethod = "ATEM",
+                Endpoint = "GetAuxSource",
+                DeviceType = "ATEM",
+                DisplayOrder = order++,
+                IsActive = true,
+                AtemFunction = "GetAuxSource",
+                AtemChannel = channel
+            });
+        }
+
+        return templates;
+    }
+
+    /// <summary>
+    /// Seeds the database with HyperDeck and ATEM command templates if they don't already exist.
+    /// This method is idempotent: running it multiple times will not create duplicates.
     /// </summary>
     public static void SeedCommandTemplates(AppDbContext context)
     {
-        var templates = GetHyperDeckCommandTemplates();
-        
-        foreach (var template in templates)
+        var allTemplates = new List<CommandTemplate>();
+        allTemplates.AddRange(GetHyperDeckCommandTemplates());
+        allTemplates.AddRange(GetAtemCommandTemplates());
+
+        foreach (var template in allTemplates)
         {
-            // Check if template already exists
-            var existing = context.CommandTemplates.Find(template.Id);
-            if (existing == null)
+            if (context.CommandTemplates.Find(template.Id) == null)
             {
                 context.CommandTemplates.Add(template);
             }
         }
-        
+
         context.SaveChanges();
     }
 }
