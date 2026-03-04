@@ -203,7 +203,7 @@ public class HyperDeckConnectionTests
 
         // Assert
         Assert.Equal(200, response.StatusCode);
-        Assert.Equal("ok", response.StatusText);
+        Assert.Equal("ok", response.Message);
 
         listener.Stop();
         await serverTask;
@@ -243,10 +243,10 @@ public class HyperDeckConnectionTests
         var response = await conn.SendCommandAsync("transport info");
 
         Assert.Equal(208, response.StatusCode);
-        Assert.Equal("transport info", response.StatusText);
-        Assert.Equal("play", response.Fields["status"]);
-        Assert.Equal("100", response.Fields["speed"]);
-        Assert.Equal("1", response.Fields["slot id"]);
+        Assert.Equal("transport info", response.Message);
+        Assert.Equal("play", response.Data["status"]);
+        Assert.Equal("100", response.Data["speed"]);
+        Assert.Equal("1", response.Data["slot id"]);
 
         listener.Stop();
         await serverTask;
