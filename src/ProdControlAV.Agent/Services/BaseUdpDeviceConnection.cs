@@ -108,6 +108,7 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
     private Task _receiveTask = Task.CompletedTask;
     private Task _sendTask = Task.CompletedTask;
     private Task _keepAliveTask = Task.CompletedTask;
+    private Task _reliabilityTask = Task.CompletedTask;
     private bool _disposed;
 
     // Session state
@@ -154,11 +155,33 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
     /// <inheritdoc/>
     public async Task StartAsync(CancellationToken ct = default)
     {
-        await InitialiseSessionAsync(ct);
+        SetState(DeviceConnectionState.Connecting);
+        Logger.LogInformation("{DeviceType} session starting for {Host}:{Port}", DeviceTypeName, Host, Port);
+
+        _udpClient?.Dispose();
+        _udpClient = new UdpClient();
+        _udpClient.Connect(Host, Port);
+
+        // Start receive and send loops BEFORE the handshake so the receive loop can
+        // dispatch the handshake response datagram back to PerformHandshakeAsync.
         _receiveTask = ReceiveLoopAsync(_cts.Token);
         _sendTask = SendLoopAsync(_cts.Token);
+
+        if (RequiresHandshake)
+        {
+            await PerformHandshakeAsync(ct);
+        }
+        else
+        {
+            SetState(DeviceConnectionState.Connected);
+            Logger.LogInformation("{DeviceType} session ready (no handshake required) for {Host}:{Port}",
+                DeviceTypeName, Host, Port);
+        }
+
         if (RequiresKeepAlive)
             _keepAliveTask = KeepAliveLoopAsync(_cts.Token);
+        if (UsesReliability)
+            _reliabilityTask = ReliabilityLoopAsync(_cts.Token);
     }
 
     /// <inheritdoc/>
@@ -173,7 +196,7 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
     public Task DisconnectAsync()
     {
         _cts.Cancel();
-        _state = DeviceConnectionState.Disconnected;
+        SetState(DeviceConnectionState.Disconnected);
 
         var disconnectEx = new IOException($"{DeviceTypeName} at {Host}:{Port} was disconnected.");
         FailPendingCommand(disconnectEx);
@@ -270,28 +293,36 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
     /// <summary>Extracts the sequence number being acknowledged from an inbound ACK datagram.</summary>
     protected virtual int GetAckedSequence(ReceivedDatagram rx) => 0;
 
-    // ── Session initialisation ────────────────────────────────────────────────
+    /// <summary>
+    /// When true, receiving an ACK for a pending datagram automatically resolves
+    /// the corresponding command's <see cref="DeviceResponse"/> TCS with a success result.
+    /// Set to <c>true</c> for protocols (like ATEM) where the ACK itself is the "response"
+    /// rather than a subsequent data packet.
+    /// </summary>
+    protected virtual bool AckResolvesResponse => false;
 
-    private async Task InitialiseSessionAsync(CancellationToken ct)
+    // ── Session state helpers ─────────────────────────────────────────────────
+
+    private void SetState(DeviceConnectionState newState)
     {
-        _state = DeviceConnectionState.Connecting;
-        Logger.LogInformation("{DeviceType} session starting for {Host}:{Port}", DeviceTypeName, Host, Port);
-
-        _udpClient?.Dispose();
-        _udpClient = new UdpClient();
-        _udpClient.Connect(Host, Port);
-
-        if (RequiresHandshake)
-        {
-            await PerformHandshakeAsync(ct);
-        }
-        else
-        {
-            _state = DeviceConnectionState.Connected;
-            Logger.LogInformation("{DeviceType} session ready (no handshake required) for {Host}:{Port}",
-                DeviceTypeName, Host, Port);
-        }
+        var previous = _state;
+        _state = newState;
+        if (previous != newState)
+            OnDeviceStateChanged(newState);
     }
+
+    /// <summary>
+    /// Called when the connection state transitions to a new value.
+    /// Override in subclasses to propagate state changes to higher-level abstractions.
+    /// </summary>
+    protected virtual void OnDeviceStateChanged(DeviceConnectionState newState) { }
+
+    /// <summary>
+    /// Sends a raw datagram byte array directly to the connected device endpoint.
+    /// Available to subclasses for custom protocol frames (e.g. handshake ACKs, keepalives).
+    /// </summary>
+    protected Task SendRawDatagramAsync(byte[] datagram, CancellationToken ct)
+        => SendDatagramAsync(datagram, ct);
 
     private async Task PerformHandshakeAsync(CancellationToken ct)
     {
@@ -313,13 +344,22 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
             var rx = await handshakeTcs.Task.WaitAsync(timeoutCts.Token);
             ApplyHandshakeResponse(rx);
 
-            _state = DeviceConnectionState.Connected;
+            // For reliability-enabled protocols, ACK the handshake response immediately
+            // because the receive loop has not had a chance to auto-ACK it yet.
+            if (UsesReliability)
+            {
+                var ack = BuildAckDatagram(ProtocolContext, rx);
+                if (ack.Length > 0)
+                    await SendDatagramAsync(ack, ct);
+            }
+
+            SetState(DeviceConnectionState.Connected);
             Logger.LogInformation("{DeviceType} handshake completed with {Host}:{Port}",
                 DeviceTypeName, Host, Port);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            _state = DeviceConnectionState.Faulted;
+            SetState(DeviceConnectionState.Faulted);
             throw new TimeoutException(
                 $"{DeviceTypeName} handshake with {Host}:{Port} timed out after {HandshakeTimeout.TotalSeconds}s");
         }
@@ -336,7 +376,7 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
 
     private async Task ReconnectAsync(CancellationToken ct)
     {
-        _state = DeviceConnectionState.Disconnected;
+        SetState(DeviceConnectionState.Disconnected);
         var disconnectEx = new IOException($"{DeviceTypeName} at {Host}:{Port} session lost.");
         FailPendingCommand(disconnectEx);
         DrainOutboundChannel(disconnectEx);
@@ -356,15 +396,17 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
                 _udpClient?.Dispose();
                 _udpClient = new UdpClient();
                 _udpClient.Connect(Host, Port);
-                _state = DeviceConnectionState.Connecting;
+                SetState(DeviceConnectionState.Connecting);
+
+                // Restart receive loop on fresh socket BEFORE performing the handshake
+                // so that it can dispatch the handshake response datagram.
+                _receiveTask = ReceiveLoopAsync(_cts.Token);
 
                 if (RequiresHandshake)
                     await PerformHandshakeAsync(ct);
                 else
-                    _state = DeviceConnectionState.Connected;
+                    SetState(DeviceConnectionState.Connected);
 
-                // Restart receive loop on fresh socket.
-                _receiveTask = ReceiveLoopAsync(_cts.Token);
                 Logger.LogInformation("{DeviceType} reconnected to {Host}:{Port}", DeviceTypeName, Host, Port);
                 return;
             }
@@ -374,7 +416,7 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
             }
             catch (Exception ex)
             {
-                _state = DeviceConnectionState.Faulted;
+                SetState(DeviceConnectionState.Faulted);
                 Logger.LogWarning(
                     ex, "{DeviceType} reconnect attempt {Attempt} to {Host}:{Port} failed",
                     DeviceTypeName, attempt + 1, Host, Port);
@@ -403,7 +445,7 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
                         await _pendingAcksLock.WaitAsync(ct);
                         try
                         {
-                            _pendingAcks[seq] = new PendingAckEntry(datagram, cmd.Response, 0);
+                            _pendingAcks[seq] = new PendingAckEntry(datagram, cmd.Response, 0, DateTimeOffset.UtcNow);
                         }
                         finally
                         {
@@ -550,14 +592,112 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
         ApplyAck(rx);
         var ackedSeq = GetAckedSequence(rx);
 
+        PendingAckEntry? entry = null;
         await _pendingAcksLock.WaitAsync(ct);
         try
         {
-            _pendingAcks.Remove(ackedSeq);
+            if (_pendingAcks.TryGetValue(ackedSeq, out entry))
+                _pendingAcks.Remove(ackedSeq);
         }
         finally
         {
             _pendingAcksLock.Release();
+        }
+
+        // For protocols where the ACK itself is the response (e.g. ATEM), resolve the TCS now.
+        if (entry != null && AckResolvesResponse)
+        {
+            var ackResponse = new DeviceResponse { Success = true, StatusCode = 200, Message = "ACK" };
+            entry.Response.TrySetResult(ackResponse);
+            // _pendingResponse holds the same TCS instance – clear it so DeliverResponse
+            // doesn't attempt a second delivery if a state-update packet also arrives.
+            Interlocked.CompareExchange(ref _pendingResponse, null, entry.Response);
+        }
+    }
+
+    // ── Reliability retransmit loop ───────────────────────────────────────────
+
+    private async Task ReliabilityLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            // Poll at half the ACK timeout so we catch expired entries promptly.
+            var pollInterval = TimeSpan.FromTicks(AckTimeout.Ticks / 2);
+
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(pollInterval, ct);
+
+                if (_state != DeviceConnectionState.Connected)
+                    continue;
+
+                // Collect entries that have exceeded AckTimeout.
+                List<(int Seq, PendingAckEntry Entry)>? expired = null;
+
+                await _pendingAcksLock.WaitAsync(ct);
+                try
+                {
+                    var now = DateTimeOffset.UtcNow;
+                    foreach (var kvp in _pendingAcks)
+                    {
+                        if ((now - kvp.Value.SentAt) >= AckTimeout)
+                            (expired ??= new()).Add((kvp.Key, kvp.Value));
+                    }
+                }
+                finally
+                {
+                    _pendingAcksLock.Release();
+                }
+
+                if (expired == null) continue;
+
+                foreach (var (seq, entry) in expired)
+                {
+                    if (entry.Attempts >= MaxRetries)
+                    {
+                        // Max retries exceeded – fail the command and trigger reconnect.
+                        await _pendingAcksLock.WaitAsync(ct);
+                        try { _pendingAcks.Remove(seq); }
+                        finally { _pendingAcksLock.Release(); }
+
+                        Logger.LogWarning(
+                            "{DeviceType}: max retries ({Max}) exceeded for seq {Seq} – reconnecting",
+                            DeviceTypeName, MaxRetries, seq);
+
+                        var ex = new TimeoutException(
+                            $"{DeviceTypeName} command seq {seq} not acknowledged after {MaxRetries} retries.");
+                        entry.Response.TrySetException(ex);
+                        Interlocked.CompareExchange(ref _pendingResponse, null, entry.Response);
+
+                        await ReconnectAsync(ct);
+                    }
+                    else
+                    {
+                        // Retransmit the datagram and update the entry.
+                        Logger.LogDebug(
+                            "{DeviceType}: retransmitting seq {Seq} (attempt {Attempt}/{Max})",
+                            DeviceTypeName, seq, entry.Attempts + 1, MaxRetries);
+
+                        var updated = entry with { Attempts = entry.Attempts + 1, SentAt = DateTimeOffset.UtcNow };
+                        await _pendingAcksLock.WaitAsync(ct);
+                        try { _pendingAcks[seq] = updated; }
+                        finally { _pendingAcksLock.Release(); }
+
+                        try
+                        {
+                            await SendDatagramAsync(entry.Datagram, ct);
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.LogError(ex, "{DeviceType}: retransmit send failed for seq {Seq}", DeviceTypeName, seq);
+                        }
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutting down – expected.
         }
     }
 
@@ -681,6 +821,7 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
         try { await _receiveTask.WaitAsync(TaskCleanupTimeout); } catch { /* best effort */ }
         try { await _sendTask.WaitAsync(TaskCleanupTimeout); } catch { /* best effort */ }
         try { await _keepAliveTask.WaitAsync(TaskCleanupTimeout); } catch { /* best effort */ }
+        try { await _reliabilityTask.WaitAsync(TaskCleanupTimeout); } catch { /* best effort */ }
 
         _udpClient?.Dispose();
         _cts.Dispose();
@@ -697,5 +838,6 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
     private sealed record PendingAckEntry(
         byte[] Datagram,
         TaskCompletionSource<DeviceResponse> Response,
-        int Attempts);
+        int Attempts,
+        DateTimeOffset SentAt);
 }
