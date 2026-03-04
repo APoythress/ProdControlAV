@@ -20,6 +20,8 @@ public class CommandPayload
     public long? AtemInputId { get; set; } = null;
     public int? AtemTransitionRate { get; set; } = null;
     public int AttemptCount { get; set; }
+    /// <summary>HyperDeck text command to send (e.g. "play", "stop", "record").</summary>
+    public string? HyperDeckCommand { get; set; } = null;
 }
 
 public interface ICommandService
@@ -35,6 +37,7 @@ public class CommandService : ICommandService
     private readonly ApiOptions _api;
     private readonly IJwtAuthService _jwtAuth;
     private readonly AtemConnectionManager _atemManager;
+    private readonly HyperDeckConnectionPool _hyperDeckPool;
 
     // Explicit JsonSerializerOptions with a TypeInfoResolver to opt-out of the reflection-disabled behavior
     private static readonly JsonSerializerOptions s_jsonOptions = new()
@@ -103,13 +106,15 @@ public class CommandService : ICommandService
         ILogger<CommandService> logger, 
         IOptions<ApiOptions> api, 
         IJwtAuthService jwtAuth,
-        AtemConnectionManager atemManager) 
+        AtemConnectionManager atemManager,
+        HyperDeckConnectionPool hyperDeckPool) 
     {
         _http = http;
         _logger = logger;
         _api = api.Value;
         _jwtAuth = jwtAuth;
         _atemManager = atemManager;
+        _hyperDeckPool = hyperDeckPool;
         _http.BaseAddress = new Uri(_api.BaseUrl);
     }
 
@@ -179,6 +184,8 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
             var atemInputId = GetIntOrNull(root, "atemInputId");
             var atemTransitionRate = GetIntOrNull(root, "atemTransitionRate");
             var attemptCount = GetIntOrNull(root, "attemptCount");
+            var hyperDeckCommand = GetStringOrNull(root, "hyperDeckCommand");
+            var devicePort = GetIntOrNull(root, "devicePort");
     
             if (!commandProp.TryGetProperty("commandId", out var cmdIdProp) || cmdIdProp.ValueKind != JsonValueKind.String)
                 return new CommandPayload();
@@ -199,6 +206,7 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
                 CommandId = cmdId,
                 DeviceId = devId,
                 DeviceIp = deviceIp,
+                DevicePort = devicePort,
                 DeviceType = deviceType,
                 MonitorRecordingStatus = monitorRecordingStatus,
                 StatusEndpoint = statusEndpoint,
@@ -206,7 +214,8 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
                 AtemFunction = atemFunction,
                 AtemInputId = atemInputId,
                 AtemTransitionRate = atemTransitionRate,
-                AttemptCount = attemptCount.GetValueOrDefault(0)
+                AttemptCount = attemptCount.GetValueOrDefault(0),
+                HyperDeckCommand = hyperDeckCommand
             };
         }
         catch (OperationCanceledException)
@@ -272,6 +281,13 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
             else if (string.Equals(command.CommandType, "ATEM", StringComparison.OrdinalIgnoreCase))
             {
                 var result = await ExecuteAtemCommandAsync(command, ct);
+                success = result.Success;
+                message = result.Message;
+                response = result.Response;
+            }
+            else if (string.Equals(command.CommandType, "HYPERDECK", StringComparison.OrdinalIgnoreCase))
+            {
+                var result = await ExecuteHyperDeckCommandAsync(command, ct);
                 success = result.Success;
                 message = result.Message;
                 response = result.Response;
@@ -514,14 +530,14 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
     /// <summary>
     /// Executes an ATEM command from the payload using LibAtem.
     /// </summary>
-    private async Task<AtemCommandResult> ExecuteAtemCommandAsync(CommandPayload command, CancellationToken ct)
+    private async Task<CommandResult> ExecuteAtemCommandAsync(CommandPayload command, CancellationToken ct)
     {
         try
         {
             // Extract device information
             if (command.DeviceId == Guid.Empty)
             {
-                return new AtemCommandResult
+                return new CommandResult
                 {
                     Success = false,
                     Message = "Missing required property: deviceId",
@@ -541,7 +557,7 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
 
             if (string.IsNullOrEmpty(deviceIp))
             {
-                return new AtemCommandResult
+                return new CommandResult
                 {
                     Success = false,
                     Message = "Missing required property: deviceIp",
@@ -554,7 +570,7 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
             
             if (string.IsNullOrEmpty(atemCommand))
             {
-                return new AtemCommandResult
+                return new CommandResult
                 {
                     Success = false,
                     Message = "Missing required property: atemCommand or atemFunction",
@@ -567,7 +583,7 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
             // Parse command and parameters
             if (inputId == null)
             {
-                return new AtemCommandResult
+                return new CommandResult
                 {
                     Success = false,
                     Message = "Missing required property: AtemInputId",
@@ -581,7 +597,7 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
                 {
                     var success = await _atemManager.CutToProgramAsync(command.DeviceId, deviceIp, (int)command.DevicePort, inputId, ct);
                     
-                    return new AtemCommandResult
+                    return new CommandResult
                     {
                         Success = success,
                         Message = success 
@@ -601,7 +617,7 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
                     
                     var success = await _atemManager.AutoToProgramAsync(command.DeviceId, deviceIp, devicePort, inputId, transitionRate, ct);
                     
-                    return new AtemCommandResult
+                    return new CommandResult
                     {
                         Success = success,
                         Message = success
@@ -615,7 +631,7 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
                 {
                     // SetPreview not yet implemented in AtemConnectionManager
                     _logger.LogWarning("SetPreview ATEM function not yet implemented");
-                    return new AtemCommandResult
+                    return new CommandResult
                     {
                         Success = false,
                         Message = "SetPreview function is not yet implemented",
@@ -627,7 +643,7 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
                 {
                     // RunMacro not yet implemented in AtemConnectionManager
                     _logger.LogWarning("RunMacro ATEM function not yet implemented");
-                    return new AtemCommandResult
+                    return new CommandResult
                     {
                         Success = false,
                         Message = "RunMacro function is not yet implemented",
@@ -645,7 +661,7 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
                     var auxIndex = atemCommand!.EndsWith("AUX1") ? 0 : atemCommand.EndsWith("AUX2") ? 1 : 2;
                     var success = await _atemManager.SetAuxOutputAsync(command.DeviceId, deviceIp, devicePort, auxIndex, inputId, ct);
                     
-                    return new AtemCommandResult
+                    return new CommandResult
                     {
                         Success = success,
                         Message = success
@@ -656,7 +672,7 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
                 }
                 
                 default:
-                    return new AtemCommandResult
+                    return new CommandResult
                     {
                         Success = false,
                         Message = $"Unknown ATEM command: {atemCommand}",
@@ -667,7 +683,7 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
         catch (KeyNotFoundException ex)
         {
             _logger.LogError(ex, "Missing required parameter in ATEM command payload");
-            return new AtemCommandResult
+            return new CommandResult
             {
                 Success = false,
                 Message = $"Missing required parameter: {ex.Message}",
@@ -677,7 +693,7 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
         catch (InvalidOperationException ex)
         {
             _logger.LogError(ex, "ATEM connection error");
-            return new AtemCommandResult
+            return new CommandResult
             {
                 Success = false,
                 Message = $"ATEM connection error: {ex.Message}",
@@ -687,7 +703,7 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error executing ATEM command");
-            return new AtemCommandResult
+            return new CommandResult
             {
                 Success = false,
                 Message = $"ATEM command execution failed: {ex.Message}",
@@ -696,7 +712,90 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
         }
     }
     
-    private class AtemCommandResult
+    /// <summary>
+    /// Executes a HyperDeck command over a persistent TCP connection.
+    /// </summary>
+    private async Task<CommandResult> ExecuteHyperDeckCommandAsync(CommandPayload command, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(command.DeviceIp))
+        {
+            return new CommandResult
+            {
+                Success = false,
+                Message = "Missing required property: deviceIp",
+                Response = null
+            };
+        }
+
+        if (string.IsNullOrWhiteSpace(command.HyperDeckCommand))
+        {
+            return new CommandResult
+            {
+                Success = false,
+                Message = "Missing required property: hyperDeckCommand",
+                Response = null
+            };
+        }
+
+        var port = command.DevicePort ?? 9993;
+
+        try
+        {
+            _logger.LogInformation(
+                "Executing HyperDeck command '{Command}' on device {DeviceId} at {Ip}:{Port}",
+                command.HyperDeckCommand, command.DeviceId, command.DeviceIp, port);
+
+            var connection = await _hyperDeckPool.GetOrCreateAsync(command.DeviceIp, port, ct);
+            var hyperDeckResponse = await connection.SendCommandAsync(command.HyperDeckCommand, ct);
+
+            var success = hyperDeckResponse.StatusCode is >= 200 and < 300;
+            var responseJson = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                statusCode = hyperDeckResponse.StatusCode,
+                statusText = hyperDeckResponse.StatusText,
+                fields = hyperDeckResponse.Fields
+            }, s_jsonOptions);
+
+            _logger.LogInformation(
+                "HyperDeck command '{Command}' completed with status {StatusCode} {StatusText}",
+                command.HyperDeckCommand, hyperDeckResponse.StatusCode, hyperDeckResponse.StatusText);
+
+            return new CommandResult
+            {
+                Success = success,
+                Message = success
+                    ? $"HyperDeck command '{command.HyperDeckCommand}' succeeded: {hyperDeckResponse.StatusCode} {hyperDeckResponse.StatusText}"
+                    : $"HyperDeck command '{command.HyperDeckCommand}' failed: {hyperDeckResponse.StatusCode} {hyperDeckResponse.StatusText}",
+                Response = responseJson
+            };
+        }
+        catch (TimeoutException ex)
+        {
+            _logger.LogWarning(ex,
+                "HyperDeck command '{Command}' timed out for device {DeviceId}",
+                command.HyperDeckCommand, command.DeviceId);
+            return new CommandResult
+            {
+                Success = false,
+                Message = ex.Message,
+                Response = null
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Error executing HyperDeck command '{Command}' for device {DeviceId}",
+                command.HyperDeckCommand, command.DeviceId);
+            return new CommandResult
+            {
+                Success = false,
+                Message = $"HyperDeck command execution failed: {ex.Message}",
+                Response = null
+            };
+        }
+    }
+
+    private class CommandResult
     {
         public bool Success { get; set; }
         public string Message { get; set; } = "";
