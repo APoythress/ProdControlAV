@@ -8,13 +8,16 @@ using ProdControlAV.Agent.Models;
 namespace ProdControlAV.Agent.Services;
 
 /// <summary>
-/// Connection state tracked by <see cref="BaseTcpDeviceConnection"/>.
+/// Connection state tracked by <see cref="BaseTcpDeviceConnection"/> and
+/// <see cref="BaseUdpDeviceConnection"/>.
 /// </summary>
 public enum DeviceConnectionState
 {
     Disconnected,
     Connecting,
-    Connected
+    Connected,
+    /// <summary>Too many consecutive failures; connection is backing off before retrying.</summary>
+    Faulted
 }
 
 /// <summary>
