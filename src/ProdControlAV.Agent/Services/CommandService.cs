@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Options;
+using ProdControlAV.Agent.Interfaces;
 
 namespace ProdControlAV.Agent.Services;
 public class CommandPayload
@@ -38,6 +39,7 @@ public class CommandService : ICommandService
     private readonly IJwtAuthService _jwtAuth;
     private readonly AtemConnectionManager _atemManager;
     private readonly HyperDeckConnectionPool _hyperDeckPool;
+    private readonly AtemStateSnapshot _atemSnapshot;
 
     // Explicit JsonSerializerOptions with a TypeInfoResolver to opt-out of the reflection-disabled behavior
     private static readonly JsonSerializerOptions s_jsonOptions = new()
@@ -107,7 +109,8 @@ public class CommandService : ICommandService
         IOptions<ApiOptions> api, 
         IJwtAuthService jwtAuth,
         AtemConnectionManager atemManager,
-        HyperDeckConnectionPool hyperDeckPool) 
+        HyperDeckConnectionPool hyperDeckPool,
+        AtemStateSnapshot atemStateSnapshop) 
     {
         _http = http;
         _logger = logger;
@@ -116,6 +119,7 @@ public class CommandService : ICommandService
         _atemManager = atemManager;
         _hyperDeckPool = hyperDeckPool;
         _http.BaseAddress = new Uri(_api.BaseUrl);
+        _atemSnapshot =  atemStateSnapshop;
     }
 
 public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
@@ -605,6 +609,17 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
                             ? $"Cut to Program input {inputId} executed successfully"
                             : $"Failed to execute Cut to Program input {inputId}",
                         Response = success ? $"{{\"command\":\"CutToProgram\",\"inputId\":{inputId}}}" : null
+                    };
+                }
+
+                case "GETPROGRAMINPUT":
+                {
+                    var success = _atemSnapshot.GetProgramInput();
+                    return new CommandResult
+                    {
+                        Success = success >= 0 ? true : false,
+                        Message = $"State of ATEM Program = {success}",
+                        Response = success == 1 ? "Idk what to response" : null
                     };
                 }
                 
