@@ -233,11 +233,19 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
 
     protected override async Task SendHandshakeAsync(CancellationToken ct)
     {
-        // Client Hello packet (20 bytes):
-        // header(12) + 8 bytes of payload (zeros; version/magic bytes for strict ATEMs).
+        // Retry hello until we either get cancelled (handshake timeout) or connected.
+        // PerformHandshakeAsync will cancel this token after HandshakeTimeout.
         var hello = new byte[20];
         WriteHeader(hello, FlagHello, HelloSessionId, ackId: 0, packetId: 0, payloadLength: 8);
-        await SendRawDatagramAsync(hello, ct);
+
+        while (!ct.IsCancellationRequested)
+        {
+            await SendRawDatagramAsync(hello, ct);
+
+            // small delay; ATEM handshake usually replies quickly if it's going to
+            try { await Task.Delay(250, ct); }
+            catch (OperationCanceledException) { break; }
+        }
     }
 
     protected override bool IsHandshakeResponse(ReceivedDatagram rx)
