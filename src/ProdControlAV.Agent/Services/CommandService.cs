@@ -37,9 +37,8 @@ public class CommandService : ICommandService
     private readonly ILogger<CommandService> _logger;
     private readonly ApiOptions _api;
     private readonly IJwtAuthService _jwtAuth;
-    private readonly AtemConnectionManager _atemManager;
+    private readonly AtemUdpConnectionManager _atemUdpManager;
     private readonly HyperDeckConnectionPool _hyperDeckPool;
-    private readonly AtemStateSnapshot _atemSnapshot;
 
     // Explicit JsonSerializerOptions with a TypeInfoResolver to opt-out of the reflection-disabled behavior
     private static readonly JsonSerializerOptions s_jsonOptions = new()
@@ -108,7 +107,7 @@ public class CommandService : ICommandService
         ILogger<CommandService> logger, 
         IOptions<ApiOptions> api, 
         IJwtAuthService jwtAuth,
-        AtemConnectionManager atemManager,
+        AtemUdpConnectionManager atemUdpManager,
         HyperDeckConnectionPool hyperDeckPool,
         AtemStateSnapshot atemStateSnapshop) 
     {
@@ -116,10 +115,9 @@ public class CommandService : ICommandService
         _logger = logger;
         _api = api.Value;
         _jwtAuth = jwtAuth;
-        _atemManager = atemManager;
+        _atemUdpManager = atemUdpManager;
         _hyperDeckPool = hyperDeckPool;
         _http.BaseAddress = new Uri(_api.BaseUrl);
-        _atemSnapshot =  atemStateSnapshop;
     }
 
 public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
@@ -533,218 +531,146 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
     }
     
     /// <summary>
-    /// Executes an ATEM command from the payload using LibAtem.
+    /// Executes an ATEM command from the payload using Atem UDP Protocol.
     /// </summary>
     private async Task<CommandResult> ExecuteAtemCommandAsync(CommandPayload command, CancellationToken ct)
     {
+        var deviceIp = command.DeviceIp;
+        var devicePort = command.DevicePort > 0 ? (int)command.DevicePort : AtemUdpConnection.DefaultAtemPort;
+
+        if (string.IsNullOrWhiteSpace(deviceIp))
+        {
+            return new CommandResult
+            {
+                Success = false,
+                Message = "ATEM command missing deviceIp.",
+                Response = null
+            };
+        }
+
+        var atemFunction = (command.AtemFunction ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(atemFunction))
+        {
+            return new CommandResult
+            {
+                Success = false,
+                Message = "ATEM command missing AtemFunction/AtemCommand.",
+                Response = null
+            };
+        }
+
+        // Acquire UDP connection (handshake + loops)
+        var conn = await _atemUdpManager.GetOrCreateAsync(command.DeviceId, deviceIp, devicePort, ct);
+
         try
         {
-            // Extract device information
-            if (command.DeviceId == Guid.Empty)
-            {
-                return new CommandResult
-                {
-                    Success = false,
-                    Message = "Missing required property: deviceId",
-                    Response = null
-                };
-            }
-
-            // Extract device connection info from payload (should be added by API)
-            string? deviceIp = command.DeviceIp;
-            long inputId = command.AtemInputId ?? 0;
-            int devicePort;
-
-            if (command.DevicePort == null) // default to 9910 if not provided
-                devicePort = 9910;
-            else
-                devicePort = (int)command.DevicePort;
-
-            if (string.IsNullOrEmpty(deviceIp))
-            {
-                return new CommandResult
-                {
-                    Success = false,
-                    Message = "Missing required property: deviceIp",
-                    Response = null
-                };
-            }
-
-            // Extract ATEM command details
-            string? atemCommand = command.AtemFunction;
-            
-            if (string.IsNullOrEmpty(atemCommand))
-            {
-                return new CommandResult
-                {
-                    Success = false,
-                    Message = "Missing required property: atemCommand or atemFunction",
-                    Response = null
-                };
-            }
-            
-            _logger.LogInformation("Executing ATEM command: {AtemCommand} for device {DeviceId}", atemCommand, command.DeviceId);
-            
-            // Parse command and parameters
-            if (inputId == null)
-            {
-                return new CommandResult
-                {
-                    Success = false,
-                    Message = "Missing required property: AtemInputId",
-                    Response = null
-                };
-            }
-            
-            switch (atemCommand?.ToUpperInvariant())
+            switch (atemFunction.ToUpperInvariant())
             {
                 case "CUTTOPROGRAM":
                 {
-                    var success = await _atemManager.CutToProgramAsync(command.DeviceId, deviceIp, (int)command.DevicePort, inputId, ct);
-                    
+                    var inputId = (int)(command.AtemInputId ?? 0);
+                    await conn.CutToProgramAsync(inputId, ct);
+
                     return new CommandResult
                     {
-                        Success = success,
-                        Message = success 
-                            ? $"Cut to Program input {inputId} executed successfully"
-                            : $"Failed to execute Cut to Program input {inputId}",
-                        Response = success ? $"{{\"command\":\"CutToProgram\",\"inputId\":{inputId}}}" : null
+                        Success = true,
+                        Message = $"Cut to Program input {inputId} executed successfully",
+                        Response = $"{{\"command\":\"CutToProgram\",\"inputId\":{inputId}}}"
                     };
                 }
 
-                case "GETPROGRAMINPUT":
-                {
-                    var success = _atemSnapshot.GetProgramInput();
-                    return new CommandResult
-                    {
-                        Success = success >= 0 ? true : false,
-                        Message = $"State of ATEM Program = {success}",
-                        Response = success == 1 ? $"Idk what to respond - {success}" : $"Maybe this will work - {success}"
-                    };
-                }
-                
-                case "GETPREVIEWINPUT":
-                {
-                    var success = _atemSnapshot.GetPreviewInput();
-                    return new CommandResult
-                    {
-                        Success = success >= 0 ? true : false,
-                        Message = $"State of ATEM Program = {success}",
-                        Response = success == 1 ? $"Idk what to response - {success}" : "I was a failed response {success}"
-                    };
-                }
-                
-                case "GETAUXSOURCE":
-                {
-                    var success = _atemSnapshot.GetAuxSource(1);
-                    return new CommandResult
-                    {
-                        Success = success >= 0 ? true : false,
-                        Message = $"State of ATEM Program = {success}",
-                        Response = success.ToString()
-                    };
-                }
-                
                 case "FADETOPROGRAM":
                 {
-                    int? transitionRate = null;
-                    if (command.AtemTransitionRate == null)
-                        transitionRate = 30; // default to 30fps if not provided
-                    else 
-                        transitionRate = command.AtemTransitionRate;
-                    
-                    var success = await _atemManager.AutoToProgramAsync(command.DeviceId, deviceIp, devicePort, inputId, transitionRate, ct);
-                    
+                    var inputId = (int)(command.AtemInputId ?? 0);
+                    var rate = command.AtemTransitionRate ?? 30;
+
+                    // If your AtemUdpConnection exposes a FadeToProgramAsync(rate), call it.
+                    // If it only has AutoToProgramAsync, call that. (Match your actual methods.)
+                    await conn.FadeToProgramAsync(inputId, rate, ct);
+
                     return new CommandResult
                     {
-                        Success = success,
-                        Message = success
-                            ? $"Fade to Program input {inputId} (rate: {transitionRate ?? 30}) executed successfully"
-                            : $"Failed to execute Fade to Program input {inputId}",
-                        Response = success ? $"{{\"command\":\"FadeToProgram\",\"inputId\":{inputId},\"transitionRate\":{transitionRate ?? 30}}}" : null
+                        Success = true,
+                        Message = $"Fade to Program input {inputId} (rate: {rate}) executed successfully",
+                        Response = $"{{\"command\":\"FadeToProgram\",\"inputId\":{inputId},\"transitionRate\":{rate}}}"
                     };
                 }
-                
+
                 case "SETPREVIEW":
                 {
-                    // SetPreview not yet implemented in AtemConnectionManager
-                    _logger.LogWarning("SetPreview ATEM function not yet implemented");
+                    var inputId = (int)(command.AtemInputId ?? 0);
+                    await conn.SetPreviewAsync(inputId, ct);
+
                     return new CommandResult
                     {
-                        Success = false,
-                        Message = "SetPreview function is not yet implemented",
-                        Response = null
+                        Success = true,
+                        Message = $"Preview set to input {inputId} successfully",
+                        Response = $"{{\"command\":\"SetPreview\",\"inputId\":{inputId}}}"
                     };
                 }
-                
+
+                case "SETUX":
+                case "SETAUX":
+                case "GETAUXSOURCE":
+                {
+                    // Example: Aux channel stored 0-based per your docs
+                    var channel = command.AtemInputId ?? 0;
+                    var inputId = (int)(command.AtemInputId ?? 0);
+
+                    await conn.SetAuxAsync((int)channel, inputId, ct);
+
+                    return new CommandResult
+                    {
+                        Success = true,
+                        Message = $"Aux {channel} set to input {inputId} successfully",
+                        Response = $"{{\"command\":\"SetAux\",\"channel\":{channel},\"inputId\":{inputId}}}"
+                    };
+                }
+
                 case "RUNMACRO":
                 {
-                    // RunMacro not yet implemented in AtemConnectionManager
-                    _logger.LogWarning("RunMacro ATEM function not yet implemented");
+                    var macroId = (int)(command.AtemInputId ?? 0);
+                    await conn.RunMacroAsync(macroId, ct);
+
                     return new CommandResult
                     {
-                        Success = false,
-                        Message = "RunMacro function is not yet implemented",
-                        Response = null
+                        Success = true,
+                        Message = $"Macro {macroId} executed successfully",
+                        Response = $"{{\"command\":\"RunMacro\",\"macroId\":{macroId}}}"
                     };
                 }
-                
-                case "SET_AUX_AUX1":
-                case "SET_AUX_AUX2":
-                case "SET_AUX_AUX3":
-                case "FADE_AUX_AUX1":
-                case "FADE_AUX_AUX2":
-                case "FADE_AUX_AUX3":
+
+                // If you want read-only state: prefer conn.CurrentState (if you maintain snapshot),
+                // or keep _atemSnapshot if it's truly updated from conn.StateChanged events.
+                case "GETPROGRAMINPUT":
                 {
-                    var auxIndex = atemCommand!.EndsWith("AUX1") ? 0 : atemCommand.EndsWith("AUX2") ? 1 : 2;
-                    var success = await _atemManager.SetAuxOutputAsync(command.DeviceId, deviceIp, devicePort, auxIndex, inputId, ct);
-                    
+                    var program = conn.CurrentState?.ProgramInputId ?? -1;
                     return new CommandResult
                     {
-                        Success = success,
-                        Message = success
-                            ? $"Set Aux{auxIndex + 1} to input {inputId} executed successfully"
-                            : $"Failed to set Aux{auxIndex + 1} to input {inputId}",
-                        Response = success ? $"{{\"command\":\"SetAux{auxIndex + 1}\",\"inputId\":{inputId}}}" : null
+                        Success = program >= 0,
+                        Message = $"ATEM Program input = {program}",
+                        Response = program.ToString()
                     };
                 }
-                
+
                 default:
                     return new CommandResult
                     {
                         Success = false,
-                        Message = $"Unknown ATEM command: {atemCommand}",
+                        Message = $"Unknown ATEM function '{atemFunction}'.",
                         Response = null
                     };
             }
         }
-        catch (KeyNotFoundException ex)
-        {
-            _logger.LogError(ex, "Missing required parameter in ATEM command payload");
-            return new CommandResult
-            {
-                Success = false,
-                Message = $"Missing required parameter: {ex.Message}",
-                Response = null
-            };
-        }
-        catch (InvalidOperationException ex)
-        {
-            _logger.LogError(ex, "ATEM connection error");
-            return new CommandResult
-            {
-                Success = false,
-                Message = $"ATEM connection error: {ex.Message}",
-                Response = null
-            };
-        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error executing ATEM command");
+            _logger.LogError(ex, "ATEM UDP command failed for device {DeviceId} ({Ip}:{Port}) function={Func}",
+                command.DeviceId, deviceIp, devicePort, atemFunction);
+
             return new CommandResult
             {
                 Success = false,
-                Message = $"ATEM command execution failed: {ex.Message}",
+                Message = $"ATEM UDP command failed: {ex.Message}",
                 Response = null
             };
         }
