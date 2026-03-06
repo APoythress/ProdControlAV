@@ -619,7 +619,7 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
                     {
                         Success = success >= 0 ? true : false,
                         Message = $"State of ATEM Program = {success}",
-                        Response = success == 1 ? "Idk what to response" : null
+                        Response = success == 1 ? $"Idk what to respond - {success}" : $"Maybe this will work - {success}"
                     };
                 }
                 
@@ -630,7 +630,7 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
                     {
                         Success = success >= 0 ? true : false,
                         Message = $"State of ATEM Program = {success}",
-                        Response = success == 1 ? "Idk what to response" : null
+                        Response = success == 1 ? $"Idk what to response - {success}" : "I was a failed response {success}"
                     };
                 }
                 
@@ -641,7 +641,7 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
                     {
                         Success = success >= 0 ? true : false,
                         Message = $"State of ATEM Program = {success}",
-                        Response = success == 1 ? "Idk what to response" : null
+                        Response = success.ToString()
                     };
                 }
                 
