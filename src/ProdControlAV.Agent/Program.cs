@@ -101,6 +101,8 @@ builder.Services.AddHttpClient<ICommandService, CommandService>(c =>
 
 // ATEM Connection Manager for LibAtem integration
 builder.Services.AddSingleton<AtemConnectionManager>();
+// Register AtemStateSnapshot so it can be injected into CommandService (fixes DI resolution error)
+builder.Services.AddSingleton<AtemStateSnapshot>();
 // HyperDeck Connection Pool for persistent TCP connections
 builder.Services.AddSingleton<HyperDeckConnectionPool>();
 // Additional HTTP client for JWT auth service

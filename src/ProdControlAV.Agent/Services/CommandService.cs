@@ -623,6 +623,28 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
                     };
                 }
                 
+                case "GETPREVIEWINPUT":
+                {
+                    var success = _atemSnapshot.GetPreviewInput();
+                    return new CommandResult
+                    {
+                        Success = success >= 0 ? true : false,
+                        Message = $"State of ATEM Program = {success}",
+                        Response = success == 1 ? "Idk what to response" : null
+                    };
+                }
+                
+                case "GETAUXSOURCE":
+                {
+                    var success = _atemSnapshot.GetAuxSource(1);
+                    return new CommandResult
+                    {
+                        Success = success >= 0 ? true : false,
+                        Message = $"State of ATEM Program = {success}",
+                        Response = success == 1 ? "Idk what to response" : null
+                    };
+                }
+                
                 case "FADETOPROGRAM":
                 {
                     int? transitionRate = null;
