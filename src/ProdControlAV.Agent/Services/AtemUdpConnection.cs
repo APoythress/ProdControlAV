@@ -230,19 +230,17 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
     }
 
     // ── Handshake ─────────────────────────────────────────────────────────────
-
     protected override async Task SendHandshakeAsync(CancellationToken ct)
     {
-        // Retry hello until we either get cancelled (handshake timeout) or connected.
-        // PerformHandshakeAsync will cancel this token after HandshakeTimeout.
-        var hello = new byte[20];
-        WriteHeader(hello, FlagHello, HelloSessionId, ackId: 0, packetId: 0, payloadLength: 8);
+        // Known-good ATEM Software Control hello for ATEM Television Studio (captured on your network):
+        // 10 14 70 bf 00 00 00 00 00 9e 00 00 01 00 00 00 00 00 00 00
+        var hello = Convert.FromHexString("101470bf00000000009e00000100000000000000");
 
+        // (Optional but recommended) retry hello during the handshake window
         while (!ct.IsCancellationRequested)
         {
             await SendRawDatagramAsync(hello, ct);
 
-            // small delay; ATEM handshake usually replies quickly if it's going to
             try { await Task.Delay(250, ct); }
             catch (OperationCanceledException) { break; }
         }
