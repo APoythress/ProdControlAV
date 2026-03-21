@@ -339,9 +339,23 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
 
         try
         {
-            await SendHandshakeAsync(timeoutCts.Token);
+            // Run SendHandshakeAsync concurrently with waiting for the server's response.
+            // Subclasses (e.g. ATEM) may loop and retry the hello packet; firing it in the
+            // background lets us receive the init response without waiting for the loop to end.
+            var sendTask = SendHandshakeAsync(timeoutCts.Token);
 
             var rx = await handshakeTcs.Task.WaitAsync(timeoutCts.Token);
+
+            // Response received – stop the send loop.
+            timeoutCts.Cancel();
+            try { await sendTask; }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "{DeviceType} handshake send loop for {Host}:{Port} ended with an error",
+                    DeviceTypeName, Host, Port);
+            }
+
             ApplyHandshakeResponse(rx);
 
             // For reliability-enabled protocols, ACK the handshake response immediately
