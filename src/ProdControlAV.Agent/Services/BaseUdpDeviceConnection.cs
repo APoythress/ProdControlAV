@@ -535,6 +535,7 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
                 Logger.LogDebug(
                     "Received {Bytes} bytes from {DeviceType} {Host}:{Port}",
                     rx.Data.Length, DeviceTypeName, Host, Port);
+                Logger.LogDebug("Raw datagram: {DataHex}", BitConverter.ToString(rx.Data));
 
                 try
                 {
