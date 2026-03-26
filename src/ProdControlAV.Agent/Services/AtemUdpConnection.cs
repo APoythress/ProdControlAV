@@ -248,6 +248,7 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
 
     protected override bool IsHandshakeResponse(ReceivedDatagram rx)
     {
+        LogAtemHeaderDebug(rx);
         // Server's Init response has the INIT flag (0x02) set in byte[0].
         return rx.Data.Length >= HeaderSize && (rx.Data[0] & FlagInit) != 0;
     }
@@ -328,6 +329,7 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
 
     protected override bool TryParseDeviceResponse(ReceivedDatagram rx, out DeviceResponse response)
     {
+        LogAtemHeaderDebug(rx);
         response = default!;
 
         if (rx.Data.Length < HeaderSize) return false;
@@ -477,5 +479,45 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
         var ack = new byte[HeaderSize];
         WriteHeader(ack, FlagAck, ProtocolContext.SessionId, ackId: remoteSeq, packetId: 0, payloadLength: 0);
         return ack;
+    }
+    
+    // -- Helpers: Can delete later
+    // ---- TEMP DEBUG: ATEM header decode helpers ----
+    private static ushort ReadU16BE(byte[] data, int offset)
+    {
+        if (data.Length < offset + 2) return 0;
+        return (ushort)((data[offset] << 8) | data[offset + 1]);
+    }
+
+    private void LogAtemHeaderDebug(ReceivedDatagram rx)
+    {
+        if (!Logger.IsEnabled(LogLevel.Debug))
+            return;
+
+        if (rx.Data.Length < 12)
+        {
+            Logger.LogDebug("ATEM RX too short for header: {Len} bytes. Raw={Raw}",
+                rx.Data.Length, BitConverter.ToString(rx.Data));
+            return;
+        }
+
+        byte b0 = rx.Data[0];
+        byte b1 = rx.Data[1];
+
+        // Per comment: [0] flags (bits 7-3) | length-high (bits 2-0)
+        int flagsUpper = b0 & 0xF8;   // bits 7..3
+        int lenHigh3   = b0 & 0x07;   // bits 2..0
+
+        int declaredLen = (lenHigh3 << 8) | b1;
+
+        ushort sessionId = ReadU16BE(rx.Data, 2);
+        ushort ackId     = ReadU16BE(rx.Data, 4);
+        ushort packetId  = ReadU16BE(rx.Data, 10);
+
+        Logger.LogDebug(
+            "ATEM RX decode: b0=0x{B0:X2} (flagsUpper=0x{Flags:X2}, lenHigh3=0x{LenHigh:X1}), b1=0x{B1:X2}, declaredLen={DeclaredLen}, " +
+            "sessionId=0x{SessionId:X4}, ackId=0x{AckId:X4}, packetId=0x{PacketId:X4}, actualLen={ActualLen}, raw={Raw}",
+            b0, flagsUpper, lenHigh3, b1, declaredLen,
+            sessionId, ackId, packetId, rx.Data.Length, BitConverter.ToString(rx.Data));
     }
 }

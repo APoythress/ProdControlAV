@@ -535,10 +535,11 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
                 Logger.LogDebug(
                     "Received {Bytes} bytes from {DeviceType} {Host}:{Port}",
                     rx.Data.Length, DeviceTypeName, Host, Port);
-                Logger.LogDebug("Raw datagram: {DataHex}", BitConverter.ToString(rx.Data));
-                Logger.LogDebug("IsHandshakeResponse: {IsHandshake}, IsKeepAliveResponse: {IsKeepAlive}, IsAck: {IsAck}",
-                    IsHandshakeResponse(rx), IsKeepAliveResponse(rx), IsAckDatagram(rx));
-                Logger.LogDebug("rx.Data[0]: {rx.Data[]}", rx.Data[0]);
+                // Logger.LogDebug("Raw datagram: {DataHex}", BitConverter.ToString(rx.Data));
+                // Logger.LogDebug("IsHandshakeResponse: {IsHandshake}, IsKeepAliveResponse: {IsKeepAlive}, IsAck: {IsAck}",
+                //     IsHandshakeResponse(rx), IsKeepAliveResponse(rx), IsAckDatagram(rx));
+                // Logger.LogDebug("rx.Data[0]: {rx.Data[]}", rx.Data[0]);
+                
 
                 try
                 {
@@ -858,4 +859,7 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
         TaskCompletionSource<DeviceResponse> Response,
         int Attempts,
         DateTimeOffset SentAt);
+    
+    
+    
 }
