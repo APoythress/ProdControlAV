@@ -249,12 +249,24 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
     protected override bool IsHandshakeResponse(ReceivedDatagram rx)
     {
         LogAtemHeaderDebug(rx);
-        if (rx.Data.Length == 20 && (rx.Data[0] & 0xF8) == 0x30)
-            return true;
 
-        return false;
-        // Server's Init response has the INIT flag (0x02) set in byte[0].
-        // return rx.Data.Length >= HeaderSize && (rx.Data[0] & FlagInit) != 0;
+        if (rx.Data.Length < HeaderSize)
+            return false;
+
+        // Only consider 20-byte handshake frames
+        if (rx.Data.Length != 20)
+            return false;
+
+        var flagsUpper = rx.Data[0] & 0xF8;
+        var sessionId = (ushort)((rx.Data[2] << 8) | rx.Data[3]);
+
+        // Complete when we see the server-assigned session id (changes away from 0x70BF and becomes stable).
+        if (sessionId == 0x70BF)
+            return false;
+
+        // In your captures, the “session id assignment” appears with flagsUpper == 0x10.
+        // Accept that as handshake completion.
+        return flagsUpper == 0x10;
     }
 
     protected override void ApplyHandshakeResponse(ReceivedDatagram rx)
@@ -296,9 +308,9 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
 
     protected override void ApplyAck(ReceivedDatagram rx)
     {
-        // Update the last-received sequence so keepalives can ACK it correctly.
-        if (rx.Data.Length >= HeaderSize)
-            ProtocolContext.LastReceivedSequence = (rx.Data[4] << 8) | rx.Data[5];
+        // Do NOT update LastReceivedSequence from ACK packets.
+        // ACK packets' [4-5] is "which packet id is being acknowledged" (ours),
+        // not "the last remote packet we saw".
     }
 
     protected override int GetDatagramSequence(ReceivedDatagram rx)
