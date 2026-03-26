@@ -249,8 +249,12 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
     protected override bool IsHandshakeResponse(ReceivedDatagram rx)
     {
         LogAtemHeaderDebug(rx);
+        if (rx.Data.Length == 20 && (rx.Data[0] & 0xF8) == 0x30)
+            return true;
+
+        return false;
         // Server's Init response has the INIT flag (0x02) set in byte[0].
-        return rx.Data.Length >= HeaderSize && (rx.Data[0] & FlagInit) != 0;
+        // return rx.Data.Length >= HeaderSize && (rx.Data[0] & FlagInit) != 0;
     }
 
     protected override void ApplyHandshakeResponse(ReceivedDatagram rx)
