@@ -249,6 +249,19 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
     /// </summary>
     protected virtual void ApplyHandshakeResponse(ReceivedDatagram rx) { }
 
+    /// <summary>
+    /// Called during the handshake phase for packets that are not the final handshake
+    /// completion response (i.e. <see cref="IsHandshakeResponse"/> returned false).
+    /// Subclasses can override this to handle intermediate handshake packets and send
+    /// protocol-specific replies (e.g. the ATEM three-way SYN→SYN-ACK→ACK sequence).
+    /// </summary>
+    /// <returns>
+    /// <c>true</c> if the datagram was consumed by the handshake logic and normal
+    /// dispatch should be skipped; <c>false</c> to fall through to the normal receive path.
+    /// </returns>
+    protected virtual Task<bool> HandleHandshakeIntermediatePacketAsync(ReceivedDatagram rx, CancellationToken ct)
+        => Task.FromResult(false);
+
     // ---------- Keepalive ---------------------------------------------------
 
     /// <summary>Whether this protocol requires periodic keepalive datagrams.</summary>
@@ -563,10 +576,19 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
     private async Task DispatchDatagramAsync(ReceivedDatagram rx, CancellationToken ct)
     {
         // 1. Handshake completion signal.
-        if (_handshakeTcs != null && IsHandshakeResponse(rx))
+        if (_handshakeTcs != null)
         {
-            _handshakeTcs.TrySetResult(rx);
-            return;
+            if (IsHandshakeResponse(rx))
+            {
+                _handshakeTcs.TrySetResult(rx);
+                return;
+            }
+
+            // Allow subclasses to handle intermediate handshake packets (e.g. ATEM SYN-ACK → client ACK).
+            // If the packet is consumed by the handshake logic, skip normal dispatch to avoid sending
+            // incorrect reliability ACKs for protocol-internal packets.
+            if (await HandleHandshakeIntermediatePacketAsync(rx, ct))
+                return;
         }
 
         // 2. Keepalive response.

@@ -37,15 +37,20 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
     /// <summary>Default ATEM control port.</summary>
     public const int DefaultAtemPort = 9910;
 
-    /// <summary>Temporary session ID used in the client Hello packet.</summary>
-    private const ushort HelloSessionId = 0x1337;
+    /// <summary>Temporary session ID used in the client Hello packet (placeholder until ATEM assigns a real one).</summary>
+    private const ushort HelloSessionId = 0x70BF;
 
-    // Packet flags (stored in the top 5 bits of byte[0] of the header).
-    private const byte FlagAck        = 0x80;  // This is an ACK packet (no payload)
-    private const byte FlagHello      = 0x10;  // Client hello / handshake init
-    private const byte FlagAckRequest = 0x08;  // Please ACK this packet
+    // Packet flags (stored in the upper bits of byte[0] of the header).
+    private const byte FlagAck        = 0x80;  // Pure ACK packet (no payload)
+    private const byte FlagHello      = 0x10;  // Handshake packet (hello / init)
+    private const byte FlagAckRequest = 0x08;  // Requesting an ACK for this packet
     private const byte FlagRetransmit = 0x04;  // This is a retransmit
-    private const byte FlagInit       = 0x02;  // Server init response to Hello
+
+    // ATEM handshake connection codes (byte[12] in 20-byte hello packets).
+    private const byte HelloConnSyn    = 0x01;  // Client SYN (hello)
+    private const byte HelloConnSynAck = 0x02;  // Server SYN-ACK (echoes temp session ID)
+    private const byte HelloConnAck    = 0x03;  // Client ACK (acknowledges SYN-ACK)
+    private const byte HelloConnInit   = 0x04;  // Server INIT (assigns real session ID)
 
     // Header size in bytes.
     private const int HeaderSize = 12;
@@ -232,11 +237,10 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
     // ── Handshake ─────────────────────────────────────────────────────────────
     protected override async Task SendHandshakeAsync(CancellationToken ct)
     {
-        // Known-good ATEM Software Control hello for ATEM Television Studio (captured on your network):
-        // 10 14 70 bf 00 00 00 00 00 9e 00 00 01 00 00 00 00 00 00 00
-        var hello = Convert.FromHexString("101470bf00000000009e00000100000000000000");
+        // Build the client SYN (hello) with our placeholder session ID.
+        // byte[9]=0x9E matches the observed ATEM Software Control hello for ATEM Television Studio.
+        var hello = BuildHandshakePacket(HelloSessionId, HelloConnSyn, extraByte9: 0x9E);
 
-        // (Optional but recommended) retry hello during the handshake window
         while (!ct.IsCancellationRequested)
         {
             await SendRawDatagramAsync(hello, ct);
@@ -248,35 +252,40 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
 
     protected override bool IsHandshakeResponse(ReceivedDatagram rx)
     {
-        LogAtemHeaderDebug(rx);
+        if (rx.Data.Length != 20) return false;
+        if ((rx.Data[0] & FlagHello) == 0) return false;
 
-        if (rx.Data.Length < HeaderSize)
-            return false;
-
-        // Only consider 20-byte handshake frames
-        if (rx.Data.Length != 20)
-            return false;
-
-        var flagsUpper = rx.Data[0] & 0xF8;
+        // The ATEM INIT packet carries connection code 0x04 and a newly-assigned session ID
+        // (different from our placeholder HelloSessionId).
         var sessionId = (ushort)((rx.Data[2] << 8) | rx.Data[3]);
-
-        // Complete when we see the server-assigned session id (changes away from 0x70BF and becomes stable).
-        if (sessionId == 0x70BF)
-            return false;
-
-        // In your captures, the “session id assignment” appears with flagsUpper == 0x10.
-        // Accept that as handshake completion.
-        return flagsUpper == 0x10;
+        return rx.Data[12] == HelloConnInit && sessionId != HelloSessionId;
     }
 
     protected override void ApplyHandshakeResponse(ReceivedDatagram rx)
     {
         // Extract the server-assigned session ID from bytes [2-3].
         ProtocolContext.SessionId = (ushort)((rx.Data[2] << 8) | rx.Data[3]);
-        // Remember the server's packet ID so we can ACK it.
+        // bytes [10-11] carry the server's packet ID for the INIT frame.
         ProtocolContext.LastReceivedSequence = (rx.Data[10] << 8) | rx.Data[11];
 
         Logger.LogInformation("ATEM session established – session ID 0x{SessionId:X4}", ProtocolContext.SessionId);
+    }
+
+    protected override async Task<bool> HandleHandshakeIntermediatePacketAsync(ReceivedDatagram rx, CancellationToken ct)
+    {
+        // Detect ATEM SYN-ACK (server's echo of our hello with connection code 0x02).
+        // Respond with a client ACK (code 0x03) so the ATEM proceeds to send the INIT frame.
+        if (rx.Data.Length == 20 &&
+            (rx.Data[0] & FlagHello) != 0 &&
+            rx.Data[12] == HelloConnSynAck)
+        {
+            Logger.LogDebug("ATEM handshake: received SYN-ACK, sending client ACK");
+            var ack = BuildHandshakePacket(HelloSessionId, HelloConnAck);
+            await SendRawDatagramAsync(ack, ct);
+            return true;
+        }
+
+        return false;
     }
 
     // ── Keepalive (ACK ping) ──────────────────────────────────────────────────
@@ -345,7 +354,6 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
 
     protected override bool TryParseDeviceResponse(ReceivedDatagram rx, out DeviceResponse response)
     {
-        LogAtemHeaderDebug(rx);
         response = default!;
 
         if (rx.Data.Length < HeaderSize) return false;
@@ -497,43 +505,21 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
         return ack;
     }
     
-    // -- Helpers: Can delete later
-    // ---- TEMP DEBUG: ATEM header decode helpers ----
-    private static ushort ReadU16BE(byte[] data, int offset)
+    // ── Handshake packet builder ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a 20-byte ATEM handshake (hello) packet with the given session ID and
+    /// connection code (byte[12]).
+    /// </summary>
+    private static byte[] BuildHandshakePacket(ushort sessionId, byte connectionCode, byte extraByte9 = 0)
     {
-        if (data.Length < offset + 2) return 0;
-        return (ushort)((data[offset] << 8) | data[offset + 1]);
-    }
-
-    private void LogAtemHeaderDebug(ReceivedDatagram rx)
-    {
-        if (!Logger.IsEnabled(LogLevel.Debug))
-            return;
-
-        if (rx.Data.Length < 12)
-        {
-            Logger.LogDebug("ATEM RX too short for header: {Len} bytes. Raw={Raw}",
-                rx.Data.Length, BitConverter.ToString(rx.Data));
-            return;
-        }
-
-        byte b0 = rx.Data[0];
-        byte b1 = rx.Data[1];
-
-        // Per comment: [0] flags (bits 7-3) | length-high (bits 2-0)
-        int flagsUpper = b0 & 0xF8;   // bits 7..3
-        int lenHigh3   = b0 & 0x07;   // bits 2..0
-
-        int declaredLen = (lenHigh3 << 8) | b1;
-
-        ushort sessionId = ReadU16BE(rx.Data, 2);
-        ushort ackId     = ReadU16BE(rx.Data, 4);
-        ushort packetId  = ReadU16BE(rx.Data, 10);
-
-        Logger.LogDebug(
-            "ATEM RX decode: b0=0x{B0:X2} (flagsUpper=0x{Flags:X2}, lenHigh3=0x{LenHigh:X1}), b1=0x{B1:X2}, declaredLen={DeclaredLen}, " +
-            "sessionId=0x{SessionId:X4}, ackId=0x{AckId:X4}, packetId=0x{PacketId:X4}, actualLen={ActualLen}, raw={Raw}",
-            b0, flagsUpper, lenHigh3, b1, declaredLen,
-            sessionId, ackId, packetId, rx.Data.Length, BitConverter.ToString(rx.Data));
+        var pkt = new byte[20];
+        pkt[0]  = FlagHello;                  // 0x10
+        pkt[1]  = 0x14;                       // total length = 20
+        pkt[2]  = (byte)(sessionId >> 8);
+        pkt[3]  = (byte)(sessionId & 0xFF);
+        pkt[9]  = extraByte9;                 // version/capability hint (0x9E for SYN, 0x00 otherwise)
+        pkt[12] = connectionCode;             // 0x01=SYN, 0x02=SYN-ACK, 0x03=ACK, 0x04=INIT
+        return pkt;
     }
 }

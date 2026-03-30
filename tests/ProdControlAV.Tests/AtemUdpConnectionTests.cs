@@ -54,10 +54,36 @@ file static class AtemTestHelper
     }
 
     /// <summary>Builds a server-INIT datagram (handshake response) with a given session ID.</summary>
-    public static byte[] BuildInitResponse(ushort assignedSessionId, ushort serverPacketId = 1)
+    /// <remarks>
+    /// Matches the real ATEM wire format: FlagHello (0x10) in byte[0], connection code 0x04
+    /// in byte[12], and the assigned session ID in bytes [2-3].
+    /// </remarks>
+    public static byte[] BuildInitResponse(ushort assignedSessionId, ushort serverPacketId = 0)
     {
-        var pkt = new byte[HeaderSize + 8]; // 8-byte minimal payload
-        WriteHeader(pkt, FlagInit, assignedSessionId, ackId: 0, packetId: serverPacketId, payloadLength: 8);
+        var pkt = new byte[20];
+        pkt[0]  = FlagHello;  // 0x10
+        pkt[1]  = 0x14;       // total length = 20
+        pkt[2]  = (byte)(assignedSessionId >> 8);
+        pkt[3]  = (byte)(assignedSessionId & 0xFF);
+        pkt[10] = (byte)(serverPacketId >> 8);
+        pkt[11] = (byte)(serverPacketId & 0xFF);
+        pkt[12] = 0x04;       // INIT connection code
+        return pkt;
+    }
+
+    /// <summary>
+    /// Builds a SYN-ACK datagram that mirrors the client's session ID, with connection code 0x02.
+    /// </summary>
+    public static byte[] BuildSynAckResponse(byte[] helloBuffer)
+    {
+        ushort sessionId = (ushort)((helloBuffer[2] << 8) | helloBuffer[3]);
+        var pkt = new byte[20];
+        pkt[0]  = (byte)(FlagHello | 0x20);  // 0x30 – matches observed ATEM SYN-ACK
+        pkt[1]  = 0x14;
+        pkt[2]  = (byte)(sessionId >> 8);
+        pkt[3]  = (byte)(sessionId & 0xFF);
+        pkt[12] = 0x02;  // SYN-ACK connection code
+        pkt[15] = 0xA0;  // observed in ATEM SYN-ACK captures; not required by the client but included for fidelity
         return pkt;
     }
 
@@ -297,6 +323,53 @@ public class AtemUdpConnectionLifecycleTests
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(6));
         await Assert.ThrowsAsync<TimeoutException>(() => conn.ConnectAsync(cts.Token));
+    }
+
+    [Fact]
+    public async Task ConnectAsync_WithMultiStepHandshake_CompletesHandshake()
+    {
+        // Simulates the real ATEM three-way handshake: SYN → SYN-ACK → client ACK → INIT.
+        var (server, port) = AtemTestHelper.StartServer();
+        await using var conn = new AtemUdpConnection("127.0.0.1", NullLogger<AtemUdpConnection>.Instance, port);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        var serverTask = Task.Run(async () =>
+        {
+            // Step 1: Receive Hello (SYN) from client.
+            var hello = await server.ReceiveAsync(cts.Token);
+            var clientEp = hello.RemoteEndPoint;
+            Assert.True((hello.Buffer[0] & AtemTestHelper.FlagHello) != 0, "Expected Hello (SYN) from client");
+            Assert.Equal(0x01, hello.Buffer[12]);
+
+            // Step 2: Send SYN-ACK.
+            var synAck = AtemTestHelper.BuildSynAckResponse(hello.Buffer);
+            await server.SendAsync(synAck, synAck.Length, clientEp);
+
+            // Step 3: Wait for client ACK (drain; client may interleave SYNs with the ACK).
+            // ackCts enforces a 3-second timeout; server.ReceiveAsync propagates the cancellation,
+            // which will throw OperationCanceledException and fail the test if no ACK arrives.
+            using var ackCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+            ackCts.CancelAfter(TimeSpan.FromSeconds(3));
+            bool clientAckReceived = false;
+            while (!clientAckReceived)
+            {
+                var r = await server.ReceiveAsync(ackCts.Token);
+                clientAckReceived = r.Buffer.Length == 20 && r.Buffer[12] == 0x03;
+            }
+
+            // Step 4: Send INIT with the real session ID.
+            var init = AtemTestHelper.BuildInitResponse(0xBEEF);
+            await server.SendAsync(init, init.Length, clientEp);
+        }, cts.Token);
+
+        await conn.ConnectAsync(cts.Token);
+
+        Assert.True(conn.IsConnected);
+        Assert.Equal(AtemConnectionState.Connected, conn.ConnectionState);
+
+        server.Dispose();
+        await serverTask;
     }
 
     [Fact]
