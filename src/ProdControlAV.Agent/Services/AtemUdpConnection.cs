@@ -62,6 +62,14 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
     // External command lock so multi-step operations (e.g. FadeToProgram) are atomic.
     private readonly SemaphoreSlim _cmdLock = new(1, 1);
 
+    // Cancelled by HandleHandshakeIntermediatePacketAsync as soon as the first SYN-ACK
+    // is received so that SendHandshakeAsync stops retransmitting SYN packets.  A new
+    // source is created each time SendHandshakeAsync is entered (i.e. each connect /
+    // reconnect attempt).  Marked volatile so the write in SendHandshakeAsync and the
+    // read in HandleHandshakeIntermediatePacketAsync (running on different threads) are
+    // always consistent.
+    private volatile CancellationTokenSource? _synLoopCts;
+
     // ── IAtemConnection ───────────────────────────────────────────────────────
 
     /// <inheritdoc/>
@@ -241,12 +249,25 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
         // byte[9]=0x9E matches the observed ATEM Software Control hello for ATEM Television Studio.
         var hello = BuildHandshakePacket(HelloSessionId, HelloConnSyn, extraByte9: 0x9E);
 
-        while (!ct.IsCancellationRequested)
+        // Create a per-attempt CTS so HandleHandshakeIntermediatePacketAsync can stop the
+        // SYN loop the moment the first SYN-ACK arrives.  Without this the ATEM receives a
+        // fresh SYN ~250 ms after the client ACK and resets its handshake state, causing an
+        // infinite SYN ↔ SYN-ACK loop until the handshake timeout fires.
+        using var synCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _synLoopCts = synCts;
+        try
         {
-            await SendRawDatagramAsync(hello, ct);
+            while (!synCts.Token.IsCancellationRequested)
+            {
+                await SendRawDatagramAsync(hello, synCts.Token);
 
-            try { await Task.Delay(250, ct); }
-            catch (OperationCanceledException) { break; }
+                try { await Task.Delay(250, synCts.Token); }
+                catch (OperationCanceledException) { break; }
+            }
+        }
+        finally
+        {
+            _synLoopCts = null;
         }
     }
 
@@ -280,6 +301,12 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
             rx.Data[12] == HelloConnSynAck)
         {
             Logger.LogDebug("ATEM handshake: received SYN-ACK, sending client ACK");
+
+            // Stop the SYN send loop immediately.  If we keep sending SYN the ATEM
+            // treats each one as a fresh connection attempt and replies with another
+            // SYN-ACK instead of advancing to the INIT packet.
+            _synLoopCts?.Cancel();
+
             var ack = BuildHandshakePacket(HelloSessionId, HelloConnAck);
             await SendRawDatagramAsync(ack, ct);
             return true;

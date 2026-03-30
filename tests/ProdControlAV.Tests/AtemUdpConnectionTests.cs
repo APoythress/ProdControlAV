@@ -373,6 +373,68 @@ public class AtemUdpConnectionLifecycleTests
     }
 
     [Fact]
+    public async Task ConnectAsync_StopsSendingSynAfterSynAckReceived()
+    {
+        // Regression test: after the server sends a SYN-ACK the client must stop
+        // retransmitting SYN packets.  Previously the SYN loop kept running and the
+        // ATEM would respond to each new SYN with another SYN-ACK, looping until the
+        // handshake timed out.
+        var (server, port) = AtemTestHelper.StartServer();
+        await using var conn = new AtemUdpConnection("127.0.0.1", NullLogger<AtemUdpConnection>.Instance, port);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        var serverTask = Task.Run(async () =>
+        {
+            // Step 1: Receive Hello (SYN) from client.
+            var hello = await server.ReceiveAsync(cts.Token);
+            var clientEp = hello.RemoteEndPoint;
+
+            // Step 2: Send SYN-ACK.
+            var synAck = AtemTestHelper.BuildSynAckResponse(hello.Buffer);
+            await server.SendAsync(synAck, synAck.Length, clientEp);
+
+            // Step 3: Drain until we receive the client ACK (0x03).
+            using var receiveAckCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+            receiveAckCts.CancelAfter(TimeSpan.FromSeconds(3));
+            bool clientAckReceived = false;
+            while (!clientAckReceived)
+            {
+                var r = await server.ReceiveAsync(receiveAckCts.Token);
+                clientAckReceived = r.Buffer.Length == 20 && r.Buffer[12] == 0x03;
+            }
+
+            // Step 4: Wait briefly – the client must NOT send any more SYN (0x01) packets.
+            // If the bug is present the SYN loop fires every 250 ms and the server would
+            // receive a SYN here within ~500 ms.
+            using var monitorSynCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+            monitorSynCts.CancelAfter(TimeSpan.FromMilliseconds(700));
+            try
+            {
+                while (true)
+                {
+                    var r = await server.ReceiveAsync(monitorSynCts.Token);
+                    // Any SYN after the ACK is the bug.
+                    Assert.False(r.Buffer.Length == 20 && r.Buffer[12] == 0x01,
+                        "Client sent a SYN after the client ACK – SYN loop was not stopped.");
+                }
+            }
+            catch (OperationCanceledException) { /* timeout expired – no spurious SYN seen */ }
+
+            // Step 5: Send INIT so ConnectAsync completes.
+            var init = AtemTestHelper.BuildInitResponse(0xBEEF);
+            await server.SendAsync(init, init.Length, clientEp);
+        }, cts.Token);
+
+        await conn.ConnectAsync(cts.Token);
+
+        Assert.True(conn.IsConnected);
+
+        server.Dispose();
+        await serverTask;
+    }
+
+    [Fact]
     public async Task ConnectionStateChanged_RaisedOnConnect()
     {
         var (server, port) = AtemTestHelper.StartServer();
