@@ -90,6 +90,17 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
     /// <inheritdoc/>
     public event EventHandler<AtemState>? StateChanged;
 
+    /// <summary>
+    /// Waits until at least one <c>PrgI</c> state update has been received from the ATEM
+    /// switcher (i.e. program-input state is initialised), or until <paramref name="timeout"/>
+    /// elapses or <paramref name="ct"/> is cancelled.
+    /// </summary>
+    /// <returns>
+    /// <c>true</c> if program-input state is available; <c>false</c> if the timeout expired.
+    /// </returns>
+    public Task<bool> WaitForProgramInputAsync(TimeSpan timeout, CancellationToken ct = default)
+        => _snapshot.WaitForProgramInputAsync(timeout, ct);
+
     // ── Constructor ───────────────────────────────────────────────────────────
 
     /// <summary>

@@ -15,6 +15,10 @@ public sealed class AtemStateSnapshot
     private readonly Dictionary<int, int> _programInputs = new();
     private readonly Dictionary<int, int> _previewInputs = new();
 
+    // Completed the first time any PrgI block is successfully applied.
+    private readonly TaskCompletionSource<bool> _programInputReady =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     // Auxiliary output routing.  Key = aux-channel index (0-based).
     private readonly Dictionary<int, int> _auxSources = new();
 
@@ -40,6 +44,9 @@ public sealed class AtemStateSnapshot
                 case "PrgI" when data.Length >= 4:
                     _programInputs[data[0]] = (data[2] << 8) | data[3];
                     _lastUpdated = DateTimeOffset.UtcNow;
+                    // Signal any waiters that program-input state is now available.
+                    // TrySetResult is a no-op after the first call, so this is safe.
+                    _programInputReady.TrySetResult(true);
                     break;
 
                 // Preview Input state: [ME, 0x00, inputH, inputL]
@@ -134,5 +141,41 @@ public sealed class AtemStateSnapshot
     public int GetAuxSource(int channel)
     {
         lock (_lock) { return _auxSources.GetValueOrDefault(channel); }
+    }
+
+    /// <summary>
+    /// Waits asynchronously until at least one <c>PrgI</c> state block has been applied
+    /// (i.e. program-input state is initialised), or until <paramref name="timeout"/> elapses
+    /// or <paramref name="ct"/> is cancelled.
+    /// </summary>
+    /// <param name="timeout">Maximum time to wait for the first program-input update.</param>
+    /// <param name="ct">Cancellation token; cancellation propagates as <see cref="OperationCanceledException"/>.</param>
+    /// <returns>
+    /// <c>true</c> if program-input state became available within the timeout;
+    /// <c>false</c> if the timeout expired before any <c>PrgI</c> block was received.
+    /// </returns>
+    public async Task<bool> WaitForProgramInputAsync(TimeSpan timeout, CancellationToken ct)
+    {
+        // Fast-path: already received at least one PrgI update.
+        lock (_lock)
+        {
+            if (_programInputs.Count > 0)
+                return true;
+        }
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(timeout);
+
+        try
+        {
+            await _programInputReady.Task.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // Timeout elapsed; caller-supplied ct was not cancelled.
+            return false;
+        }
+        // If ct itself was cancelled, the OperationCanceledException propagates normally.
     }
 }
