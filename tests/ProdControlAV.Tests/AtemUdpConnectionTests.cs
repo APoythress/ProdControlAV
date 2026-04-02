@@ -191,6 +191,57 @@ public class AtemStateSnapshotTests
         snapshot.Apply("PrgI", new byte[] { 0, 0, 1 });
         Assert.Null(snapshot.ToAtemState());
     }
+
+    [Fact]
+    public async Task WaitForProgramInputAsync_ReturnsTrueImmediately_WhenAlreadyKnown()
+    {
+        var snapshot = new AtemStateSnapshot();
+        snapshot.Apply("PrgI", new byte[] { 0, 0, 0, 2 });
+
+        var result = await snapshot.WaitForProgramInputAsync(TimeSpan.FromMilliseconds(100), CancellationToken.None);
+
+        Assert.True(result);
+        Assert.Equal(2, snapshot.GetProgramInput(me: 0));
+    }
+
+    [Fact]
+    public async Task WaitForProgramInputAsync_ReturnsFalse_WhenTimeoutExpiresWithNoUpdate()
+    {
+        var snapshot = new AtemStateSnapshot();
+
+        var result = await snapshot.WaitForProgramInputAsync(TimeSpan.FromMilliseconds(50), CancellationToken.None);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task WaitForProgramInputAsync_ReturnsTrue_WhenUpdateArrivesBeforeTimeout()
+    {
+        var snapshot = new AtemStateSnapshot();
+
+        // Apply the PrgI update on a background thread after a short delay.
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(20);
+            snapshot.Apply("PrgI", new byte[] { 0, 0, 0, 5 });
+        });
+
+        var result = await snapshot.WaitForProgramInputAsync(TimeSpan.FromSeconds(2), CancellationToken.None);
+
+        Assert.True(result);
+        Assert.Equal(5, snapshot.GetProgramInput(me: 0));
+    }
+
+    [Fact]
+    public async Task WaitForProgramInputAsync_ThrowsOperationCanceled_WhenCancelled()
+    {
+        var snapshot = new AtemStateSnapshot();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => snapshot.WaitForProgramInputAsync(TimeSpan.FromSeconds(10), cts.Token));
+    }
 }
 
 // ── AtemUdpConnection packet-building tests ───────────────────────────────────

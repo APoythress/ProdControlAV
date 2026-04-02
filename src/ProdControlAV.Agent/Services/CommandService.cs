@@ -644,6 +644,21 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
                 // or keep _atemSnapshot if it's truly updated from conn.StateChanged events.
                 case "GETPROGRAMINPUT":
                 {
+                    // Wait up to 2 s for the ATEM to send at least one PrgI state block.
+                    // On a healthy connection the state dump arrives within milliseconds;
+                    // on a fresh connection this prevents a race between handshake completion
+                    // and the initial state dump being parsed.
+                    var ready = await conn.WaitForProgramInputAsync(TimeSpan.FromSeconds(2), ct);
+                    if (!ready)
+                    {
+                        return new CommandResult
+                        {
+                            Success = false,
+                            Message = "ATEM program-input state not yet received (timeout waiting for PrgI update).",
+                            Response = null
+                        };
+                    }
+
                     var program = conn.CurrentState?.ProgramInputId ?? -1;
                     return new CommandResult
                     {
