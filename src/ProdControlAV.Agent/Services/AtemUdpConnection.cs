@@ -380,10 +380,13 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
         var cmdBlock = BuildCommandBlockFromString(command);
 
         var packet = new byte[HeaderSize + cmdBlock.Length];
+
+        // New datagram builder matching a known working imlementation of ATEM Software Control
         WriteHeader(packet, FlagAckRequest, ctx.SessionId,
-            ackId: (ushort)ctx.LastReceivedSequence,
+            ackId: 0, // acks should be handled separately as dedicated 12-byte packets
             packetId: (ushort)ctx.OutboundSequence,
             payloadLength: cmdBlock.Length);
+        
         Array.Copy(cmdBlock, 0, packet, HeaderSize, cmdBlock.Length);
         return packet;
     }
@@ -551,13 +554,16 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
     /// </summary>
     private static byte[] BuildHandshakePacket(ushort sessionId, byte connectionCode, byte extraByte9 = 0)
     {
-        var pkt = new byte[20];
-        pkt[0]  = FlagHello;                  // 0x10
-        pkt[1]  = 0x14;                       // total length = 20
-        pkt[2]  = (byte)(sessionId >> 8);
-        pkt[3]  = (byte)(sessionId & 0xFF);
-        pkt[9]  = extraByte9;                 // version/capability hint (0x9E for SYN, 0x00 otherwise)
-        pkt[12] = connectionCode;             // 0x01=SYN, 0x02=SYN-ACK, 0x03=ACK, 0x04=INIT
-        return pkt;
+        // Known working hello packet from wireshark capture - same each time.
+        var helloPkt = new byte[]
+        {
+            0x10, 0x14, 0x53, 0xAB,
+            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x3A,
+            0x00, 0x00,
+            0x01,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+        };
+        return helloPkt;
     }
 }
