@@ -71,8 +71,6 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
     private volatile CancellationTokenSource? _synLoopCts;
 
     // ── IAtemConnection ───────────────────────────────────────────────────────
-
-    /// <inheritdoc/>
     public AtemConnectionState ConnectionState => State switch
     {
         DeviceConnectionState.Connected  => AtemConnectionState.Connected,
@@ -81,13 +79,8 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
         _                                => AtemConnectionState.Disconnected
     };
 
-    /// <inheritdoc/>
     public AtemState? CurrentState => _snapshot.ToAtemState();
-
-    /// <inheritdoc/>
     public event EventHandler<AtemConnectionState>? ConnectionStateChanged;
-
-    /// <inheritdoc/>
     public event EventHandler<AtemState>? StateChanged;
 
     /// <summary>
@@ -106,31 +99,16 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
     /// <summary>
     /// Creates an ATEM UDP connection to the specified host.
     /// </summary>
-    /// <param name="host">IP address or hostname of the ATEM switcher.</param>
-    /// <param name="logger">Logger instance.</param>
-    /// <param name="port">UDP port (default 9910).</param>
     public AtemUdpConnection(string host, ILogger<AtemUdpConnection> logger, int port = DefaultAtemPort)
         : base(host, port, logger) { }
 
     // ── Base-class overrides ──────────────────────────────────────────────────
-
     protected override string DeviceTypeName => "ATEM";
-
-    // The ATEM protocol uses a handshake to establish a session ID.
     protected override bool RequiresHandshake => true;
-
-    // The ATEM protocol uses per-packet ACKs for reliability.
     protected override bool UsesReliability => true;
-
-    // For ATEM, receiving the ACK for a command packet means the command was accepted.
     protected override bool AckResolvesResponse => true;
-
-    // ATEM requires a periodic keepalive (ACK ping) to stay connected.
     protected override bool RequiresKeepAlive => true;
-
-    // Send keepalives every 250 ms to stay within the ATEM's ~2-second disconnect threshold.
     protected override TimeSpan KeepAliveInterval => TimeSpan.FromMilliseconds(250);
-
     protected override TimeSpan AckTimeout => TimeSpan.FromMilliseconds(500);
     protected override int MaxRetries => 5;
 
@@ -256,9 +234,7 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
     // ── Handshake ─────────────────────────────────────────────────────────────
     protected override async Task SendHandshakeAsync(CancellationToken ct)
     {
-        // Build the client SYN (hello) with our placeholder session ID.
-        // byte[9]=0x9E matches the observed ATEM Software Control hello for ATEM Television Studio.
-        var hello = BuildHandshakePacket(HelloSessionId, HelloConnSyn, extraByte9: 0x9E);
+        var hello = BuildHandshakePacket();
 
         // Create a per-attempt CTS so HandleHandshakeIntermediatePacketAsync can stop the
         // SYN loop the moment the first SYN-ACK arrives.  Without this the ATEM receives a
@@ -307,18 +283,17 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
     {
         // Detect ATEM SYN-ACK (server's echo of our hello with connection code 0x02).
         // Respond with a client ACK (code 0x03) so the ATEM proceeds to send the INIT frame.
-        if (rx.Data.Length == 20 &&
-            (rx.Data[0] & FlagHello) != 0 &&
-            rx.Data[12] == HelloConnSynAck)
+        if (rx.Data.Length == 20 && (rx.Data[0] & FlagHello) != 0 && rx.Data[12] == HelloConnSynAck)
         {
             Logger.LogDebug("ATEM handshake: received SYN-ACK, sending client ACK");
+            Logger.LogDebug("Ending loop now!");
 
             // Stop the SYN send loop immediately.  If we keep sending SYN the ATEM
             // treats each one as a fresh connection attempt and replies with another
             // SYN-ACK instead of advancing to the INIT packet.
-            _synLoopCts?.Cancel();
+            _synLoopCts.Cancel();
 
-            var ack = BuildHandshakePacket(HelloSessionId, HelloConnAck);
+            var ack = BuildHandshakePacket();
             await SendRawDatagramAsync(ack, ct);
             return true;
         }
@@ -327,7 +302,6 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
     }
 
     // ── Keepalive (ACK ping) ──────────────────────────────────────────────────
-
     protected override async Task SendKeepAliveAsync(CancellationToken ct)
     {
         // An empty ACK packet with the last-seen remote packet ID keeps the session alive.
@@ -339,7 +313,6 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
     protected override bool IsKeepAliveResponse(ReceivedDatagram rx) => false;
 
     // ── Reliability (ACK) ─────────────────────────────────────────────────────
-
     protected override bool IsAckDatagram(ReceivedDatagram rx)
     {
         if (rx.Data.Length < HeaderSize) return false;
@@ -374,7 +347,6 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
     }
 
     // ── Command encoding ──────────────────────────────────────────────────────
-
     protected override byte[] BuildDatagramFromCommand(string command, UdpProtocolContext ctx)
     {
         var cmdBlock = BuildCommandBlockFromString(command);
@@ -392,7 +364,6 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
     }
 
     // ── State parsing ─────────────────────────────────────────────────────────
-
     protected override bool TryParseDeviceResponse(ReceivedDatagram rx, out DeviceResponse response)
     {
         response = default!;
@@ -432,14 +403,12 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
     }
 
     // ── State-change notifications ────────────────────────────────────────────
-
     protected override void OnDeviceStateChanged(DeviceConnectionState newState)
     {
         ConnectionStateChanged?.Invoke(this, ConnectionState);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-
     private void EnsureConnected()
     {
         if (!IsConnected)
@@ -549,12 +518,11 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
     // ── Handshake packet builder ──────────────────────────────────────────────
 
     /// <summary>
-    /// Builds a 20-byte ATEM handshake (hello) packet with the given session ID and
-    /// connection code (byte[12]).
+    /// Builds a 20-byte ATEM handshake (hello) packet
+    /// Known working hello packet from wireshark capture - same each time.
     /// </summary>
-    private static byte[] BuildHandshakePacket(ushort sessionId, byte connectionCode, byte extraByte9 = 0)
+    private static byte[] BuildHandshakePacket()
     {
-        // Known working hello packet from wireshark capture - same each time.
         var helloPkt = new byte[]
         {
             0x10, 0x14, 0x53, 0xAB,

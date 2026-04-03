@@ -11,10 +11,7 @@ namespace ProdControlAV.Agent.Services;
 /// </summary>
 public sealed class ReceivedDatagram
 {
-    /// <summary>Raw datagram bytes.</summary>
     public byte[] Data { get; init; } = Array.Empty<byte>();
-
-    /// <summary>Remote endpoint that sent the datagram.</summary>
     public IPEndPoint RemoteEndPoint { get; init; } = new IPEndPoint(IPAddress.Any, 0);
 }
 
@@ -341,26 +338,26 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
     {
         Logger.LogInformation("{DeviceType} starting handshake with {Host}:{Port}", DeviceTypeName, Host, Port);
 
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutCts.CancelAfter(HandshakeTimeout);
+        // using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        // timeoutCts.CancelAfter(HandshakeTimeout);
 
-        var handshakeTcs = new TaskCompletionSource<ReceivedDatagram>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
+        // TODO - I do not want a run continously here - single handshak with a timeout only
+        var handshakeTcs = new TaskCompletionSource<ReceivedDatagram>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // Install a one-shot handshake listener before sending (avoids race).
         _handshakeTcs = handshakeTcs;
 
         try
         {
-            // Run SendHandshakeAsync concurrently with waiting for the server's response.
-            // Subclasses (e.g. ATEM) may loop and retry the hello packet; firing it in the
-            // background lets us receive the init response without waiting for the loop to end.
-            var sendTask = SendHandshakeAsync(timeoutCts.Token);
+            // This is where the loop is happening - we only need to fire off a single handshake
+            // - wait for response
+            // - then validate if we are connected
+            var sendTask = SendHandshakeAsync(ct);
 
-            var rx = await handshakeTcs.Task.WaitAsync(timeoutCts.Token);
+            var rx = await handshakeTcs.Task.WaitAsync(ct);
 
             // Response received – stop the send loop.
-            timeoutCts.Cancel();
+            // timeoutCts.Cancel();
             try { await sendTask; }
             catch (OperationCanceledException) { }
             catch (Exception ex)
@@ -505,7 +502,9 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
 
     private async Task SendDatagramAsync(byte[] datagram, CancellationToken ct)
     {
-        if (_udpClient == null) throw new InvalidOperationException("UDP socket not initialised.");
+        if (_udpClient == null) 
+            throw new InvalidOperationException("UDP socket not initialised.");
+        
         await _udpClient.SendAsync(datagram, datagram.Length).WaitAsync(ct);
     }
 
@@ -548,12 +547,7 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
                 Logger.LogDebug(
                     "Received {Bytes} bytes from {DeviceType} {Host}:{Port}",
                     rx.Data.Length, DeviceTypeName, Host, Port);
-                // Logger.LogDebug("Raw datagram: {DataHex}", BitConverter.ToString(rx.Data));
-                // Logger.LogDebug("IsHandshakeResponse: {IsHandshake}, IsKeepAliveResponse: {IsKeepAlive}, IsAck: {IsAck}",
-                //     IsHandshakeResponse(rx), IsKeepAliveResponse(rx), IsAckDatagram(rx));
-                // Logger.LogDebug("rx.Data[0]: {rx.Data[]}", rx.Data[0]);
                 
-
                 try
                 {
                     await DispatchDatagramAsync(rx, ct);
@@ -605,8 +599,8 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
         // 4. Send an ACK if reliability is enabled (for received commands/notifications).
         if (UsesReliability)
         {
-            var ack = BuildAckDatagram(ProtocolContext, rx);
-            if (ack.Length > 0)
+            var ack = BuildAckDatagram(ProtocolContext, rx); // returns empty array so is this even needed?!
+            if (ack.Length > 0) // ack is always an empty array...
                 await SendDatagramAsync(ack, ct);
         }
 
@@ -881,7 +875,4 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
         TaskCompletionSource<DeviceResponse> Response,
         int Attempts,
         DateTimeOffset SentAt);
-    
-    
-    
 }
