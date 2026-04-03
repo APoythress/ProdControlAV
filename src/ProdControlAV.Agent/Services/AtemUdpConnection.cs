@@ -233,71 +233,85 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
 
     // ── Handshake ─────────────────────────────────────────────────────────────
         // C#
-    private readonly object _synLock = new();
+    // csharp
+    // Add these fields to the class
+    private readonly object _handshakeLock = new();
     private TaskCompletionSource<bool>? _synAckTcs;
-
+    private int _synAckHandled; // 0 = not handled, 1 = handled
+    
+    // Replace or implement SendHandshakeAsync with this single-send -> wait pattern
     protected override async Task SendHandshakeAsync(CancellationToken ct)
     {
         var hello = BuildHandshakePacket();
-
+    
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        lock (_synLock)
+        lock (_handshakeLock)
         {
             _synAckTcs = tcs;
+            Interlocked.Exchange(ref _synAckHandled, 0);
         }
-
+    
         try
         {
-            // Send the hello once
-            await SendRawDatagramAsync(hello, ct);
-
-            // Wait for SYN-ACK (signalled via _synAckTcs) or cancellation/timeout.
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            // adjust timeout as needed
-            var delayTask = Task.Delay(TimeSpan.FromSeconds(2), linked.Token);
-
-            var completed = await Task.WhenAny(tcs.Task, delayTask);
+            Logger.LogDebug("===== Sending Handshake (single send) =====");
+            await SendRawDatagramAsync(hello, ct).ConfigureAwait(false);
+    
+            // Wait for SYN-ACK or timeout/cancellation
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var timeoutMs = 2000; // adjust as needed
+            var delayTask = Task.Delay(timeoutMs, cts.Token);
+    
+            var completed = await Task.WhenAny(tcs.Task, delayTask).ConfigureAwait(false);
             if (completed == tcs.Task)
             {
-                // SYN-ACK received; return to allow the rest of the handshake to proceed.
-                // If tcs completed exceptionally/cancelled, let that surface.
-                await tcs.Task; // propagate exceptions if any
+                // propagate any exceptions from tcs
+                await tcs.Task.ConfigureAwait(false);
+                Logger.LogDebug("Handshake: SYN-ACK received and acknowledged.");
                 return;
             }
-
-            // Timeout or cancelled - surface as timeout so caller can retry or fail
-            throw new TimeoutException("No handshake SYN-ACK received from ATEM.");
+    
+            throw new TimeoutException("No handshake SYN-ACK received from ATEM within timeout.");
         }
         finally
         {
-            lock (_synLock)
+            lock (_handshakeLock)
             {
                 _synAckTcs = null;
             }
         }
     }
-
+    
+    // Replace or update HandleHandshakeIntermediatePacketAsync to only send ACK once
     protected override async Task<bool> HandleHandshakeIntermediatePacketAsync(ReceivedDatagram rx, CancellationToken ct)
     {
-        // Detect ATEM SYN-ACK (server's echo of our hello with connection code 0x02).
-        // Respond with a client ACK (code 0x03) so the ATEM proceeds to send the INIT frame.
+        // detect SYN-ACK (same condition you already have)
         if (rx.Data.Length == 20 && (rx.Data[0] & FlagHello) != 0 && rx.Data[12] == HelloConnSynAck)
         {
-            Logger.LogDebug("ATEM handshake: received SYN-ACK, sending client ACK");
-
-            // Signal the sending task that a SYN-ACK has been received (if present).
-            TaskCompletionSource<bool>? tcs = null;
-            lock (_synLock) { tcs = _synAckTcs; }
-            tcs?.TrySetResult(true);
-
-            // Build and send the client ACK packet (same 20-byte handshake format used previously).
-            var ack = BuildHandshakePacket();
-            await SendRawDatagramAsync(ack, ct);
-            return true;
+            // Ensure only the first SYN-ACK triggers ACK send and TCS set.
+            if (Interlocked.CompareExchange(ref _synAckHandled, 1, 0) == 0)
+            {
+                Logger.LogDebug("ATEM handshake: received SYN-ACK, sending client ACK (first time)");
+    
+                // Signal send path
+                TaskCompletionSource<bool>? tcs;
+                lock (_handshakeLock) { tcs = _synAckTcs; }
+                tcs?.TrySetResult(true);
+    
+                // Build and send client ACK once
+                var ack = BuildHandshakePacket(); // if you must change a field for ACK, do it here
+                await SendRawDatagramAsync(ack, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                Logger.LogDebug("ATEM handshake: duplicate SYN-ACK received, ignoring additional ACK send");
+            }
+    
+            return true; // packet handled
         }
-
+    
         return false;
     }
+    
 
 
     protected override bool IsHandshakeResponse(ReceivedDatagram rx)
