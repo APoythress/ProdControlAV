@@ -232,31 +232,73 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
     }
 
     // ── Handshake ─────────────────────────────────────────────────────────────
+        // C#
+    private readonly object _synLock = new();
+    private TaskCompletionSource<bool>? _synAckTcs;
+
     protected override async Task SendHandshakeAsync(CancellationToken ct)
     {
         var hello = BuildHandshakePacket();
 
-        // Create a per-attempt CTS so HandleHandshakeIntermediatePacketAsync can stop the
-        // SYN loop the moment the first SYN-ACK arrives.  Without this the ATEM receives a
-        // fresh SYN ~250 ms after the client ACK and resets its handshake state, causing an
-        // infinite SYN ↔ SYN-ACK loop until the handshake timeout fires.
-        using var synCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        _synLoopCts = synCts;
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_synLock)
+        {
+            _synAckTcs = tcs;
+        }
+
         try
         {
-            while (!synCts.Token.IsCancellationRequested)
-            {
-                await SendRawDatagramAsync(hello, synCts.Token);
+            // Send the hello once
+            await SendRawDatagramAsync(hello, ct);
 
-                try { await Task.Delay(250, synCts.Token); }
-                catch (OperationCanceledException) { break; }
+            // Wait for SYN-ACK (signalled via _synAckTcs) or cancellation/timeout.
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            // adjust timeout as needed
+            var delayTask = Task.Delay(TimeSpan.FromSeconds(2), linked.Token);
+
+            var completed = await Task.WhenAny(tcs.Task, delayTask);
+            if (completed == tcs.Task)
+            {
+                // SYN-ACK received; return to allow the rest of the handshake to proceed.
+                // If tcs completed exceptionally/cancelled, let that surface.
+                await tcs.Task; // propagate exceptions if any
+                return;
             }
+
+            // Timeout or cancelled - surface as timeout so caller can retry or fail
+            throw new TimeoutException("No handshake SYN-ACK received from ATEM.");
         }
         finally
         {
-            _synLoopCts = null;
+            lock (_synLock)
+            {
+                _synAckTcs = null;
+            }
         }
     }
+
+    protected override async Task<bool> HandleHandshakeIntermediatePacketAsync(ReceivedDatagram rx, CancellationToken ct)
+    {
+        // Detect ATEM SYN-ACK (server's echo of our hello with connection code 0x02).
+        // Respond with a client ACK (code 0x03) so the ATEM proceeds to send the INIT frame.
+        if (rx.Data.Length == 20 && (rx.Data[0] & FlagHello) != 0 && rx.Data[12] == HelloConnSynAck)
+        {
+            Logger.LogDebug("ATEM handshake: received SYN-ACK, sending client ACK");
+
+            // Signal the sending task that a SYN-ACK has been received (if present).
+            TaskCompletionSource<bool>? tcs = null;
+            lock (_synLock) { tcs = _synAckTcs; }
+            tcs?.TrySetResult(true);
+
+            // Build and send the client ACK packet (same 20-byte handshake format used previously).
+            var ack = BuildHandshakePacket();
+            await SendRawDatagramAsync(ack, ct);
+            return true;
+        }
+
+        return false;
+    }
+
 
     protected override bool IsHandshakeResponse(ReceivedDatagram rx)
     {
@@ -277,31 +319,6 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
         ProtocolContext.LastReceivedSequence = (rx.Data[10] << 8) | rx.Data[11];
 
         Logger.LogInformation("ATEM session established – session ID 0x{SessionId:X4}", ProtocolContext.SessionId);
-    }
-
-    protected override async Task<bool> HandleHandshakeIntermediatePacketAsync(ReceivedDatagram rx, CancellationToken ct)
-    {
-        // Detect ATEM SYN-ACK (server's echo of our hello with connection code 0x02).
-        // Respond with a client ACK (code 0x03) so the ATEM proceeds to send the INIT frame.
-        if (rx.Data.Length == 20 && (rx.Data[0] & FlagHello) != 0 && rx.Data[12] == HelloConnSynAck)
-        {
-            Logger.LogDebug("ATEM handshake: received SYN-ACK, sending client ACK");
-
-            // Stop the SYN send loop immediately.  If we keep sending SYN the ATEM
-            // treats each one as a fresh connection attempt and replies with another
-            // SYN-ACK instead of advancing to the INIT packet.
-            _synLoopCts.Cancel();
-            Logger.LogDebug("Ending loop now!");
-            
-            Logger.LogDebug("Building Handshake packet");
-            var ack = BuildHandshakePacket();
-            
-            Logger.LogDebug("Sending datagram with build Handshake: {HandshakePacket}", BitConverter.ToString(ack));
-            await SendRawDatagramAsync(ack, ct);
-            return true;
-        }
-
-        return false;
     }
 
     // ── Keepalive (ACK ping) ──────────────────────────────────────────────────
