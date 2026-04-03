@@ -42,15 +42,18 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
 
     // Packet flags (stored in the upper bits of byte[0] of the header).
     private const byte FlagAck        = 0x80;  // Pure ACK packet (no payload)
-    private const byte FlagHello      = 0x10;  // Handshake packet (hello / init)
     private const byte FlagAckRequest = 0x08;  // Requesting an ACK for this packet
     private const byte FlagRetransmit = 0x04;  // This is a retransmit
 
     // ATEM handshake connection codes (byte[12] in 20-byte hello packets).
     private const byte HelloConnSyn    = 0x01;  // Client SYN (hello)
-    private const byte HelloConnSynAck = 0x02;  // Server SYN-ACK (echoes temp session ID)
     private const byte HelloConnAck    = 0x03;  // Client ACK (acknowledges SYN-ACK)
-    private const byte HelloConnInit   = 0x04;  // Server INIT (assigns real session ID)
+    
+    private const int ServerTokenOffset = 8;
+    private const int ServerTokenLength = 4;
+    private const int HelloConnSynAck = 0x02;   // adjust to actual value used in your project
+    private const int HelloConnInit = 0x03;     // adjust to actual value used in your project
+    private const byte FlagHello = 0x10;        // example flag; keep what your code uses
 
     // Header size in bytes.
     private const int HeaderSize = 12;
@@ -232,85 +235,170 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
     }
 
     // ── Handshake ─────────────────────────────────────────────────────────────
-        // C#
-    // csharp
-    // Add these fields to the class
+    // Add/replace these members and methods inside the AtemUdpConnection class
+    
+    private enum HandshakeState { Idle = 0, AwaitingSynAck = 1, AwaitingInit = 2, Connected = 3 }
+    
     private readonly object _handshakeLock = new();
-    private TaskCompletionSource<bool>? _synAckTcs;
+    private TaskCompletionSource<bool>? _handshakeTcs;
+    private HandshakeState _handshakeState = HandshakeState.Idle;
     private int _synAckHandled; // 0 = not handled, 1 = handled
     
-    // Replace or implement SendHandshakeAsync with this single-send -> wait pattern
+    // These constants reflect your existing packet layout; adjust token offset/length
+    // to match the exact ATEM handshake format used in your codebase.
+    
+    
     protected override async Task SendHandshakeAsync(CancellationToken ct)
     {
-        var hello = BuildHandshakePacket();
-    
+        // Prepare TCS and state
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (_handshakeLock)
         {
-            _synAckTcs = tcs;
+            _handshakeTcs = tcs;
+            _handshakeState = HandshakeState.AwaitingSynAck;
             Interlocked.Exchange(ref _synAckHandled, 0);
         }
     
         try
         {
-            Logger.LogDebug("===== Sending Handshake (single send) =====");
+            var hello = BuildHandshakePacket(); // your existing hello builder
+            Logger.LogDebug("===== Sending Handshake (single send hello) =====");
             await SendRawDatagramAsync(hello, ct).ConfigureAwait(false);
     
-            // Wait for SYN-ACK or timeout/cancellation
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            var timeoutMs = 2000; // adjust as needed
-            var delayTask = Task.Delay(timeoutMs, cts.Token);
+            // Wait until the handshake reaches Connected (signalled by HandleHandshakeIntermediatePacketAsync)
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var timeout = TimeSpan.FromSeconds(3); // adjust as needed
+            var delayTask = Task.Delay(timeout, linked.Token);
     
             var completed = await Task.WhenAny(tcs.Task, delayTask).ConfigureAwait(false);
             if (completed == tcs.Task)
             {
-                // propagate any exceptions from tcs
+                // propagate exceptions if any
                 await tcs.Task.ConfigureAwait(false);
-                Logger.LogDebug("Handshake: SYN-ACK received and acknowledged.");
+                Logger.LogDebug("Handshake completed: Connected");
                 return;
             }
     
-            throw new TimeoutException("No handshake SYN-ACK received from ATEM within timeout.");
+            throw new TimeoutException("Handshake timed out waiting for ATEM (SYN-ACK/INIT).");
         }
         finally
         {
             lock (_handshakeLock)
             {
-                _synAckTcs = null;
+                _handshakeTcs = null;
+                _handshakeState = HandshakeState.Idle;
+                Interlocked.Exchange(ref _synAckHandled, 0);
             }
         }
     }
     
-    // Replace or update HandleHandshakeIntermediatePacketAsync to only send ACK once
     protected override async Task<bool> HandleHandshakeIntermediatePacketAsync(ReceivedDatagram rx, CancellationToken ct)
     {
-        // detect SYN-ACK (same condition you already have)
-        if (rx.Data.Length == 20 && (rx.Data[0] & FlagHello) != 0 && rx.Data[12] == HelloConnSynAck)
+        // Basic validation for hello/handshake packets
+        if (rx.Data == null || rx.Data.Length < 20) return false;
+    
+        // SYN-ACK detection (adjust condition to match existing detection logic)
+        if ((rx.Data[0] & FlagHello) != 0 && rx.Data[12] == HelloConnSynAck)
         {
-            // Ensure only the first SYN-ACK triggers ACK send and TCS set.
+            Logger.LogDebug("ATEM handshake: received SYN-ACK");
+    
+            // Only the first SYN-ACK should trigger building/sending the client ACK.
             if (Interlocked.CompareExchange(ref _synAckHandled, 1, 0) == 0)
             {
-                Logger.LogDebug("ATEM handshake: received SYN-ACK, sending client ACK (first time)");
+                // Extract server token from SYN-ACK and build a proper client ACK using it.
+                // This is critical: the ACK must include the server-provided token/connection id.
+                var serverToken = new byte[ServerTokenLength];
+                Array.Copy(rx.Data, ServerTokenOffset, serverToken, 0, ServerTokenLength);
     
-                // Signal send path
-                TaskCompletionSource<bool>? tcs;
-                lock (_handshakeLock) { tcs = _synAckTcs; }
-                tcs?.TrySetResult(true);
+                var ack = BuildHandshakePacket(); // create base packet
+                // Copy serverToken into the ack at the expected offset
+                Array.Copy(serverToken, 0, ack, ServerTokenOffset, ServerTokenLength);
     
-                // Build and send client ACK once
-                var ack = BuildHandshakePacket(); // if you must change a field for ACK, do it here
+                Logger.LogDebug("ATEM handshake: sending client ACK (using server token)");
                 await SendRawDatagramAsync(ack, ct).ConfigureAwait(false);
+    
+                // Move to AwaitingInit and do not mark handshake complete yet.
+                lock (_handshakeLock)
+                {
+                    if (_handshakeState == HandshakeState.AwaitingSynAck)
+                    {
+                        _handshakeState = HandshakeState.AwaitingInit;
+                    }
+                }
             }
             else
             {
                 Logger.LogDebug("ATEM handshake: duplicate SYN-ACK received, ignoring additional ACK send");
             }
     
-            return true; // packet handled
+            // Packet handled
+            return true;
+        }
+    
+        // INIT detection (server final step after client ACK). When Init arrives, handshake is complete.
+        if ((rx.Data[0] & FlagHello) != 0 && rx.Data[12] == HelloConnInit)
+        {
+            Logger.LogDebug("ATEM handshake: received INIT -> handshake complete");
+    
+            lock (_handshakeLock)
+            {
+                _handshakeState = HandshakeState.Connected;
+                _handshakeTcs?.TrySetResult(true);
+            }
+    
+            return true;
         }
     
         return false;
     }
+    
+    // Example guard for sending commands: wait until Connected, or fail
+    private async Task EnsureConnectedAsync(CancellationToken ct)
+    {
+        // Quick check
+        lock (_handshakeLock)
+        {
+            if (_handshakeState == HandshakeState.Connected) return;
+        }
+    
+        // If a handshake is already in progress, await its TCS; otherwise trigger handshake.
+        Task? waitTask = null;
+        lock (_handshakeLock)
+        {
+            if (_handshakeTcs != null)
+            {
+                waitTask = _handshakeTcs.Task;
+            }
+            else
+            {
+                // no handshake in progress: start one (caller must ensure this is safe)
+                // Usually the existing connection manager should call SendHandshakeAsync.
+                // If allowed here, call it (uncomment if appropriate):
+                // _ = Task.Run(() => SendHandshakeAsync(ct), ct);
+                // and then set waitTask to the new TCS
+                waitTask = _handshakeTcs?.Task;
+            }
+        }
+    
+        if (waitTask != null)
+        {
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var timeout = TimeSpan.FromSeconds(5);
+            var delay = Task.Delay(timeout, linked.Token);
+    
+            var completed = await Task.WhenAny(waitTask, delay).ConfigureAwait(false);
+            if (completed != waitTask)
+                throw new TimeoutException("Timeout waiting for ATEM to become connected before sending command.");
+        }
+    }
+    
+    // Example SendCommand usage: call EnsureConnectedAsync before sending commands so you don't get PrgI timeouts.
+    protected async Task SendCommandWhenConnectedAsync(byte[] command, CancellationToken ct)
+    {
+        await EnsureConnectedAsync(ct).ConfigureAwait(false);
+        await SendRawDatagramAsync(command, ct).ConfigureAwait(false);
+    }
+    
     
 
 
