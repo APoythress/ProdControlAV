@@ -1,80 +1,98 @@
-using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
+using System.Net.Sockets;
+using System.Text;
+using System.Threading.Channels;
 using ProdControlAV.Agent.Interfaces;
 using ProdControlAV.Agent.Models;
-using System.Text;
 
 namespace ProdControlAV.Agent.Services;
 
 /// <summary>
-/// Native ATEM UDP connection that implements the Blackmagic Design ATEM binary protocol
-/// on top of <see cref="BaseUdpDeviceConnection"/>.
+/// Standalone ATEM UDP connection.
 ///
-/// Packet-header layout (12 bytes, big-endian):
-/// <code>
-/// [0]   flags (bits 7-3) | length-high (bits 2-0)
-/// [1]   length-low
-/// [2-3] session ID
-/// [4-5] ACK ID (remote sequence number being ACKed)
-/// [6-9] reserved (0x00)
-/// [10-11] local packet ID (our outbound sequence)
-/// </code>
+/// This class owns:
+/// - UDP socket lifecycle
+/// - handshake
+/// - per-packet ACK behavior
+/// - outbound command queue
+/// - retransmit tracking
+/// - inbound state parsing
 ///
-/// Each command embedded in a packet payload uses an 8-byte block header:
-/// <code>
-/// [0-1] block total length (uint16-be, includes this 8-byte header)
-/// [2-3] 0x0000
-/// [4-7] command name (4 ASCII bytes)
-/// [8+]  command data
-/// </code>
-///
-/// The command strings passed to <see cref="BaseUdpDeviceConnection.SendCommandAsync"/>
-/// use the format <c>"NAME:arg0:arg1:..."</c>, e.g. <c>"CPgI:0:1"</c>.
+/// It intentionally does NOT inherit from a generic UDP base class.
 /// </summary>
-public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
+public sealed class AtemUdpConnection : IAtemConnection, IAsyncDisposable
 {
-    // ── ATEM constants ────────────────────────────────────────────────────────
-
-    /// <summary>Default ATEM control port.</summary>
     public const int DefaultAtemPort = 9910;
 
-    /// <summary>Temporary session ID used in the client Hello packet (placeholder until ATEM assigns a real one).</summary>
-    private const ushort HelloSessionId = 0x70BF;
-
-    // Packet flags (stored in the upper bits of byte[0] of the header).
-    private const byte FlagAck        = 0x80;  // Pure ACK packet (no payload)
-    private const byte FlagAckRequest = 0x08;  // Requesting an ACK for this packet
-    private const byte FlagRetransmit = 0x04;  // This is a retransmit
-
-    // ATEM handshake connection codes (byte[12] in 20-byte hello packets).
-    private const byte HelloConnSyn    = 0x01;  // Client SYN (hello)
-    private const byte HelloConnAck    = 0x03;  // Client ACK (acknowledges SYN-ACK)
-    
-    private const int ServerTokenOffset = 8;
-    private const int ServerTokenLength = 4;
-    private const int HelloConnSynAck = 0x02;   // adjust to actual value used in your project
-    private const int HelloConnInit = 0x03;     // adjust to actual value used in your project
-    private const byte FlagHello = 0x10;        // example flag; keep what your code uses
-
-    // Header size in bytes.
     private const int HeaderSize = 12;
+    private const int HelloPacketLength = 20;
 
-    // ── State ─────────────────────────────────────────────────────────────────
+    private const int AckTimeoutMs = 500;
+    private const int MaxRetries = 5;
+    private const int KeepAliveIntervalMs = 250;
+
+    // atem-connection uses 15-bit wrapping
+    private const int MaxPacketId = 1 << 15;
+
+    // Wire-level first-byte flags (already shifted into header byte 0).
+    private const byte FlagAckRequest = 0x08;
+    private const byte FlagNewSession = 0x10;
+    private const byte FlagAckReply   = 0x80;
+
+    private readonly string _host;
+    private readonly int _port;
+    private readonly ILogger<AtemUdpConnection> _logger;
 
     private readonly AtemStateSnapshot _snapshot = new();
-
-    // External command lock so multi-step operations (e.g. FadeToProgram) are atomic.
     private readonly SemaphoreSlim _cmdLock = new(1, 1);
 
-    // Cancelled by HandleHandshakeIntermediatePacketAsync as soon as the first SYN-ACK
-    // is received so that SendHandshakeAsync stops retransmitting SYN packets.  A new
-    // source is created each time SendHandshakeAsync is entered (i.e. each connect /
-    // reconnect attempt).  Marked volatile so the write in SendHandshakeAsync and the
-    // read in HandleHandshakeIntermediatePacketAsync (running on different threads) are
-    // always consistent.
-    private volatile CancellationTokenSource? _synLoopCts;
+    private readonly Channel<OutboundCommand> _sendChannel =
+        Channel.CreateUnbounded<OutboundCommand>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false
+        });
 
-    // ── IAtemConnection ───────────────────────────────────────────────────────
-    public AtemConnectionState ConnectionState => State switch
+    private readonly object _stateLock = new();
+
+    private UdpClient? _udpClient;
+    private CancellationTokenSource? _cts;
+    private Task? _receiveTask;
+    private Task? _sendTask;
+    private Task? _keepAliveTask;
+    private Task? _retransmitTask;
+
+    private volatile bool _disposed;
+    private volatile bool _isRunning;
+    private volatile bool _isHandshakeComplete;
+
+    private DeviceConnectionState _state = DeviceConnectionState.Disconnected;
+
+    private ushort _sessionId;
+    private int _lastReceivedPacketId;
+    private int _nextSendPacketId = 1;
+    private DateTimeOffset _lastReceivedAt = DateTimeOffset.MinValue;
+
+    private TaskCompletionSource<bool>? _handshakeTcs;
+
+    // ATEM in-flight reliability tracking
+    private readonly ConcurrentDictionary<int, PendingPacket> _inFlight = new();
+
+    public AtemUdpConnection(string host, ILogger<AtemUdpConnection> logger, int port = DefaultAtemPort)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+            throw new ArgumentException("Host cannot be null or empty.", nameof(host));
+        if (port is < 1 or > 65535)
+            throw new ArgumentOutOfRangeException(nameof(port));
+
+        _host = host;
+        _port = port;
+        _logger = logger;
+    }
+
+    public bool IsConnected => _state == DeviceConnectionState.Connected;
+
+    public AtemConnectionState ConnectionState => _state switch
     {
         DeviceConnectionState.Connected  => AtemConnectionState.Connected,
         DeviceConnectionState.Connecting => AtemConnectionState.Connecting,
@@ -83,64 +101,123 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
     };
 
     public AtemState? CurrentState => _snapshot.ToAtemState();
+
     public event EventHandler<AtemConnectionState>? ConnectionStateChanged;
     public event EventHandler<AtemState>? StateChanged;
 
-    /// <summary>
-    /// Waits until at least one <c>PrgI</c> state update has been received from the ATEM
-    /// switcher (i.e. program-input state is initialised), or until <paramref name="timeout"/>
-    /// elapses or <paramref name="ct"/> is cancelled.
-    /// </summary>
-    /// <returns>
-    /// <c>true</c> if program-input state is available; <c>false</c> if the timeout expired.
-    /// </returns>
     public Task<bool> WaitForProgramInputAsync(TimeSpan timeout, CancellationToken ct = default)
         => _snapshot.WaitForProgramInputAsync(timeout, ct);
 
-    // ── Constructor ───────────────────────────────────────────────────────────
+    public async Task ConnectAsync(CancellationToken ct = default)
+    {
+        ThrowIfDisposed();
 
-    /// <summary>
-    /// Creates an ATEM UDP connection to the specified host.
-    /// </summary>
-    public AtemUdpConnection(string host, ILogger<AtemUdpConnection> logger, int port = DefaultAtemPort)
-        : base(host, port, logger) { }
+        if (_isRunning)
+            return;
 
-    // ── Base-class overrides ──────────────────────────────────────────────────
-    protected override string DeviceTypeName => "ATEM";
-    protected override bool RequiresHandshake => true;
-    protected override bool UsesReliability => true;
-    protected override bool AckResolvesResponse => true;
-    protected override bool RequiresKeepAlive => true;
-    protected override TimeSpan KeepAliveInterval => TimeSpan.FromMilliseconds(250);
-    protected override TimeSpan AckTimeout => TimeSpan.FromMilliseconds(500);
-    protected override int MaxRetries => 5;
+        _logger.LogInformation("Starting ATEM UDP connection to {Host}:{Port}", _host, _port);
 
-    // ── IAtemConnection: connect / disconnect ─────────────────────────────────
+        _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _udpClient = new UdpClient();
+        _udpClient.Connect(_host, _port);
 
-    /// <summary>
-    /// Connects to the ATEM switcher by performing the UDP handshake.
-    /// Delegates to <see cref="BaseUdpDeviceConnection.StartAsync"/>.
-    /// </summary>
-    public Task ConnectAsync(CancellationToken ct = default) => StartAsync(ct);
+        ResetProtocolState();
 
-    /// <summary>
-    /// Disconnects from the ATEM switcher.
-    /// Delegates to <see cref="BaseUdpDeviceConnection.DisconnectAsync"/>.
-    /// </summary>
-    public new Task DisconnectAsync() => base.DisconnectAsync();
+        SetState(DeviceConnectionState.Connecting);
+        _isRunning = true;
 
-    // ── IAtemConnection: high-level commands ──────────────────────────────────
+        _receiveTask = Task.Run(() => ReceiveLoopAsync(_cts.Token), _cts.Token);
+        _sendTask = Task.Run(() => SendLoopAsync(_cts.Token), _cts.Token);
+        _keepAliveTask = Task.Run(() => KeepAliveLoopAsync(_cts.Token), _cts.Token);
+        _retransmitTask = Task.Run(() => RetransmitLoopAsync(_cts.Token), _cts.Token);
 
-    /// <inheritdoc/>
+        await PerformHandshakeAsync(_cts.Token).ConfigureAwait(false);
+
+        SetState(DeviceConnectionState.Connected);
+        _logger.LogInformation("ATEM connected to {Host}:{Port} with session 0x{SessionId:X4}", _host, _port, _sessionId);
+    }
+
+    public async Task DisconnectAsync()
+    {
+        if (!_isRunning)
+            return;
+
+        _logger.LogInformation("Disconnecting ATEM from {Host}:{Port}", _host, _port);
+
+        _cts?.Cancel();
+        _sendChannel.Writer.TryComplete();
+
+        _isRunning = false;
+        _isHandshakeComplete = false;
+        SetState(DeviceConnectionState.Disconnected);
+
+        try
+        {
+            if (_receiveTask != null) await _receiveTask.ConfigureAwait(false);
+            if (_sendTask != null) await _sendTask.ConfigureAwait(false);
+            if (_keepAliveTask != null) await _keepAliveTask.ConfigureAwait(false);
+            if (_retransmitTask != null) await _retransmitTask.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // expected on shutdown
+        }
+        catch
+        {
+            // best effort shutdown
+        }
+
+        _udpClient?.Dispose();
+        _udpClient = null;
+
+        _cts?.Dispose();
+        _cts = null;
+
+        while (_sendChannel.Reader.TryRead(out var queued))
+            queued.Response.TrySetException(new IOException("ATEM disconnected before command could be sent."));
+
+        foreach (var kvp in _inFlight)
+            kvp.Value.Response.TrySetException(new IOException("ATEM disconnected before ACK was received."));
+
+        _inFlight.Clear();
+    }
+
+    public async Task<DeviceResponse> SendCommandAsync(string command, CancellationToken ct = default)
+        => await SendCommandAsync(command, TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
+
+    public async Task<DeviceResponse> SendCommandAsync(string command, TimeSpan timeout, CancellationToken ct = default)
+    {
+        ThrowIfDisposed();
+
+        if (!IsConnected)
+            throw new InvalidOperationException($"ATEM is not connected (state: {ConnectionState}).");
+
+        var tcs = new TaskCompletionSource<DeviceResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await _sendChannel.Writer.WriteAsync(new OutboundCommand(command, tcs), ct).ConfigureAwait(false);
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(timeout);
+
+        try
+        {
+            return await tcs.Task.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            var timeoutEx = new TimeoutException($"ATEM command '{command}' timed out after {timeout.TotalSeconds}s.");
+            tcs.TrySetException(timeoutEx);
+            throw timeoutEx;
+        }
+    }
+
     public async Task CutToProgramAsync(int programInputId, CancellationToken ct = default)
     {
         ValidateInputId(programInputId);
-        await _cmdLock.WaitAsync(ct);
+        await _cmdLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            EnsureConnected();
-            // Directly change the program bus without going via preview.
-            await SendCommandAsync(BuildCommandString("CPgI", 0, programInputId), ct);
+            await SendCommandAsync(BuildCommandString("CPgI", 0, programInputId), ct).ConfigureAwait(false);
         }
         finally
         {
@@ -148,24 +225,20 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
         }
     }
 
-    /// <inheritdoc/>
     public async Task FadeToProgramAsync(int programInputId, int? transitionRate = null, CancellationToken ct = default)
     {
         ValidateInputId(programInputId);
-        await _cmdLock.WaitAsync(ct);
+        await _cmdLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            EnsureConnected();
             const int me = 0;
-            // Set preview to the target input.
-            await SendCommandAsync(BuildCommandString("CPvI", me, programInputId), ct);
-            // Set transition type to mix (0).
-            await SendCommandAsync(BuildCommandString("CTTp", me, 0), ct);
-            // If a rate was supplied, update the mix rate.
+            await SendCommandAsync(BuildCommandString("CPvI", me, programInputId), ct).ConfigureAwait(false);
+            await SendCommandAsync(BuildCommandString("CTTp", me, 0), ct).ConfigureAwait(false);
+
             if (transitionRate.HasValue)
-                await SendCommandAsync(BuildCommandString("CTMx", me, transitionRate.Value), ct);
-            // Execute the auto transition.
-            await SendCommandAsync(BuildCommandString("DAut", me), ct);
+                await SendCommandAsync(BuildCommandString("CTMx", me, transitionRate.Value), ct).ConfigureAwait(false);
+
+            await SendCommandAsync(BuildCommandString("DAut", me), ct).ConfigureAwait(false);
         }
         finally
         {
@@ -173,15 +246,13 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
         }
     }
 
-    /// <inheritdoc/>
     public async Task SetPreviewAsync(int previewInputId, CancellationToken ct = default)
     {
         ValidateInputId(previewInputId);
-        await _cmdLock.WaitAsync(ct);
+        await _cmdLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            EnsureConnected();
-            await SendCommandAsync(BuildCommandString("CPvI", 0, previewInputId), ct);
+            await SendCommandAsync(BuildCommandString("CPvI", 0, previewInputId), ct).ConfigureAwait(false);
         }
         finally
         {
@@ -189,19 +260,12 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
         }
     }
 
-    /// <summary>
-    /// Routes an auxiliary (AUX) output to the specified input source.
-    /// </summary>
-    /// <param name="auxChannel">Zero-based AUX channel index.</param>
-    /// <param name="inputId">Source input ID.</param>
-    /// <param name="ct">Cancellation token.</param>
     public async Task SetAuxAsync(int auxChannel, int inputId, CancellationToken ct = default)
     {
-        await _cmdLock.WaitAsync(ct);
+        await _cmdLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            EnsureConnected();
-            await SendCommandAsync(BuildCommandString("CAuS", auxChannel, inputId), ct);
+            await SendCommandAsync(BuildCommandString("CAuS", auxChannel, inputId), ct).ConfigureAwait(false);
         }
         finally
         {
@@ -209,24 +273,17 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
         }
     }
 
-    /// <inheritdoc/>
     public Task<List<AtemMacro>> ListMacrosAsync(CancellationToken ct = default)
     {
-        EnsureConnected();
-        // State-cache approach: macro metadata is populated from "MRPr" / "MacP" packets
-        // received during connection.  Return an empty list until cache is populated.
         return Task.FromResult(new List<AtemMacro>());
     }
 
-    /// <inheritdoc/>
     public async Task RunMacroAsync(int macroId, CancellationToken ct = default)
     {
-        await _cmdLock.WaitAsync(ct);
+        await _cmdLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            EnsureConnected();
-            // MAct: [macroIdH, macroIdL, action=0(Run), 0x00]
-            await SendCommandAsync($"MAct:{macroId}:0", ct);
+            await SendCommandAsync($"MAct:{macroId}:0", ct).ConfigureAwait(false);
         }
         finally
         {
@@ -234,278 +291,140 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
         }
     }
 
-    // ── Handshake ─────────────────────────────────────────────────────────────
-    // Add/replace these members and methods inside the AtemUdpConnection class
-    
-    private enum HandshakeState { Idle = 0, AwaitingSynAck = 1, AwaitingInit = 2, Connected = 3 }
-    
-    private readonly object _handshakeLock = new();
-    private TaskCompletionSource<bool>? _handshakeTcs;
-    private HandshakeState _handshakeState = HandshakeState.Idle;
-    private int _synAckHandled; // 0 = not handled, 1 = handled
-    
-    // These constants reflect your existing packet layout; adjust token offset/length
-    // to match the exact ATEM handshake format used in your codebase.
-    
-    
-    protected override async Task SendHandshakeAsync(CancellationToken ct)
+    private async Task PerformHandshakeAsync(CancellationToken ct)
     {
-        // Prepare TCS and state
-        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        lock (_handshakeLock)
-        {
-            _handshakeTcs = tcs;
-            _handshakeState = HandshakeState.AwaitingSynAck;
-            Interlocked.Exchange(ref _synAckHandled, 0);
-        }
-    
+        _handshakeTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var hello = BuildConnectHello();
+        _logger.LogDebug("Sending ATEM hello: {Hex}", Convert.ToHexString(hello));
+
+        await SendRawAsync(hello, ct).ConfigureAwait(false);
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(3));
+
+        var completed = await Task.WhenAny(_handshakeTcs.Task, Task.Delay(Timeout.InfiniteTimeSpan, timeoutCts.Token))
+            .ConfigureAwait(false);
+
+        if (completed != _handshakeTcs.Task)
+            throw new TimeoutException("ATEM handshake timed out.");
+
+        await _handshakeTcs.Task.ConfigureAwait(false);
+    }
+
+    private async Task ReceiveLoopAsync(CancellationToken ct)
+    {
         try
         {
-            var hello = BuildHandshakePacket(); // your existing hello builder
-            Logger.LogDebug("===== Sending Handshake (single send hello) =====");
-            await SendRawDatagramAsync(hello, ct).ConfigureAwait(false);
-    
-            // Wait until the handshake reaches Connected (signalled by HandleHandshakeIntermediatePacketAsync)
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            var timeout = TimeSpan.FromSeconds(3); // adjust as needed
-            var delayTask = Task.Delay(timeout, linked.Token);
-    
-            var completed = await Task.WhenAny(tcs.Task, delayTask).ConfigureAwait(false);
-            if (completed == tcs.Task)
+            while (!ct.IsCancellationRequested)
             {
-                // propagate exceptions if any
-                await tcs.Task.ConfigureAwait(false);
-                Logger.LogDebug("Handshake completed: Connected");
-                return;
-            }
-    
-            throw new TimeoutException("Handshake timed out waiting for ATEM (SYN-ACK/INIT).");
-        }
-        finally
-        {
-            lock (_handshakeLock)
-            {
-                _handshakeTcs = null;
-                _handshakeState = HandshakeState.Idle;
-                Interlocked.Exchange(ref _synAckHandled, 0);
-            }
-        }
-    }
-    
-    protected override async Task<bool> HandleHandshakeIntermediatePacketAsync(ReceivedDatagram rx, CancellationToken ct)
-    {
-        // Basic validation for hello/handshake packets
-        if (rx.Data == null || rx.Data.Length < 20) return false;
-    
-        // SYN-ACK detection (adjust condition to match existing detection logic)
-        if ((rx.Data[0] & FlagHello) != 0 && rx.Data[12] == HelloConnSynAck)
-        {
-            Logger.LogDebug("ATEM handshake: received SYN-ACK");
-    
-            // Only the first SYN-ACK should trigger building/sending the client ACK.
-            if (Interlocked.CompareExchange(ref _synAckHandled, 1, 0) == 0)
-            {
-                // Extract server token from SYN-ACK and build a proper client ACK using it.
-                // This is critical: the ACK must include the server-provided token/connection id.
-                var serverToken = new byte[ServerTokenLength];
-                Array.Copy(rx.Data, ServerTokenOffset, serverToken, 0, ServerTokenLength);
-    
-                var ack = BuildHandshakePacket(); // create base packet
-                // Copy serverToken into the ack at the expected offset
-                Array.Copy(serverToken, 0, ack, ServerTokenOffset, ServerTokenLength);
-    
-                Logger.LogDebug("ATEM handshake: sending client ACK (using server token)");
-                await SendRawDatagramAsync(ack, ct).ConfigureAwait(false);
-    
-                // Move to AwaitingInit and do not mark handshake complete yet.
-                lock (_handshakeLock)
+                UdpReceiveResult result;
+
+                try
                 {
-                    if (_handshakeState == HandshakeState.AwaitingSynAck)
-                    {
-                        _handshakeState = HandshakeState.AwaitingInit;
-                    }
+                    result = await _udpClient!.ReceiveAsync(ct).ConfigureAwait(false);
                 }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                var data = result.Buffer;
+                if (data.Length < HeaderSize)
+                    continue;
+
+                _lastReceivedAt = DateTimeOffset.UtcNow;
+
+                await HandleInboundPacketAsync(data, ct).ConfigureAwait(false);
             }
-            else
-            {
-                Logger.LogDebug("ATEM handshake: duplicate SYN-ACK received, ignoring additional ACK send");
-            }
-    
-            // Packet handled
-            return true;
         }
-    
-        // INIT detection (server final step after client ACK). When Init arrives, handshake is complete.
-        if ((rx.Data[0] & FlagHello) != 0 && rx.Data[12] == HelloConnInit)
+        catch (OperationCanceledException)
         {
-            Logger.LogDebug("ATEM handshake: received INIT -> handshake complete");
-    
-            lock (_handshakeLock)
-            {
-                _handshakeState = HandshakeState.Connected;
-                _handshakeTcs?.TrySetResult(true);
-            }
-    
-            return true;
+            // normal shutdown
         }
-    
-        return false;
-    }
-    
-    // Example guard for sending commands: wait until Connected, or fail
-    private async Task EnsureConnectedAsync(CancellationToken ct)
-    {
-        // Quick check
-        lock (_handshakeLock)
+        catch (Exception ex)
         {
-            if (_handshakeState == HandshakeState.Connected) return;
+            _logger.LogError(ex, "ATEM receive loop faulted.");
+            SetState(DeviceConnectionState.Faulted);
         }
-    
-        // If a handshake is already in progress, await its TCS; otherwise trigger handshake.
-        Task? waitTask = null;
-        lock (_handshakeLock)
+    }
+
+    private async Task HandleInboundPacketAsync(byte[] data, CancellationToken ct)
+    {
+        _logger.LogDebug("ATEM RX ({Length}): {Hex}", data.Length, Convert.ToHexString(data));
+
+        // Initial handshake response: your trace shows a 20-byte hello-style frame. :contentReference[oaicite:3]{index=3}
+        if (!_isHandshakeComplete && IsHandshakeResponse(data))
         {
-            if (_handshakeTcs != null)
-            {
-                waitTask = _handshakeTcs.Task;
-            }
-            else
-            {
-                // no handshake in progress: start one (caller must ensure this is safe)
-                // Usually the existing connection manager should call SendHandshakeAsync.
-                // If allowed here, call it (uncomment if appropriate):
-                // _ = Task.Run(() => SendHandshakeAsync(ct), ct);
-                // and then set waitTask to the new TCS
-                waitTask = _handshakeTcs?.Task;
-            }
+            _sessionId = ReadUInt16BE(data, 2);
+            _lastReceivedPacketId = ReadUInt16BE(data, 10);
+
+            var ack = BuildPureAck(_sessionId, (ushort)_lastReceivedPacketId);
+            _logger.LogDebug("ATEM handshake response session=0x{SessionId:X4}, packet={PacketId}", _sessionId, _lastReceivedPacketId);
+
+            await SendRawAsync(ack, ct).ConfigureAwait(false);
+
+            _isHandshakeComplete = true;
+            _handshakeTcs?.TrySetResult(true);
+            return;
         }
-    
-        if (waitTask != null)
+
+        var flags = GetFlags(data);
+        var sessionId = ReadUInt16BE(data, 2);
+        var remotePacketId = ReadUInt16BE(data, 10);
+
+        if (sessionId != 0)
+            _sessionId = sessionId;
+
+        // ACK replies from ATEM for our outbound command packets.
+        if ((flags & 0x10) != 0)
         {
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            var timeout = TimeSpan.FromSeconds(5);
-            var delay = Task.Delay(timeout, linked.Token);
-    
-            var completed = await Task.WhenAny(waitTask, delay).ConfigureAwait(false);
-            if (completed != waitTask)
-                throw new TimeoutException("Timeout waiting for ATEM to become connected before sending command.");
+            var ackedPacketId = ReadUInt16BE(data, 4);
+            if (_inFlight.TryRemove(ackedPacketId, out var pending))
+            {
+                pending.Response.TrySetResult(new DeviceResponse
+                {
+                    Success = true,
+                    StatusCode = 200,
+                    Message = "ACK"
+                });
+            }
+
+            return;
         }
-    }
-    
-    // Example SendCommand usage: call EnsureConnectedAsync before sending commands so you don't get PrgI timeouts.
-    protected async Task SendCommandWhenConnectedAsync(byte[] command, CancellationToken ct)
-    {
-        await EnsureConnectedAsync(ct).ConfigureAwait(false);
-        await SendRawDatagramAsync(command, ct).ConfigureAwait(false);
-    }
-    
-    
 
+        // Non-ACK inbound packets must be ACKed immediately. Your trace showed ATEM continuously
+        // advancing packet ids and expecting ACKs for each one. :contentReference[oaicite:4]{index=4}
+        _lastReceivedPacketId = remotePacketId;
 
-    protected override bool IsHandshakeResponse(ReceivedDatagram rx)
-    {
-        if (rx.Data.Length != 20) return false;
-        if ((rx.Data[0] & FlagHello) == 0) return false;
+        var replyAck = BuildPureAck(_sessionId, (ushort)remotePacketId);
+        await SendRawAsync(replyAck, ct).ConfigureAwait(false);
 
-        // The ATEM INIT packet carries connection code 0x04 and a newly-assigned session ID
-        // (different from our placeholder HelloSessionId).
-        var sessionId = (ushort)((rx.Data[2] << 8) | rx.Data[3]);
-        return rx.Data[12] == HelloConnInit && sessionId != HelloSessionId;
+        // No payload beyond the 12-byte header
+        if (data.Length <= HeaderSize)
+            return;
+
+        ParseStateBlocks(data);
     }
 
-    protected override void ApplyHandshakeResponse(ReceivedDatagram rx)
+    private void ParseStateBlocks(byte[] data)
     {
-        // Extract the server-assigned session ID from bytes [2-3].
-        ProtocolContext.SessionId = (ushort)((rx.Data[2] << 8) | rx.Data[3]);
-        // bytes [10-11] carry the server's packet ID for the INIT frame.
-        ProtocolContext.LastReceivedSequence = (rx.Data[10] << 8) | rx.Data[11];
-
-        Logger.LogInformation("ATEM session established – session ID 0x{SessionId:X4}", ProtocolContext.SessionId);
-    }
-
-    // ── Keepalive (ACK ping) ──────────────────────────────────────────────────
-    protected override async Task SendKeepAliveAsync(CancellationToken ct)
-    {
-        // An empty ACK packet with the last-seen remote packet ID keeps the session alive.
-        var ack = BuildPureAck((ushort)ProtocolContext.LastReceivedSequence);
-        await SendRawDatagramAsync(ack, ct);
-    }
-
-    // Pure ACK packets have no payload and no local packet ID.
-    protected override bool IsKeepAliveResponse(ReceivedDatagram rx) => false;
-
-    // ── Reliability (ACK) ─────────────────────────────────────────────────────
-    protected override bool IsAckDatagram(ReceivedDatagram rx)
-    {
-        if (rx.Data.Length < HeaderSize) return false;
-        // Pure ACK: only the ACK flag set and no payload.
-        return (rx.Data[0] & FlagAck) != 0 && rx.Data.Length == HeaderSize;
-    }
-
-    protected override byte[] BuildAckDatagram(UdpProtocolContext ctx, ReceivedDatagram rx)
-    {
-        var remoteSeq = (ushort)((rx.Data[10] << 8) | rx.Data[11]);
-        return BuildPureAck(remoteSeq);
-    }
-
-    protected override void ApplyAck(ReceivedDatagram rx)
-    {
-        // Do NOT update LastReceivedSequence from ACK packets.
-        // ACK packets' [4-5] is "which packet id is being acknowledged" (ours),
-        // not "the last remote packet we saw".
-    }
-
-    protected override int GetDatagramSequence(ReceivedDatagram rx)
-    {
-        if (rx.Data.Length < HeaderSize) return 0;
-        return (rx.Data[10] << 8) | rx.Data[11];
-    }
-
-    protected override int GetAckedSequence(ReceivedDatagram rx)
-    {
-        if (rx.Data.Length < HeaderSize) return 0;
-        // The ACK ID field (bytes [4-5]) contains the local packet ID being ACKed.
-        return (rx.Data[4] << 8) | rx.Data[5];
-    }
-
-    // ── Command encoding ──────────────────────────────────────────────────────
-    protected override byte[] BuildDatagramFromCommand(string command, UdpProtocolContext ctx)
-    {
-        var cmdBlock = BuildCommandBlockFromString(command);
-
-        var packet = new byte[HeaderSize + cmdBlock.Length];
-
-        // New datagram builder matching a known working imlementation of ATEM Software Control
-        WriteHeader(packet, FlagAckRequest, ctx.SessionId,
-            ackId: 0, // acks should be handled separately as dedicated 12-byte packets
-            packetId: (ushort)ctx.OutboundSequence,
-            payloadLength: cmdBlock.Length);
-        
-        Array.Copy(cmdBlock, 0, packet, HeaderSize, cmdBlock.Length);
-        return packet;
-    }
-
-    // ── State parsing ─────────────────────────────────────────────────────────
-    protected override bool TryParseDeviceResponse(ReceivedDatagram rx, out DeviceResponse response)
-    {
-        response = default!;
-
-        if (rx.Data.Length < HeaderSize) return false;
-
-        // Update LastReceivedSequence from every non-ACK inbound packet.
-        ProtocolContext.LastReceivedSequence = (rx.Data[10] << 8) | rx.Data[11];
-
-        // Parse embedded command blocks and update the state snapshot.
-        bool anyUpdate = false;
         int offset = HeaderSize;
-        while (offset + 8 <= rx.Data.Length)
-        {
-            int blockLen = (rx.Data[offset] << 8) | rx.Data[offset + 1];
-            if (blockLen < 8 || offset + blockLen > rx.Data.Length) break;
+        bool anyUpdate = false;
 
-            var name = Encoding.ASCII.GetString(rx.Data, offset + 4, 4);
-            var dataSpan = rx.Data.AsSpan(offset + 8, blockLen - 8);
-            _snapshot.Apply(name, dataSpan);
+        while (offset + 8 <= data.Length)
+        {
+            int blockLen = ReadUInt16BE(data, offset);
+            if (blockLen < 8 || offset + blockLen > data.Length)
+                break;
+
+            var rawName = Encoding.ASCII.GetString(data, offset + 4, 4);
+            var name = rawName.TrimEnd('\0');
+            var blockData = data.AsSpan(offset + 8, blockLen - 8);
+
+            _logger.LogDebug("ATEM block {Name} (raw='{RawName}') len={Len}", name, rawName, blockLen);
+
+            _snapshot.Apply(name, blockData);
             anyUpdate = true;
 
             offset += blockLen;
@@ -517,135 +436,156 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
             if (state != null)
                 StateChanged?.Invoke(this, state);
         }
-
-        // ATEM uses ACKs (not payload responses) to confirm commands.
-        // State updates are always unsolicited – return false so the base class
-        // does not try to deliver them as command responses.
-        return false;
     }
 
-    // ── State-change notifications ────────────────────────────────────────────
-    protected override void OnDeviceStateChanged(DeviceConnectionState newState)
+    private async Task SendLoopAsync(CancellationToken ct)
     {
-        ConnectionStateChanged?.Invoke(this, ConnectionState);
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-    private void EnsureConnected()
-    {
-        if (!IsConnected)
-            throw new InvalidOperationException(
-                $"ATEM is not connected (state: {ConnectionState}). Cannot execute command.");
-    }
-
-    private static void ValidateInputId(int inputId)
-    {
-        if (inputId < 1)
-            throw new ArgumentOutOfRangeException(nameof(inputId), "Input ID must be >= 1.");
-    }
-
-    /// <summary>
-    /// Builds a short "NAME:a0:a1" command string accepted by
-    /// <see cref="BuildDatagramFromCommand"/>.
-    /// </summary>
-    private static string BuildCommandString(string name, params int[] args)
-        => args.Length == 0 ? name : $"{name}:{string.Join(':', args)}";
-
-    /// <summary>
-    /// Parses a "NAME:arg0:arg1:..." string into a binary ATEM command block.
-    /// </summary>
-    private static byte[] BuildCommandBlockFromString(string command)
-    {
-        var parts = command.Split(':');
-        var name  = parts[0];
-
-        // Most ATEM commands carry 4 bytes of data.
-        // Parse each colon-delimited arg; missing or invalid args default to 0.
-        int a0 = parts.Length > 1 && int.TryParse(parts[1], out var v1) ? v1 : 0;
-        int a1 = parts.Length > 2 && int.TryParse(parts[2], out var v2) ? v2 : 0;
-
-        byte[] data = name switch
+        try
         {
-            // Change Program Input:  [ME, 0x00, inputH, inputL]
-            "CPgI" => new byte[] { (byte)a0, 0, (byte)(a1 >> 8), (byte)(a1 & 0xFF) },
-            // Change Preview Input:  [ME, 0x00, inputH, inputL]
-            "CPvI" => new byte[] { (byte)a0, 0, (byte)(a1 >> 8), (byte)(a1 & 0xFF) },
-            // Do Cut:                [ME, 0x00, 0x00, 0x00]
-            "DCut" => new byte[] { (byte)a0, 0, 0, 0 },
-            // Do Auto:               [ME, 0x00, 0x00, 0x00]
-            "DAut" => new byte[] { (byte)a0, 0, 0, 0 },
-            // Change Aux Source:     [channel, 0x00, srcH, srcL]
-            "CAuS" => new byte[] { (byte)a0, 0, (byte)(a1 >> 8), (byte)(a1 & 0xFF) },
-            // Macro Action:          [macroIdH, macroIdL, action, 0x00]
-            "MAct" => new byte[] { (byte)(a0 >> 8), (byte)(a0 & 0xFF), (byte)a1, 0 },
-            // Change Transition Type:[ME, 0x00, type, 0x00]
-            "CTTp" => new byte[] { (byte)a0, 0, (byte)a1, 0 },
-            // Change Transition Mix rate: [ME, 0x00, rateH, rateL]
-            "CTMx" => new byte[] { (byte)a0, 0, (byte)(a1 >> 8), (byte)(a1 & 0xFF) },
-            // Unknown command – send 4 zero bytes so the header is still valid.
-            _      => new byte[] { 0, 0, 0, 0 }
-        };
+            await foreach (var cmd in _sendChannel.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+            {
+                try
+                {
+                    int packetId;
+                    lock (_stateLock)
+                    {
+                        packetId = _nextSendPacketId++;
+                        if (_nextSendPacketId >= MaxPacketId)
+                            _nextSendPacketId = 0;
+                    }
 
-        return BuildCommandBlock(name, data);
+                    var datagram = BuildCommandDatagram(cmd.Command, packetId);
+                    _inFlight[packetId] = new PendingPacket(datagram, cmd.Response, 0, DateTimeOffset.UtcNow);
+
+                    await SendRawAsync(datagram, ct).ConfigureAwait(false);
+
+                    _logger.LogDebug("ATEM TX seq={Seq} cmd='{Command}' hex={Hex}",
+                        packetId, cmd.Command, Convert.ToHexString(datagram));
+                }
+                catch (Exception ex)
+                {
+                    cmd.Response.TrySetException(ex);
+                    _logger.LogError(ex, "Failed sending ATEM command '{Command}'", cmd.Command);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // normal shutdown
+        }
     }
 
-    /// <summary>
-    /// Builds a raw ATEM command block (8-byte header + data).
-    /// </summary>
-    private static byte[] BuildCommandBlock(string name, byte[] data)
+    private async Task KeepAliveLoopAsync(CancellationToken ct)
     {
-        int blockLen = 8 + data.Length;
-        var block = new byte[blockLen];
-        block[0] = (byte)(blockLen >> 8);
-        block[1] = (byte)(blockLen & 0xFF);
-        block[2] = 0;
-        block[3] = 0;
-        var nameBytes = Encoding.ASCII.GetBytes(name);
-        Array.Copy(nameBytes, 0, block, 4, Math.Min(4, nameBytes.Length));
-        Array.Copy(data, 0, block, 8, data.Length);
-        return block;
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(KeepAliveIntervalMs, ct).ConfigureAwait(false);
+
+                if (!IsConnected || !_isHandshakeComplete || _sessionId == 0)
+                    continue;
+
+                var ack = BuildPureAck(_sessionId, (ushort)_lastReceivedPacketId);
+                await SendRawAsync(ack, ct).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // normal shutdown
+        }
     }
 
-    /// <summary>
-    /// Writes the 12-byte ATEM packet header into <paramref name="buffer"/> at offset 0.
-    /// </summary>
-    private static void WriteHeader(
-        byte[] buffer, byte flags, ushort sessionId, ushort ackId, ushort packetId, int payloadLength)
+    private async Task RetransmitLoopAsync(CancellationToken ct)
     {
-        int totalLength = HeaderSize + payloadLength;
-        buffer[0]  = (byte)(flags | (totalLength >> 8));
-        buffer[1]  = (byte)(totalLength & 0xFF);
-        buffer[2]  = (byte)(sessionId >> 8);
-        buffer[3]  = (byte)(sessionId & 0xFF);
-        buffer[4]  = (byte)(ackId >> 8);
-        buffer[5]  = (byte)(ackId & 0xFF);
-        buffer[6]  = 0;
-        buffer[7]  = 0;
-        buffer[8]  = 0;
-        buffer[9]  = 0;
-        buffer[10] = (byte)(packetId >> 8);
-        buffer[11] = (byte)(packetId & 0xFF);
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(AckTimeoutMs / 2, ct).ConfigureAwait(false);
+
+                if (!IsConnected)
+                    continue;
+
+                var now = DateTimeOffset.UtcNow;
+
+                foreach (var kvp in _inFlight.ToArray())
+                {
+                    var packetId = kvp.Key;
+                    var pending = kvp.Value;
+
+                    if ((now - pending.SentAt).TotalMilliseconds < AckTimeoutMs)
+                        continue;
+
+                    if (pending.Attempts >= MaxRetries)
+                    {
+                        if (_inFlight.TryRemove(packetId, out var failed))
+                        {
+                            failed.Response.TrySetException(
+                                new TimeoutException($"ATEM packet {packetId} was not ACKed after {MaxRetries} retries."));
+                        }
+
+                        _logger.LogWarning("ATEM packet {PacketId} exceeded max retransmits", packetId);
+                        SetState(DeviceConnectionState.Faulted);
+                        continue;
+                    }
+
+                    var updated = pending with
+                    {
+                        Attempts = pending.Attempts + 1,
+                        SentAt = now
+                    };
+
+                    _inFlight[packetId] = updated;
+
+                    await SendRawAsync(updated.Datagram, ct).ConfigureAwait(false);
+                    _logger.LogDebug("Retransmitted ATEM packet {PacketId}, attempt {Attempt}", packetId, updated.Attempts);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // normal shutdown
+        }
     }
 
-    /// <summary>
-    /// Builds a pure ACK packet (12 bytes, no payload) for the given remote sequence ID.
-    /// </summary>
-    private byte[] BuildPureAck(ushort remoteSeq)
+    private async Task SendRawAsync(byte[] datagram, CancellationToken ct)
     {
-        var ack = new byte[HeaderSize];
-        WriteHeader(ack, FlagAck, ProtocolContext.SessionId, ackId: remoteSeq, packetId: 0, payloadLength: 0);
-        return ack;
-    }
-    
-    // ── Handshake packet builder ──────────────────────────────────────────────
+        if (_udpClient == null)
+            throw new InvalidOperationException("ATEM UDP client is not initialized.");
 
-    /// <summary>
-    /// Builds a 20-byte ATEM handshake (hello) packet
-    /// Known working hello packet from wireshark capture - same each time.
-    /// </summary>
-    private static byte[] BuildHandshakePacket()
+        await _udpClient.SendAsync(datagram, datagram.Length).WaitAsync(ct).ConfigureAwait(false);
+    }
+
+    private static bool IsHandshakeResponse(byte[] data)
     {
-        var helloPkt = new byte[]
+        return data.Length == HelloPacketLength &&
+               data[0] == 0x10 &&
+               data[1] == 0x14;
+    }
+
+    private byte[] BuildCommandDatagram(string command, int packetId)
+    {
+        var block = BuildCommandBlockFromString(command);
+        var packet = new byte[HeaderSize + block.Length];
+
+        // Important: bytes [4-5] remain zero for outbound command packets.
+        WriteHeader(
+            packet,
+            firstByteFlags: FlagAckRequest,
+            sessionId: _sessionId,
+            ackId: 0,
+            packetId: (ushort)packetId,
+            payloadLength: block.Length);
+
+        Array.Copy(block, 0, packet, HeaderSize, block.Length);
+        return packet;
+    }
+
+    private static byte[] BuildConnectHello()
+    {
+        // This matches the successful live hello/response flow you captured.
+        return new byte[]
         {
             0x10, 0x14, 0x53, 0xAB,
             0x00, 0x00, 0x00, 0x00,
@@ -654,6 +594,150 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
             0x01,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
         };
-        return helloPkt;
     }
+
+    private static byte[] BuildPureAck(ushort sessionId, ushort remotePacketId)
+    {
+        var ack = new byte[HeaderSize];
+        WriteHeader(
+            ack,
+            firstByteFlags: FlagAckReply,
+            sessionId: sessionId,
+            ackId: remotePacketId,
+            packetId: 0,
+            payloadLength: 0);
+        return ack;
+    }
+
+    private static byte[] BuildCommandBlockFromString(string command)
+    {
+        var parts = command.Split(':');
+        var name = parts[0];
+
+        int a0 = parts.Length > 1 && int.TryParse(parts[1], out var v1) ? v1 : 0;
+        int a1 = parts.Length > 2 && int.TryParse(parts[2], out var v2) ? v2 : 0;
+
+        byte[] data = name switch
+        {
+            "CPgI" => new byte[] { (byte)a0, 0, (byte)(a1 >> 8), (byte)(a1 & 0xFF) },
+            "CPvI" => new byte[] { (byte)a0, 0, (byte)(a1 >> 8), (byte)(a1 & 0xFF) },
+            "DCut" => new byte[] { (byte)a0, 0, 0, 0 },
+            "DAut" => new byte[] { (byte)a0, 0, 0, 0 },
+            "CAuS" => new byte[] { (byte)a0, 0, (byte)(a1 >> 8), (byte)(a1 & 0xFF) },
+            "MAct" => new byte[] { (byte)(a0 >> 8), (byte)(a0 & 0xFF), (byte)a1, 0 },
+            "CTTp" => new byte[] { (byte)a0, 0, (byte)a1, 0 },
+            "CTMx" => new byte[] { (byte)a0, 0, (byte)(a1 >> 8), (byte)(a1 & 0xFF) },
+            _ => new byte[] { 0, 0, 0, 0 }
+        };
+
+        return BuildCommandBlock(name, data);
+    }
+
+    private static byte[] BuildCommandBlock(string name, byte[] data)
+    {
+        int blockLen = 8 + data.Length;
+        var block = new byte[blockLen];
+
+        block[0] = (byte)(blockLen >> 8);
+        block[1] = (byte)(blockLen & 0xFF);
+        block[2] = 0;
+        block[3] = 0;
+
+        var nameBytes = Encoding.ASCII.GetBytes(name);
+        Array.Copy(nameBytes, 0, block, 4, Math.Min(4, nameBytes.Length));
+        Array.Copy(data, 0, block, 8, data.Length);
+
+        return block;
+    }
+
+    private static void WriteHeader(
+        byte[] buffer,
+        byte firstByteFlags,
+        ushort sessionId,
+        ushort ackId,
+        ushort packetId,
+        int payloadLength)
+    {
+        int totalLength = HeaderSize + payloadLength;
+
+        buffer[0] = (byte)(firstByteFlags | (totalLength >> 8));
+        buffer[1] = (byte)(totalLength & 0xFF);
+        buffer[2] = (byte)(sessionId >> 8);
+        buffer[3] = (byte)(sessionId & 0xFF);
+        buffer[4] = (byte)(ackId >> 8);
+        buffer[5] = (byte)(ackId & 0xFF);
+        buffer[6] = 0;
+        buffer[7] = 0;
+        buffer[8] = 0;
+        buffer[9] = 0;
+        buffer[10] = (byte)(packetId >> 8);
+        buffer[11] = (byte)(packetId & 0xFF);
+    }
+
+    private static ushort ReadUInt16BE(byte[] data, int offset)
+        => (ushort)((data[offset] << 8) | data[offset + 1]);
+
+    private static byte GetFlags(byte[] data) => (byte)(data[0] >> 3);
+
+    private static string BuildCommandString(string name, params int[] args)
+        => args.Length == 0 ? name : $"{name}:{string.Join(':', args)}";
+
+    private static void ValidateInputId(int inputId)
+    {
+        if (inputId < 1)
+            throw new ArgumentOutOfRangeException(nameof(inputId), "Input ID must be >= 1.");
+    }
+
+    private void SetState(DeviceConnectionState newState)
+    {
+        var old = _state;
+        _state = newState;
+        if (old != newState)
+            ConnectionStateChanged?.Invoke(this, ConnectionState);
+    }
+
+    private void ResetProtocolState()
+    {
+        _sessionId = 0;
+        _lastReceivedPacketId = 0;
+        _nextSendPacketId = 1;
+        _isHandshakeComplete = false;
+        _lastReceivedAt = DateTimeOffset.MinValue;
+        _inFlight.Clear();
+    }
+
+    private void ThrowIfDisposed()
+    {
+        if (_disposed)
+            throw new ObjectDisposedException(nameof(AtemUdpConnection));
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        await DisconnectAsync().ConfigureAwait(false);
+
+        _cmdLock.Dispose();
+    }
+
+    private enum DeviceConnectionState
+    {
+        Disconnected,
+        Connecting,
+        Connected,
+        Faulted
+    }
+
+    private sealed record OutboundCommand(
+        string Command,
+        TaskCompletionSource<DeviceResponse> Response);
+
+    private sealed record PendingPacket(
+        byte[] Datagram,
+        TaskCompletionSource<DeviceResponse> Response,
+        int Attempts,
+        DateTimeOffset SentAt);
 }
