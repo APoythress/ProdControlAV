@@ -352,29 +352,35 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
             // This is where the loop is happening - we only need to fire off a single handshake
             // - wait for response
             // - then validate if we are connected
+            Logger.LogDebug(" ===== Sending Handshake from BaseUdpConnection.PerformHandshakeAsync() =====");
             var sendTask = SendHandshakeAsync(ct);
 
             var rx = await handshakeTcs.Task.WaitAsync(ct);
 
             // Response received – stop the send loop.
             // timeoutCts.Cancel();
-            try { await sendTask; }
-            catch (OperationCanceledException) { }
-            catch (Exception ex)
-            {
-                Logger.LogWarning(ex, "{DeviceType} handshake send loop for {Host}:{Port} ended with an error",
-                    DeviceTypeName, Host, Port);
-            }
+            // try { await sendTask; }
+            // catch (OperationCanceledException) { }
+            // catch (Exception ex)
+            // {
+            //     Logger.LogWarning(ex, "{DeviceType} handshake send loop for {Host}:{Port} ended with an error",
+            //         DeviceTypeName, Host, Port);
+            // }
 
+            Logger.LogDebug("===== ApplyHandshakeResponse =====");
             ApplyHandshakeResponse(rx);
 
             // For reliability-enabled protocols, ACK the handshake response immediately
             // because the receive loop has not had a chance to auto-ACK it yet.
             if (UsesReliability)
             {
+                Logger.LogDebug("===== BuildAckDatagram =====");
                 var ack = BuildAckDatagram(ProtocolContext, rx);
                 if (ack.Length > 0)
+                {
+                    Logger.LogDebug("===== SendAckDatagram =====");
                     await SendDatagramAsync(ack, ct);
+                }
             }
 
             SetState(DeviceConnectionState.Connected);
@@ -505,6 +511,7 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
         if (_udpClient == null) 
             throw new InvalidOperationException("UDP socket not initialised.");
         
+        Logger.LogDebug("===== SendDatagramAsync from BaseUdpDeviceConnection: {datagram} =====", datagram.ToString());
         await _udpClient.SendAsync(datagram, datagram.Length).WaitAsync(ct);
     }
 
@@ -538,6 +545,7 @@ public abstract class BaseUdpDeviceConnection : IDeviceConnection, IAsyncDisposa
                     return; // New receive loop started inside ReconnectAsync.
                 }
 
+                Logger.LogDebug("Building ReceivedDatagram from received UDP datagram from {result}", result.ToString());
                 var rx = new ReceivedDatagram
                 {
                     Data = result.Buffer,

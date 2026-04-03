@@ -286,14 +286,17 @@ public sealed class AtemUdpConnection : BaseUdpDeviceConnection, IAtemConnection
         if (rx.Data.Length == 20 && (rx.Data[0] & FlagHello) != 0 && rx.Data[12] == HelloConnSynAck)
         {
             Logger.LogDebug("ATEM handshake: received SYN-ACK, sending client ACK");
-            Logger.LogDebug("Ending loop now!");
 
             // Stop the SYN send loop immediately.  If we keep sending SYN the ATEM
             // treats each one as a fresh connection attempt and replies with another
             // SYN-ACK instead of advancing to the INIT packet.
             _synLoopCts.Cancel();
-
+            Logger.LogDebug("Ending loop now!");
+            
+            Logger.LogDebug("Building Handshake packet");
             var ack = BuildHandshakePacket();
+            
+            Logger.LogDebug("Sending datagram with build Handshake: {HandshakePacket}", BitConverter.ToString(ack));
             await SendRawDatagramAsync(ack, ct);
             return true;
         }
