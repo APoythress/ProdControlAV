@@ -658,6 +658,27 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
                             Response = null
                         };
                     }
+                    
+                    // set ATEM State
+                    var endpoint = $"/api/atem/{command.DeviceId}/state";
+                    var token = await _jwtAuth.GetValidTokenAsync(ct);
+
+                    var atemState = new AtemState
+                    {
+                        ProgramInputId     = conn.CurrentState?.ProgramInputId ?? -1,
+                        PreviewInputId     = conn.CurrentState?.PreviewInputId ?? -1,
+                        InTransition       = conn.CurrentState?.InTransition ?? false,
+                        LastTransitionType = conn.CurrentState?.LastTransitionType ?? "",
+                        LastTransitionRate = conn.CurrentState?.LastTransitionRate
+                    };
+    
+                    using var req = new HttpRequestMessage(HttpMethod.Post, endpoint)
+                    {
+                        Content = JsonContent.Create(atemState, options: s_jsonOptions)
+                    };
+                    req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+    
+                    using var res = await _http.SendAsync(req, ct);
 
                     var program = conn.CurrentState?.ProgramInputId ?? -1;
                     return new CommandResult
