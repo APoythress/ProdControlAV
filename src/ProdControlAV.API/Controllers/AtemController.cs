@@ -86,15 +86,12 @@ public class AtemController : ControllerBase
     }
 
     [HttpPost("{deviceId}/state")]
-    [AllowAnonymous] // or adjust policy to match how agents authenticate
     public async Task<IActionResult> PostState(Guid deviceId, [FromBody] JsonElement payload, CancellationToken ct)
     {
-        _logger.LogDebug($"Setting ATEM state for device {deviceId} with payload: {payload.GetRawText()}");
-        
         var device = await _db.Devices
             .AsNoTracking()
             .FirstOrDefaultAsync(d => d.Id == deviceId, ct);
-
+        
         if (device == null)
             return NotFound(new { message = "Device not found" });
 
