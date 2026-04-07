@@ -1,7 +1,4 @@
-﻿using System.Net.Http;
-using System.Net.Http.Json;
-using System.Text.Json;
-using Microsoft.Extensions.Logging;
+﻿using System.Net.Http.Json;
 
 namespace ProdControlAV.Agent.Services;
 
@@ -11,11 +8,12 @@ public sealed class AtemStatePublisher
     private readonly ILogger<AtemStatePublisher> _logger;
     private readonly Guid _deviceId;
     private const string EndpointTemplate = "api/atem/{0}/state";
-
+    private readonly ApiOptions _api;
 
     public AtemStatePublisher(HttpClient httpClient, ILogger<AtemStatePublisher> logger, Guid deviceId)
     {
         _http = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        _http.BaseAddress = new Uri(_api.BaseUrl);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _deviceId = deviceId;
     }
