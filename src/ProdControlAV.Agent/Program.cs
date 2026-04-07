@@ -105,13 +105,14 @@ builder.Services.AddSingleton<AtemConnectionManager>();
 builder.Services.AddSingleton<AtemUdpConnectionManager>();
 // Register AtemStateSnapshot so it can be injected into CommandService (fixes DI resolution error)
 builder.Services.AddSingleton<AtemStateSnapshot>();
-builder.Services.AddScoped<AzureAtemStateStore>();
 // HyperDeck Connection Pool for persistent TCP connections
 builder.Services.AddSingleton<HyperDeckConnectionPool>();
 // Additional HTTP client for JWT auth service
 builder.Services.AddHttpClient("JwtAuth", c => {
     c.Timeout = TimeSpan.FromMinutes(5);
 });
+// csharp
+builder.Services.AddSingleton<IAtemStatePublisherFactory, AtemStatePublisherFactory>();
 
 // Register DeviceSource as both a singleton (for IDeviceSource) and a hosted service
 builder.Services.AddSingleton<IDeviceSource>(sp => 
