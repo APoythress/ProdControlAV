@@ -16,7 +16,6 @@ public sealed class AtemStatePublisherFactory : IAtemStatePublisherFactory
 
     public AtemStatePublisher Create(HttpClient http, ILogger<AtemStatePublisher> logger, Guid deviceId)
     {
-        var jwt = _sp.GetService<JwtAuthService>(); // may be null
-        return new AtemStatePublisher(http, logger, deviceId, jwt);
+        return new AtemStatePublisher(http, logger, deviceId);
     }
 }
