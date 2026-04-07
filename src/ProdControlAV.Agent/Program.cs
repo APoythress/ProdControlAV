@@ -111,6 +111,8 @@ builder.Services.AddSingleton<HyperDeckConnectionPool>();
 builder.Services.AddHttpClient("JwtAuth", c => {
     c.Timeout = TimeSpan.FromMinutes(5);
 });
+// csharp
+builder.Services.AddSingleton<IAtemStatePublisherFactory, AtemStatePublisherFactory>();
 
 // Register DeviceSource as both a singleton (for IDeviceSource) and a hosted service
 builder.Services.AddSingleton<IDeviceSource>(sp => 

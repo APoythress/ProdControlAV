@@ -13,11 +13,12 @@ public sealed class AtemStatePublisher
     private const string EndpointTemplate = "api/atem/{0}/state";
     private readonly JwtAuthService _jwtAuth; 
 
-    public AtemStatePublisher(HttpClient httpClient, ILogger<AtemStatePublisher> logger, Guid deviceId)
+    public AtemStatePublisher(HttpClient httpClient, ILogger<AtemStatePublisher> logger, Guid deviceId, JwtAuthService jwtAuth)
     {
         _http = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _deviceId = deviceId;
+        _jwtAuth = jwtAuth;
     }
 
     public async Task PublishAsync(object state, CancellationToken ct = default)
@@ -26,7 +27,20 @@ public sealed class AtemStatePublisher
             return;
 
         var url = string.Format(EndpointTemplate, _deviceId);
-        var token = await _jwtAuth.GetValidTokenAsync(ct);
+        string? token = null;
+
+        if (_jwtAuth != null)
+        {
+            try
+            {
+                token = await _jwtAuth.GetValidTokenAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get valid JWT token for publishing ATEM state");
+            }
+        }
+        
         try
         {
             using var req = new HttpRequestMessage(HttpMethod.Post, url)

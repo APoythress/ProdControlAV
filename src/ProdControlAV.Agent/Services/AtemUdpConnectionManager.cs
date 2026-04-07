@@ -11,11 +11,13 @@ public sealed class AtemUdpConnectionManager : IAsyncDisposable
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ConcurrentDictionary<Guid, AtemUdpConnection> _connections = new();
     private readonly SemaphoreSlim _lock = new(1, 1);
+    private readonly IAtemStatePublisherFactory _publisherFactory;
 
-    public AtemUdpConnectionManager(ILoggerFactory loggerFactory, IHttpClientFactory httpClientFactory)
+    public AtemUdpConnectionManager(ILoggerFactory loggerFactory, IHttpClientFactory httpClientFactory, IAtemStatePublisherFactory publisherFactory)
     {
         _loggerFactory = loggerFactory;
         _httpClientFactory = httpClientFactory;
+        _publisherFactory = publisherFactory;
     }
 
     public async Task<AtemUdpConnection> GetOrCreateAsync(
@@ -37,7 +39,7 @@ public sealed class AtemUdpConnectionManager : IAsyncDisposable
             var conn = new AtemUdpConnection(host, logger, port);
             var httpClient = _httpClientFactory.CreateClient("AgentApi");
             var publisherLogger = _loggerFactory.CreateLogger<AtemStatePublisher>();
-            var publisher = new AtemStatePublisher(httpClient, publisherLogger, deviceId);
+            var publisher = _publisherFactory.Create(httpClient, publisherLogger, deviceId);
 
             // Ensure handshake / loops are running
             await conn.ConnectAsync(ct);
