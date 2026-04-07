@@ -13,7 +13,6 @@ namespace ProdControlAV.API.Controllers;
 
 [ApiController]
 [Authorize(Policy = "TenantMember")]
-// [Authorize(Policy = "AtemControl")]
 [Route("api/[controller]")]
 public class AtemController : ControllerBase
 {
@@ -47,7 +46,7 @@ public class AtemController : ControllerBase
     {
         var device = await _db.Devices
             .AsNoTracking()
-            .FirstOrDefaultAsync(d => d.Id == deviceId, ct);
+            .FirstOrDefaultAsync(d => d.Id == deviceId && d.TenantId == _tenant.TenantId, ct);
 
         if (device == null)
             return NotFound(new { message = "Device not found" });
@@ -90,7 +89,7 @@ public class AtemController : ControllerBase
     {
         var device = await _db.Devices
             .AsNoTracking()
-            .FirstOrDefaultAsync(d => d.Id == deviceId, ct);
+            .FirstOrDefaultAsync(d => d.Id == deviceId && d.TenantId == _tenant.TenantId, ct);
         
         if (device == null)
             return NotFound(new { message = "Device not found" });
@@ -235,7 +234,7 @@ public class AtemController : ControllerBase
     {
         var device = await _db.Devices
             .AsNoTracking()
-            .FirstOrDefaultAsync(d => d.Id == deviceId, ct);
+            .FirstOrDefaultAsync(d => d.Id == deviceId && d.TenantId == _tenant.TenantId, ct);
 
         if (device == null)
             return NotFound(new { message = "Device not found" });
