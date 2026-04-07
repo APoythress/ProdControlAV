@@ -47,7 +47,7 @@ public class AtemController : ControllerBase
     {
         var device = await _db.Devices
             .AsNoTracking()
-            .FirstOrDefaultAsync(d => d.Id == deviceId && d.TenantId == _tenant.TenantId, ct);
+            .FirstOrDefaultAsync(d => d.Id == deviceId, ct);
 
         if (device == null)
             return NotFound(new { message = "Device not found" });
@@ -91,7 +91,7 @@ public class AtemController : ControllerBase
     {
         var device = await _db.Devices
             .AsNoTracking()
-            .FirstOrDefaultAsync(d => d.Id == deviceId && d.TenantId == _tenant.TenantId, ct);
+            .FirstOrDefaultAsync(d => d.Id == deviceId, ct);
 
         if (device == null)
             return NotFound(new { message = "Device not found" });
@@ -164,7 +164,7 @@ public class AtemController : ControllerBase
     {
         var device = await _db.Devices
             .AsNoTracking()
-            .FirstOrDefaultAsync(d => d.Id == deviceId && d.TenantId == _tenant.TenantId, ct);
+            .FirstOrDefaultAsync(d => d.Id == deviceId, ct);
 
         if (device == null)
             return NotFound(new { message = "Device not found" });
@@ -236,7 +236,7 @@ public class AtemController : ControllerBase
     {
         var device = await _db.Devices
             .AsNoTracking()
-            .FirstOrDefaultAsync(d => d.Id == deviceId && d.TenantId == _tenant.TenantId, ct);
+            .FirstOrDefaultAsync(d => d.Id == deviceId, ct);
 
         if (device == null)
             return NotFound(new { message = "Device not found" });
