@@ -11,6 +11,7 @@ public sealed class AtemStatePublisher
     private readonly ILogger<AtemStatePublisher> _logger;
     private readonly Guid _deviceId;
     private const string EndpointTemplate = "api/atem/{0}/state";
+    private readonly JwtAuthService _jwtAuth; 
 
     public AtemStatePublisher(HttpClient httpClient, ILogger<AtemStatePublisher> logger, Guid deviceId)
     {
@@ -25,11 +26,20 @@ public sealed class AtemStatePublisher
             return;
 
         var url = string.Format(EndpointTemplate, _deviceId);
-
+        var token = await _jwtAuth.GetValidTokenAsync(ct);
         try
         {
-            // Posts the state as JSON to the API. Uses System.Net.Http.Json for convenience.
-            var resp = await _http.PostAsJsonAsync(url, state, ct);
+            using var req = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = JsonContent.Create(state)
+            };
+
+            if (!string.IsNullOrEmpty(token))
+            {
+                req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            }
+
+            var resp = await _http.SendAsync(req, ct);
             if (!resp.IsSuccessStatusCode)
             {
                 var body = await resp.Content.ReadAsStringAsync(ct);
