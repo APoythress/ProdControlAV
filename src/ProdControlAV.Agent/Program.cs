@@ -105,7 +105,6 @@ builder.Services.AddSingleton<AtemConnectionManager>();
 builder.Services.AddSingleton<AtemUdpConnectionManager>();
 // Register AtemStateSnapshot so it can be injected into CommandService (fixes DI resolution error)
 builder.Services.AddSingleton<AtemStateSnapshot>();
-builder.Services.AddScoped<AzureAtemStateStore>();
 // HyperDeck Connection Pool for persistent TCP connections
 builder.Services.AddSingleton<HyperDeckConnectionPool>();
 // Additional HTTP client for JWT auth service
