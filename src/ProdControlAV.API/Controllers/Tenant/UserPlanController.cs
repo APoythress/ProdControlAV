@@ -1,11 +1,6 @@
-using System;
-using System.Linq;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using ProdControlAV.API.Models;
 using ProdControlAV.Core.Interfaces;
 using ProdControlAV.Core.Models;
@@ -142,11 +137,6 @@ public class UserPlanController : ControllerBase
 
             // Encrypt and store phone number
             user.PhoneNumber = EncryptPhoneNumber(request.PhoneNumber);
-        }
-        else
-        {
-            // If disabling, optionally clear phone number (or keep it for re-enabling)
-            // For now, we'll keep it
         }
 
         user.SmsNotificationsEnabled = request.SmsNotificationsEnabled;

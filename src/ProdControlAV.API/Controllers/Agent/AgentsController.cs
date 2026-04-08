@@ -1,16 +1,15 @@
-using System.Runtime.CompilerServices;
 using System.Security.Claims;
+using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using ProdControlAV.API.Models;
 using ProdControlAV.API.Services;
-using ProdControlAV.Core.Models;
 using ProdControlAV.Core.Interfaces;
+using ProdControlAV.Core.Models;
 using ProdControlAV.Infrastructure.Services;
-using static Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults;
 
 namespace ProdControlAV.API.Controllers;
 
@@ -62,7 +61,7 @@ public sealed class AgentsController : ControllerBase
             return agentId;
         
         // Fallback to long-form claim name (in case mapping still occurs)
-        agentId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        agentId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (!string.IsNullOrEmpty(agentId))
             return agentId;
         
@@ -195,7 +194,7 @@ public sealed class AgentsController : ControllerBase
             {
                 Request.EnableBuffering();
                 Request.Body.Position = 0;
-                using var sr = new System.IO.StreamReader(Request.Body, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+                using var sr = new StreamReader(Request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
                 var raw = await sr.ReadToEndAsync(ct);
                 Request.Body.Position = 0;
                 _logger.LogWarning("[STATUS] Model binding returned null. Raw body: {RawBody}", raw);
@@ -552,7 +551,7 @@ public sealed class AgentsController : ControllerBase
                     CommandId = firstCmd.CommandId,
                     DeviceId = firstCmd.DeviceId,
                     Verb = firstCmd.CommandType,
-                    Payload = System.Text.Json.JsonSerializer.Serialize(new
+                    Payload = JsonSerializer.Serialize(new
                     {
                         deviceId = firstCmd.DeviceId,
                         commandName = firstCmd.CommandName,
@@ -765,7 +764,7 @@ public sealed class AgentsController : ControllerBase
     /// </summary>
     [HttpGet]
     [Authorize(Policy = "TenantMember")]
-    [ProducesResponseType<List<ProdControlAV.API.Models.AgentDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<List<AgentDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> GetAgents(CancellationToken ct)
     {
@@ -780,7 +779,7 @@ public sealed class AgentsController : ControllerBase
 
             var agents = await _db.Agents
                 .Where(a => a.TenantId == tenantId)
-                .Select(a => new ProdControlAV.API.Models.AgentDto(a.Id, a.Name, a.LocationName, a.LastSeenUtc, a.Version))
+                .Select(a => new AgentDto(a.Id, a.Name, a.LocationName, a.LastSeenUtc, a.Version))
                 .ToListAsync(ct);
 
             return Ok(agents);
