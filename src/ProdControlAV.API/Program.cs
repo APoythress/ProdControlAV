@@ -357,7 +357,6 @@ builder.Services.AddScoped<IAtemStateStore>(sp => {
     }
     return new TableAtemStateStore(tableClient);
 });
-builder.Services.AddScoped<AzureAtemStateStore>();
 
 // Activity Monitor for idle detection and SQL suspension
 builder.Services.Configure<ActivityMonitorOptions>(builder.Configuration.GetSection("ActivityMonitor"));
