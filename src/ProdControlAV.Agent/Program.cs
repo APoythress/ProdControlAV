@@ -99,6 +99,11 @@ builder.Services.AddHttpClient<ICommandService, CommandService>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(300);
 });
+builder.Services.AddHttpClient<AtemStatePublisher>((sp, client) =>
+{
+    var api = sp.GetRequiredService<IOptions<ApiOptions>>().Value;
+    client.BaseAddress = new Uri(api.BaseUrl);
+});
 
 // ATEM Connection Manager for LibAtem integration
 builder.Services.AddSingleton<AtemConnectionManager>();
