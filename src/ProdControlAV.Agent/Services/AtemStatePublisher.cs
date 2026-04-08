@@ -7,7 +7,7 @@ public sealed class AtemStatePublisher
     private readonly HttpClient _http;
     private readonly ILogger<AtemStatePublisher> _logger;
     private readonly Guid _deviceId;
-    private const string EndpointTemplate = "api/atem/{0}/state";
+    private const string EndpointTemplate = "https://prodcontrol.app/api/atem/{0}/state"; // HACK - setting explicit endpoint for now
 
     public AtemStatePublisher(HttpClient httpClient, ILogger<AtemStatePublisher> logger, Guid deviceId)
     {
