@@ -85,6 +85,7 @@ public class AtemController : ControllerBase
     }
 
     [HttpPost("{deviceId}/state")]
+    [Authorize(Policy = "JwtAgent")]
     public async Task<IActionResult> PostState(Guid deviceId, [FromBody] JsonElement payload, CancellationToken ct)
     {
         var device = await _db.Devices
