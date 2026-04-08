@@ -19,14 +19,14 @@ public class AtemController : ControllerBase
     private readonly ITenantProvider _tenant;
     private readonly ILogger<AtemController> _logger;
     private readonly IAgentCommandQueueService _queueService;
-    private readonly AzureAtemStateStore _atemStateStore;
+    private readonly IAtemStateStore _atemStateStore;
 
     public AtemController(
         AppDbContext db,
         ITenantProvider tenant,
         ILogger<AtemController> logger,
         IAgentCommandQueueService queueService,
-        AzureAtemStateStore atemStateStore)
+        IAtemStateStore atemStateStore)
     {
         _db = db;
         _tenant = tenant;
