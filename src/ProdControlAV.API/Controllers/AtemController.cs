@@ -12,7 +12,6 @@ using AtemStateDto = ProdControlAV.API.Models.AtemStateDto;
 namespace ProdControlAV.API.Controllers;
 
 [ApiController]
-[Authorize(Policy = "TenantMember")]
 [Route("api/[controller]")]
 public class AtemController : ControllerBase
 {
@@ -42,6 +41,7 @@ public class AtemController : ControllerBase
     /// <param name="deviceId">Device ID</param>
     /// <param name="ct">Cancellation token</param>
     [HttpGet("{deviceId}/state")]
+    [Authorize(Policy = "TenantMember")]
     public async Task<ActionResult<AtemStateDto>> GetState(Guid deviceId, CancellationToken ct)
     {
         var device = await _db.Devices
@@ -156,6 +156,7 @@ public class AtemController : ControllerBase
     /// <param name="request">Control request with destination and input ID</param>
     /// <param name="ct">Cancellation token</param>
     [HttpPost("{deviceId}/cut")]
+    [Authorize(Policy = "TenantMember")]
     public async Task<ActionResult<AtemControlResponse>> Cut(
         Guid deviceId,
         [FromBody] AtemControlRequest request,
@@ -228,6 +229,7 @@ public class AtemController : ControllerBase
     /// <param name="request">Control request with destination and input ID</param>
     /// <param name="ct">Cancellation token</param>
     [HttpPost("{deviceId}/auto")]
+    [Authorize(Policy = "TenantMember")]
     public async Task<ActionResult<AtemControlResponse>> Auto(
         Guid deviceId,
         [FromBody] AtemControlRequest request,
