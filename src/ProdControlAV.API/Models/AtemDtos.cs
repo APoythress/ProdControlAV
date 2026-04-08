@@ -49,12 +49,3 @@ public class AtemControlResponse
     public bool Success { get; set; }
     public string Message { get; set; } = string.Empty;
 }
-
-/// <summary>
-/// DTO for ATEM snapshot response
-/// </summary>
-public class AtemSnapshotResponseDto
-{
-    public Guid DeviceId { get; set; }
-    public string AtemResponseString { get; set; }
-}

@@ -5,8 +5,8 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using ProdControlAV.Core.Models;
 using ProdControlAV.Core.Interfaces;
+using ProdControlAV.Core.Models;
 
 namespace ProdControlAV.API.Controllers;
 
