@@ -105,6 +105,8 @@ builder.Services.AddHttpClient<AtemStatePublisher>((sp, client) =>
     client.BaseAddress = new Uri(api.BaseUrl);
 });
 
+// ATEM Connection Manager for LibAtem integration
+builder.Services.AddSingleton<AtemConnectionManager>();
 builder.Services.AddSingleton<AtemUdpConnectionManager>();
 // Register AtemStateSnapshot so it can be injected into CommandService (fixes DI resolution error)
 builder.Services.AddSingleton<AtemStateSnapshot>();

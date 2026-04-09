@@ -1,9 +1,18 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ProdControlAV.API.Models;
+using ProdControlAV.API.Services;
+using ProdControlAV.Core.Interfaces;
 using ProdControlAV.Core.Models;
 using ProdControlAV.Infrastructure.Services;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Claims;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace ProdControlAV.API.Controllers;
 

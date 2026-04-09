@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿// Controllers/PicoBridgeController.cs
+
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 [ApiController]
@@ -12,7 +14,7 @@ public class PicoBridgeController : ControllerBase
     public PicoBridgeController(IHttpClientFactory factory, IConfiguration cfg)
     {
         _http = factory.CreateClient();
-        _picoBase = cfg["Pico:BaseUrl"];
+        _picoBase = cfg["Pico:BaseUrl"] ?? "http://192.168.1.61/";
     }
 
     [HttpGet("devices")]
