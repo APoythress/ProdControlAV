@@ -342,6 +342,21 @@ builder.Services.AddScoped<ITenantSmsUsageStore>(sp => {
     return new TableTenantSmsUsageStore(sp.GetRequiredService<TableServiceClient>().GetTableClient("TenantSmsUsage"));
 });
 
+builder.Services.AddScoped<IDeviceSmsStateStore>(sp => {
+    var tableClient = sp.GetRequiredService<TableServiceClient>().GetTableClient("DeviceSmsState");
+    try {
+        tableClient.CreateIfNotExists();
+        var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("TableSetup");
+        logger.LogInformation("Ensured Azure Table exists: DeviceSmsState");
+    } catch (Exception ex) {
+        var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("TableSetup");
+        logger.LogWarning(ex, "Failed to ensure Azure Table exists: DeviceSmsState");
+    }
+    return new TableDeviceSmsStateStore(sp.GetRequiredService<TableServiceClient>().GetTableClient("DeviceSmsState"));
+});
+
 // TableClient for AtemState
 builder.Services.AddScoped<IAtemStateStore>(sp => {
     var tableClient = sp.GetRequiredService<TableServiceClient>().GetTableClient("AtemState");
