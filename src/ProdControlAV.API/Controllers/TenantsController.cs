@@ -4,9 +4,10 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
-using ProdControlAV.API.Models;
 using ProdControlAV.Core.Models;
+using ProdControlAV.API.Models;
+using Microsoft.Extensions.Options;
+// <-- add this
 
 namespace ProdControlAV.API.Controllers;
 

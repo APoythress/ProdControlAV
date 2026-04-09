@@ -1,7 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using ProdControlAV.Infrastructure.Services;
+using System;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace ProdControlAV.API.Controllers;
 

@@ -1,3 +1,4 @@
+using System;
 using ProdControlAV.Core.Models;
 
 namespace ProdControlAV.API.Models;

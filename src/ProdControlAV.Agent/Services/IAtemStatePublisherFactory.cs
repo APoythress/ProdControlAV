@@ -1,4 +1,7 @@
-﻿using ProdControlAV.Agent.Services;
+﻿// csharp
+// File: AtemStatePublisherFactory.cs
+
+using ProdControlAV.Agent.Services;
 
 public interface IAtemStatePublisherFactory
 {
