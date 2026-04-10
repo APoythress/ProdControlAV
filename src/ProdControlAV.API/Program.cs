@@ -198,7 +198,7 @@ builder.Services.AddScoped<IAgentAuth, AgentAuth>();
 // Agent Auth Store - Table Storage for agent authentication (eliminates SQL dependency for auth)
 
 // ========== Azure table clients ========== //
-builder.Services.AddSingleton<TableServiceClient>(new TableServiceClient(builder.Configuration.GetConnectionString("AzureTableStorage")));
+builder.Services.AddSingleton<TableServiceClient>(new TableServiceClient(builder.Configuration.GetConnectionString("QueueConnectionString")));
 
 builder.Services.AddHostedService<AzureTableConfiguration>();
 
