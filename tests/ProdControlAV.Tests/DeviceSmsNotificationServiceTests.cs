@@ -31,7 +31,9 @@ public class DeviceSmsNotificationServiceTests
                 It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new RequestFailedException(404, "Not Found"));
 
-        var store = new TableDeviceSmsStateStore(mockTable.Object);
+        var mockSvc = new Mock<TableServiceClient>();
+        mockSvc.Setup(s => s.GetTableClient(It.IsAny<string>())).Returns(mockTable.Object);
+        var store = new TableDeviceSmsStateStore(mockSvc.Object);
         var result = await store.GetAsync(Guid.NewGuid(), Guid.NewGuid(), CancellationToken.None);
 
         Assert.Null(result);
@@ -57,7 +59,9 @@ public class DeviceSmsNotificationServiceTests
                 It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Response.FromValue(entity, Mock.Of<Response>()));
 
-        var store = new TableDeviceSmsStateStore(mockTable.Object);
+        var mockSvc = new Mock<TableServiceClient>();
+        mockSvc.Setup(s => s.GetTableClient(It.IsAny<string>())).Returns(mockTable.Object);
+        var store = new TableDeviceSmsStateStore(mockSvc.Object);
         var result = await store.GetAsync(tenantId, deviceId, CancellationToken.None);
 
         Assert.NotNull(result);
@@ -79,7 +83,9 @@ public class DeviceSmsNotificationServiceTests
             .Callback<ITableEntity, TableUpdateMode, CancellationToken>((_, mode, _) => capturedMode = mode)
             .ReturnsAsync(Mock.Of<Response>());
 
-        var store = new TableDeviceSmsStateStore(mockTable.Object);
+        var mockSvc = new Mock<TableServiceClient>();
+        mockSvc.Setup(s => s.GetTableClient(It.IsAny<string>())).Returns(mockTable.Object);
+        var store = new TableDeviceSmsStateStore(mockSvc.Object);
         await store.UpsertAsync(Guid.NewGuid(), Guid.NewGuid(), "OFFLINE", DateTimeOffset.UtcNow, CancellationToken.None);
 
         Assert.Equal(TableUpdateMode.Merge, capturedMode);
@@ -106,7 +112,9 @@ public class DeviceSmsNotificationServiceTests
             .Callback<ITableEntity, TableUpdateMode, CancellationToken>((e, _, _) => capturedEntity = e as TableEntity)
             .ReturnsAsync(Mock.Of<Response>());
 
-        var store = new TableSmsNotificationLogStore(mockTable.Object);
+        var mockSvc2 = new Mock<TableServiceClient>();
+        mockSvc2.Setup(s => s.GetTableClient(It.IsAny<string>())).Returns(mockTable.Object);
+        var store = new TableSmsNotificationLogStore(mockSvc2.Object);
         await store.AppendAsync(tenantId, deviceId, "OFFLINE", sentUtc, "***-1234", "SMXXX", CancellationToken.None);
 
         Assert.NotNull(capturedEntity);
@@ -143,7 +151,9 @@ public class DeviceSmsNotificationServiceTests
             .Callback<ITableEntity, TableUpdateMode, CancellationToken>((e, _, _) => capturedEntity = e as TableEntity)
             .ReturnsAsync(Mock.Of<Response>());
 
-        var store = new TableTenantSmsUsageStore(mockTable.Object);
+        var mockSvc3 = new Mock<TableServiceClient>();
+        mockSvc3.Setup(s => s.GetTableClient(It.IsAny<string>())).Returns(mockTable.Object);
+        var store = new TableTenantSmsUsageStore(mockSvc3.Object);
         await store.IncrementAsync(Guid.NewGuid(), "OFFLINE", CancellationToken.None);
 
         Assert.NotNull(capturedEntity);
@@ -182,7 +192,9 @@ public class DeviceSmsNotificationServiceTests
             .Callback<ITableEntity, TableUpdateMode, CancellationToken>((e, _, _) => capturedEntity = e as TableEntity)
             .ReturnsAsync(Mock.Of<Response>());
 
-        var store = new TableTenantSmsUsageStore(mockTable.Object);
+        var mockSvc4 = new Mock<TableServiceClient>();
+        mockSvc4.Setup(s => s.GetTableClient(It.IsAny<string>())).Returns(mockTable.Object);
+        var store = new TableTenantSmsUsageStore(mockSvc4.Object);
         await store.IncrementAsync(tenantId, "ONLINE", CancellationToken.None);
 
         Assert.NotNull(capturedEntity);

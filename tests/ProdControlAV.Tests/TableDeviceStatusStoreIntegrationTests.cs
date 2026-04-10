@@ -21,9 +21,10 @@ public class TableDeviceStatusStoreIntegrationTests
             return;
         }
 
-        var tableClient = new TableClient(ConnectionString, TableName);
+        var serviceClient = new TableServiceClient(ConnectionString);
+        var tableClient = serviceClient.GetTableClient(TableName);
         await tableClient.CreateIfNotExistsAsync();
-        var store = new TableDeviceStatusStore(tableClient);
+        var store = new TableDeviceStatusStore(serviceClient);
         var tenantId = Guid.NewGuid();
         var deviceId = Guid.NewGuid();
         await store.UpsertAsync(tenantId, deviceId, "Online", 42, DateTimeOffset.UtcNow, CancellationToken.None);
