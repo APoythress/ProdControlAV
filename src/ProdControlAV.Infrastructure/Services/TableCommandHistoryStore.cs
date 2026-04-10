@@ -17,7 +17,8 @@ namespace ProdControlAV.Infrastructure.Services
     {
         private readonly TableClient _table;
 
-        public TableCommandHistoryStore(TableClient table) => _table = table;
+        public TableCommandHistoryStore(TableServiceClient tableServiceClient) => 
+            _table = tableServiceClient.GetTableClient("CommandHistory");
 
         public async Task RecordExecutionAsync(CommandHistoryDto history, CancellationToken ct)
         {

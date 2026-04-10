@@ -1,16 +1,18 @@
-﻿using Azure;
-using Azure.Data.Tables;
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Azure;
+using Azure.Data.Tables;
 
 namespace ProdControlAV.Infrastructure.Services
 {
     public sealed class TableDeviceStatusStore : IDeviceStatusStore
     {
         private readonly TableClient _table;
-        public TableDeviceStatusStore(TableClient table) => _table = table;
+        public TableDeviceStatusStore(TableServiceClient tableServiceClient) => 
+            _table = tableServiceClient.GetTableClient("DeviceStatus");
 
         public async Task UpsertAsync(Guid tenantId, Guid deviceId, string status, int? latencyMs, DateTimeOffset ts, CancellationToken ct)
         {
@@ -24,7 +26,7 @@ namespace ProdControlAV.Infrastructure.Services
             await _table.UpsertEntityAsync(entity, TableUpdateMode.Merge, ct);
         }
 
-        public async IAsyncEnumerable<DeviceStatusDto> GetAllForTenantAsync(Guid tenantId, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        public async IAsyncEnumerable<DeviceStatusDto> GetAllForTenantAsync(Guid tenantId, [EnumeratorCancellation] CancellationToken ct)
         {
             var query = _table.QueryAsync<TableEntity>(x => x.PartitionKey == tenantId.ToString().ToLowerInvariant(), cancellationToken: ct);
             await foreach (var e in query)

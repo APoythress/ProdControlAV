@@ -10,7 +10,8 @@ namespace ProdControlAV.Infrastructure.Services
     public sealed class TableDeviceActionStore : IDeviceActionStore
     {
         private readonly TableClient _table;
-        public TableDeviceActionStore(TableClient table) => _table = table;
+        public TableDeviceActionStore(TableServiceClient tableServiceClient) => 
+            _table = tableServiceClient.GetTableClient("DeviceActions");
 
         public async Task UpsertAsync(Guid tenantId, Guid actionId, Guid deviceId, string actionName, CancellationToken ct)
         {
