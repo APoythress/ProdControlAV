@@ -162,9 +162,8 @@ public class DeviceOfflineNotificationService : BackgroundService
 
         var state = await smsStateStore.GetAsync(tenantId, deviceId, ct);
 
-        // Always clear LastSentSMSUtc on the Devices table when device is ONLINE.
-        var devicesTable = _tableServiceClient.GetTableClient("Devices");
-        var deviceStore = new TableDeviceStore(devicesTable);
+        // Always clear LastSentSMSUtc on the Devices table when device is ONLINE
+        var deviceStore = new TableDeviceStore(_tableServiceClient);
         await deviceStore.UpdateSmsLastSentAsync(tenantId, deviceId, null, ct);
 
         if (state == null || !string.Equals(state.LastSentType, "OFFLINE", StringComparison.OrdinalIgnoreCase))
@@ -263,8 +262,7 @@ public class DeviceOfflineNotificationService : BackgroundService
         if (sent)
         {
             // Update LastSentSMSUtc in Devices table
-            var devicesTable = _tableServiceClient.GetTableClient("Devices");
-            var deviceStore = new TableDeviceStore(devicesTable);
+            var deviceStore = new TableDeviceStore(_tableServiceClient);
             await deviceStore.UpdateSmsLastSentAsync(tenantId, deviceId, now, ct);
 
             // Update DeviceSmsState

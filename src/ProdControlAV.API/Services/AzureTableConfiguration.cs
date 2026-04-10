@@ -23,6 +23,7 @@ public sealed class AzureTableConfiguration : IHostedService
         await EnsureAsync("AtemState", ct);
         await EnsureAsync("CommandHistory", ct);
         await EnsureAsync("CommandQueue", ct);
+        await EnsureAsync("Devices", ct);
         await EnsureAsync("DeviceActions", ct);
         await EnsureAsync("DeviceSmsState", ct);
         await EnsureAsync("DeviceStatus", ct);

@@ -216,6 +216,7 @@ builder.Services.AddScoped<ICommandQueueStore, TableCommandQueueStore>();
 builder.Services.AddScoped<IDeviceActionStore, TableDeviceActionStore>();
 builder.Services.AddScoped<IDeviceSmsStateStore, TableDeviceSmsStateStore>();
 builder.Services.AddScoped<IDeviceStatusStore, TableDeviceStatusStore>();
+builder.Services.AddScoped<IDeviceStore, TableDeviceStore>();
 builder.Services.AddScoped<ISmsNotificationLogStore, TableSmsNotificationLogStore>();
 builder.Services.AddScoped<ITenantSmsUsageStore, TableTenantSmsUsageStore>();
 

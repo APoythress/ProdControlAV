@@ -10,7 +10,8 @@ namespace ProdControlAV.Infrastructure.Services
     public sealed class TableDeviceStore : IDeviceStore
     {
         private readonly TableClient _table;
-        public TableDeviceStore(TableClient table) => _table = table;
+        public TableDeviceStore(TableServiceClient tableServiceClient) => 
+            _table = tableServiceClient.GetTableClient("Devices");
 
         public async Task UpsertAsync(Guid tenantId, Guid deviceId, string name, string ipAddress, string type, 
             DateTimeOffset createdUtc, string? model, string? brand, string? location, bool allowTelNet, int port,
