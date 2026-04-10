@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using Azure.Data.Tables;
+using Azure.Identity;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -198,7 +199,13 @@ builder.Services.AddScoped<IAgentAuth, AgentAuth>();
 // Agent Auth Store - Table Storage for agent authentication (eliminates SQL dependency for auth)
 
 // ========== Azure table clients ========== //
-builder.Services.AddSingleton<TableServiceClient>(new TableServiceClient(builder.Configuration.GetConnectionString("QueueConnectionString")));
+builder.Services.AddSingleton<TableServiceClient>(tableClient =>
+{
+    var config = tableClient.GetRequiredService<IConfiguration>();
+    var endpoint = config["Storage:TablesEndpoint"];
+    
+    return new TableServiceClient(new Uri(endpoint), new DefaultAzureCredential());
+});
 
 builder.Services.AddHostedService<AzureTableConfiguration>();
 
