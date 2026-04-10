@@ -17,7 +17,10 @@ namespace ProdControlAV.Infrastructure.Services
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
-        public TableAtemStateStore(TableClient table) => _table = table;
+        public TableAtemStateStore(TableServiceClient tableServiceClient)
+        {
+            _table = tableServiceClient.GetTableClient("AtemState");
+        }
 
         public async Task UpsertStateAsync(Guid tenantId, Guid deviceId, List<AtemInputDto> inputs, 
             Dictionary<string, long?> currentSources, CancellationToken ct)

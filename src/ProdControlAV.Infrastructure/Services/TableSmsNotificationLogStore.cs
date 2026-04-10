@@ -13,7 +13,8 @@ namespace ProdControlAV.Infrastructure.Services
     {
         private readonly TableClient _table;
 
-        public TableSmsNotificationLogStore(TableClient table) => _table = table;
+        public TableSmsNotificationLogStore(TableServiceClient tableServiceClient) => 
+            _table = tableServiceClient.GetTableClient("SmsNotificationLog");
 
         public async Task AppendAsync(
             Guid tenantId,

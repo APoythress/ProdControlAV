@@ -14,7 +14,8 @@ namespace ProdControlAV.Infrastructure.Services
     {
         private readonly TableClient _table;
 
-        public TableTenantSmsUsageStore(TableClient table) => _table = table;
+        public TableTenantSmsUsageStore(TableServiceClient tableServiceClient) => 
+            _table = tableServiceClient.GetTableClient("TenantSmsUsage");
 
         public async Task IncrementAsync(Guid tenantId, string type, CancellationToken ct)
         {

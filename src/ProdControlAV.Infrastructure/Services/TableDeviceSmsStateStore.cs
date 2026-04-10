@@ -1,8 +1,8 @@
-using Azure;
-using Azure.Data.Tables;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Azure;
+using Azure.Data.Tables;
 
 namespace ProdControlAV.Infrastructure.Services
 {
@@ -14,7 +14,8 @@ namespace ProdControlAV.Infrastructure.Services
     {
         private readonly TableClient _table;
 
-        public TableDeviceSmsStateStore(TableClient table) => _table = table;
+        public TableDeviceSmsStateStore(TableServiceClient svc) =>
+            _table = svc.GetTableClient("DeviceSmsState");
 
         public async Task<DeviceSmsStateDto?> GetAsync(Guid tenantId, Guid deviceId, CancellationToken ct)
         {

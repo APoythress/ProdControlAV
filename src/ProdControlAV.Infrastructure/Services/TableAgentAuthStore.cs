@@ -24,17 +24,6 @@ public sealed class TableAgentAuthStore : IAgentAuthStore
         _logger = logger;
         _agentsTable = tableServiceClient.GetTableClient("Agents");
         _agentKeyHashIndex = tableServiceClient.GetTableClient("AgentKeyHashIndex");
-
-        // Ensure tables exist
-        try
-        {
-            _agentsTable.CreateIfNotExists();
-            _agentKeyHashIndex.CreateIfNotExists();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to create agent auth tables");
-        }
     }
 
     public async Task<AgentAuthDto?> ValidateAgentAsync(string agentKeyHash, CancellationToken ct)

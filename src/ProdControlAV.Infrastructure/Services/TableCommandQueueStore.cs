@@ -19,9 +19,9 @@ namespace ProdControlAV.Infrastructure.Services
         private readonly TableClient _table;
         private readonly ILogger<TableCommandQueueStore>? _logger;
 
-        public TableCommandQueueStore(TableClient table, ILogger<TableCommandQueueStore>? logger = null)
+        public TableCommandQueueStore(TableServiceClient tableServiceClient, ILogger<TableCommandQueueStore>? logger = null)
         {
-            _table = table;
+            _table = tableServiceClient.GetTableClient("CommandQueue");
             _logger = logger;
         }
 
