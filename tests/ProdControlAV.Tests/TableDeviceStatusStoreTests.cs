@@ -16,7 +16,11 @@ public class TableDeviceStatusStoreTests
     {
         // Arrange
         var mockTableClient = new Mock<TableClient>();
-        var store = new TableDeviceStatusStore(mockTableClient.Object);
+        var mockServiceClient = new Mock<TableServiceClient>();
+        mockServiceClient
+            .Setup(s => s.GetTableClient(It.IsAny<string>()))
+            .Returns(mockTableClient.Object);
+        var store = new TableDeviceStatusStore(mockServiceClient.Object);
         var tenantId = Guid.NewGuid();
         var deviceId = Guid.NewGuid();
         var status = "ONLINE";
@@ -61,7 +65,11 @@ public class TableDeviceStatusStoreTests
     {
         // Arrange
         var mockTableClient = new Mock<TableClient>();
-        var store = new TableDeviceStatusStore(mockTableClient.Object);
+        var mockServiceClient = new Mock<TableServiceClient>();
+        mockServiceClient
+            .Setup(s => s.GetTableClient(It.IsAny<string>()))
+            .Returns(mockTableClient.Object);
+        var store = new TableDeviceStatusStore(mockServiceClient.Object);
         var tenantId = Guid.NewGuid();
         var deviceId = Guid.NewGuid();
 

@@ -16,7 +16,9 @@ public class TableDeviceActionStoreTests
     {
         // Arrange
         var mockTableClient = new Mock<TableClient>();
-        var store = new TableDeviceActionStore(mockTableClient.Object);
+        var mockServiceClient = new Mock<TableServiceClient>();
+        mockServiceClient.Setup(s => s.GetTableClient(It.IsAny<string>())).Returns(mockTableClient.Object);
+        var store = new TableDeviceActionStore(mockServiceClient.Object);
         var tenantId = Guid.NewGuid();
         var actionId = Guid.NewGuid();
         var deviceId = Guid.NewGuid();
@@ -59,7 +61,9 @@ public class TableDeviceActionStoreTests
     {
         // Arrange
         var mockTableClient = new Mock<TableClient>();
-        var store = new TableDeviceActionStore(mockTableClient.Object);
+        var mockServiceClient = new Mock<TableServiceClient>();
+        mockServiceClient.Setup(s => s.GetTableClient(It.IsAny<string>())).Returns(mockTableClient.Object);
+        var store = new TableDeviceActionStore(mockServiceClient.Object);
         var tenantId = Guid.NewGuid();
         var actionId = Guid.NewGuid();
         var deviceId = Guid.NewGuid();

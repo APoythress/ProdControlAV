@@ -158,8 +158,7 @@ public class DeviceOfflineNotificationService : BackgroundService
         CancellationToken ct)
     {
         // Read DeviceSmsState to determine whether an OFFLINE SMS was previously sent.
-        var smsStateTable = _tableServiceClient.GetTableClient("DeviceSmsState");
-        var smsStateStore = new TableDeviceSmsStateStore(smsStateTable);
+        var smsStateStore = new TableDeviceSmsStateStore(_tableServiceClient);
 
         var state = await smsStateStore.GetAsync(tenantId, deviceId, ct);
 
@@ -195,13 +194,11 @@ public class DeviceOfflineNotificationService : BackgroundService
             await smsStateStore.UpsertAsync(tenantId, deviceId, "ONLINE", now, ct);
 
             // Write to SmsNotificationLog
-            var logTable = _tableServiceClient.GetTableClient("SmsNotificationLog");
-            var logStore = new TableSmsNotificationLogStore(logTable);
+            var logStore = new TableSmsNotificationLogStore(_tableServiceClient);
             await logStore.AppendAsync(tenantId, deviceId, "ONLINE", now, null, null, ct);
 
             // Increment TenantSmsUsage
-            var usageTable = _tableServiceClient.GetTableClient("TenantSmsUsage");
-            var usageStore = new TableTenantSmsUsageStore(usageTable);
+            var usageStore = new TableTenantSmsUsageStore(_tableServiceClient);
             await usageStore.IncrementAsync(tenantId, "ONLINE", ct);
         }
     }
@@ -271,18 +268,15 @@ public class DeviceOfflineNotificationService : BackgroundService
             await deviceStore.UpdateSmsLastSentAsync(tenantId, deviceId, now, ct);
 
             // Update DeviceSmsState
-            var smsStateTable = _tableServiceClient.GetTableClient("DeviceSmsState");
-            var smsStateStore = new TableDeviceSmsStateStore(smsStateTable);
+            var smsStateStore = new TableDeviceSmsStateStore(_tableServiceClient);
             await smsStateStore.UpsertAsync(tenantId, deviceId, "OFFLINE", now, ct);
 
             // Write to SmsNotificationLog
-            var logTable = _tableServiceClient.GetTableClient("SmsNotificationLog");
-            var logStore = new TableSmsNotificationLogStore(logTable);
+            var logStore = new TableSmsNotificationLogStore(_tableServiceClient);
             await logStore.AppendAsync(tenantId, deviceId, "OFFLINE", now, null, null, ct);
 
             // Increment TenantSmsUsage
-            var usageTable = _tableServiceClient.GetTableClient("TenantSmsUsage");
-            var usageStore = new TableTenantSmsUsageStore(usageTable);
+            var usageStore = new TableTenantSmsUsageStore(_tableServiceClient);
             await usageStore.IncrementAsync(tenantId, "OFFLINE", ct);
         }
     }

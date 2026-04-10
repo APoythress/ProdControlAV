@@ -69,7 +69,9 @@ public class CommandQueueStatusTests
                 It.IsAny<CancellationToken>()))
             .Returns(Task.FromResult(Mock.Of<Response>()));
 
-        var store = new TableCommandQueueStore(mockTableClient.Object, _mockLogger.Object);
+        var mockSvc = new Mock<TableServiceClient>();
+        mockSvc.Setup(s => s.GetTableClient(It.IsAny<string>())).Returns(mockTableClient.Object);
+        var store = new TableCommandQueueStore(mockSvc.Object, _mockLogger.Object);
 
         // Act
         await store.MarkAsSucceededAsync(tenantId, commandId, CancellationToken.None);
@@ -140,7 +142,9 @@ public class CommandQueueStatusTests
                 It.IsAny<CancellationToken>()))
             .Returns(Task.FromResult(Mock.Of<Response>()));
 
-        var store = new TableCommandQueueStore(mockTableClient.Object, _mockLogger.Object);
+        var mockSvc2 = new Mock<TableServiceClient>();
+        mockSvc2.Setup(s => s.GetTableClient(It.IsAny<string>())).Returns(mockTableClient.Object);
+        var store = new TableCommandQueueStore(mockSvc2.Object, _mockLogger.Object);
 
         // Act
         await store.MarkAsFailedAsync(tenantId, commandId, CancellationToken.None);
@@ -188,7 +192,9 @@ public class CommandQueueStatusTests
                 It.IsAny<CancellationToken>()))
             .Returns(asyncPageable);
 
-        var store = new TableCommandQueueStore(mockTableClient.Object, _mockLogger.Object);
+        var mockSvc3 = new Mock<TableServiceClient>();
+        mockSvc3.Setup(s => s.GetTableClient(It.IsAny<string>())).Returns(mockTableClient.Object);
+        var store = new TableCommandQueueStore(mockSvc3.Object, _mockLogger.Object);
 
         // Act - should not throw
         await store.MarkAsSucceededAsync(tenantId, commandId, CancellationToken.None);
@@ -248,7 +254,9 @@ public class CommandQueueStatusTests
                 It.IsAny<CancellationToken>()))
             .Returns(Task.FromResult(Mock.Of<Response>()));
 
-        var store = new TableCommandQueueStore(mockTableClient.Object, _mockLogger.Object);
+        var mockSvc4 = new Mock<TableServiceClient>();
+        mockSvc4.Setup(s => s.GetTableClient(It.IsAny<string>())).Returns(mockTableClient.Object);
+        var store = new TableCommandQueueStore(mockSvc4.Object, _mockLogger.Object);
 
         // Act
         await store.MarkAsProcessingAsync(tenantId, commandId, CancellationToken.None);
