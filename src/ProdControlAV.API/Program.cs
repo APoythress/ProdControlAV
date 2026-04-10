@@ -278,6 +278,7 @@ builder.Services.AddScoped<TableClient>(sp => {
     }
     return client;
 });
+builder.Services.AddScoped<ICommandQueueStore, TableCommandQueueStore>();
 
 // TableClient for CommandHistory
 builder.Services.AddScoped<TableClient>(sp => {
@@ -295,7 +296,7 @@ builder.Services.AddScoped<TableClient>(sp => {
     }
     return client;
 });
-
+builder.Services.AddScoped<ICommandHistoryStore, TableCommandHistoryStore>();
 
 
 // SMS notification Table Storage stores (DeviceSmsState, SmsNotificationLog, TenantSmsUsage)
