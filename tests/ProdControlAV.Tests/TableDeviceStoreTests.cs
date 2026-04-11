@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Azure;
@@ -8,6 +7,7 @@ using Azure.Data.Tables;
 using Moq;
 using Xunit;
 using ProdControlAV.Infrastructure.Services;
+using System.Reflection;
 
 namespace ProdControlAV.Tests;
 
@@ -18,7 +18,7 @@ public class TableDeviceStoreTests
     {
         // Arrange
         var mockTableClient = new Mock<TableClient>();
-        var store = new TableDeviceStore(mockTableClient.Object);
+        var store = CreateStoreWithMockTableClient(mockTableClient);
         var tenantId = Guid.NewGuid();
         var deviceId = Guid.NewGuid();
         var status = "Online";
@@ -34,7 +34,7 @@ public class TableDeviceStoreTests
                 It.IsAny<ETag>(),
                 It.IsAny<TableUpdateMode>(), 
                 It.IsAny<CancellationToken>()))
-            .Callback<TableEntity, ETag, TableUpdateMode, CancellationToken>((entity, etag, mode, ct) =>
+            .Callback<TableEntity, ETag, TableUpdateMode, CancellationToken>((entity, _, mode, _) =>
             {
                 capturedEntity = entity;
                 capturedMode = mode;
@@ -65,7 +65,7 @@ public class TableDeviceStoreTests
     {
         // Arrange
         var mockTableClient = new Mock<TableClient>();
-        var store = new TableDeviceStore(mockTableClient.Object);
+        var store = CreateStoreWithMockTableClient(mockTableClient);
         var tenantId = Guid.NewGuid();
         var deviceId = Guid.NewGuid();
         var status = "Online";
@@ -96,7 +96,7 @@ public class TableDeviceStoreTests
     {
         // Arrange
         var mockTableClient = new Mock<TableClient>();
-        var store = new TableDeviceStore(mockTableClient.Object);
+        var store = CreateStoreWithMockTableClient(mockTableClient);
         var tenantId = Guid.NewGuid();
         var deviceId = Guid.NewGuid();
 
@@ -107,7 +107,7 @@ public class TableDeviceStoreTests
                 It.IsAny<TableEntity>(), 
                 It.IsAny<TableUpdateMode>(), 
                 It.IsAny<CancellationToken>()))
-            .Callback<TableEntity, TableUpdateMode, CancellationToken>((entity, mode, ct) =>
+            .Callback<TableEntity, TableUpdateMode, CancellationToken>((_, mode, _) =>
             {
                 capturedMode = mode;
             })
@@ -133,7 +133,7 @@ public class TableDeviceStoreTests
     {
         // Arrange
         var mockTableClient = new Mock<TableClient>();
-        var store = new TableDeviceStore(mockTableClient.Object);
+        var store = CreateStoreWithMockTableClient(mockTableClient);
         var tenantId = Guid.NewGuid();
         var deviceId = Guid.NewGuid();
 
@@ -160,7 +160,7 @@ public class TableDeviceStoreTests
         var mockPages = CreateAsyncPageable(entities);
 
         mockTableClient
-            .Setup(x => x.QueryAsync<TableEntity>(
+            .Setup(x => x.QueryAsync(
                 It.IsAny<System.Linq.Expressions.Expression<Func<TableEntity, bool>>>(), 
                 It.IsAny<int?>(), 
                 It.IsAny<IEnumerable<string>>(), 
@@ -183,6 +183,18 @@ public class TableDeviceStoreTests
         Assert.NotNull(device1.LastSeenUtc);
         Assert.NotNull(device1.LastPolledUtc);
         Assert.Equal(0.95, device1.HealthMetric);
+    }
+
+    private static TableDeviceStore CreateStoreWithMockTableClient(Mock<TableClient> mockTableClient)
+    {
+        // Create a dummy service client (we won't use it directly) and then replace the private _table field
+        var dummyService = new TableServiceClient("UseDevelopmentStorage=true");
+        var store = new TableDeviceStore(dummyService);
+
+        var field = typeof(TableDeviceStore).GetField("_table", BindingFlags.NonPublic | BindingFlags.Instance);
+        if (field == null) throw new InvalidOperationException("_table field not found on TableDeviceStore");
+        field.SetValue(store, mockTableClient.Object);
+        return store;
     }
 
     private static AsyncPageable<TableEntity> CreateAsyncPageable(IEnumerable<TableEntity> entities)

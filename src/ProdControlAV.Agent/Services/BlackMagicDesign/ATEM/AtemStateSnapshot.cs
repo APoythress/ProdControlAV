@@ -44,7 +44,7 @@ public sealed class AtemStateSnapshot
             {
                 // Program Input state
                 // Older style: PrgI
-                // Newer style seen on your device: Prp
+                // Newer style: Prp
                 // Expected shape: [ME, 0x00, inputH, inputL]
                 case "PrgI" when data.Length >= 4:
                 case "Prp"  when data.Length >= 4:
@@ -55,7 +55,7 @@ public sealed class AtemStateSnapshot
 
                 // Preview Input state
                 // Older style: PrvI
-                // Possible newer style: Prv
+                // Newer style: Prv
                 case "PrvI" when data.Length >= 4:
                 case "Prv"  when data.Length >= 4:
                     _previewInputs[data[0]] = (data[2] << 8) | data[3];

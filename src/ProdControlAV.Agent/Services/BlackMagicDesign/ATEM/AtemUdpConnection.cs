@@ -422,7 +422,7 @@ public sealed class AtemUdpConnection : IAtemConnection, IAsyncDisposable
             var name = rawName.TrimEnd('\0');
             var blockData = data.AsSpan(offset + 8, blockLen - 8);
 
-            _logger.LogDebug("ATEM block {Name} (raw='{RawName}') len={Len}", name, rawName, blockLen);
+            _logger.LogDebug("ATEM block {Name} (raw='{RawName}') len={Len} -- Data={blockData}", name, rawName, blockLen, blockData.ToString());
 
             _snapshot.Apply(name, blockData);
             anyUpdate = true;
