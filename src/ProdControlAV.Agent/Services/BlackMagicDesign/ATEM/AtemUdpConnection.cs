@@ -419,11 +419,16 @@ public sealed class AtemUdpConnection : IAtemConnection, IAsyncDisposable
                 break;
             
             // HACK - debugging purposes ONLY
+            List<string> cleanByteArray = new();
+            
             foreach (var b in data)
             {
                 var hexString = b.ToString("X2");
-                _logger.LogDebug("Current Byte: {Hex}", hexString);
+                cleanByteArray.Add(hexString);
+                
             }
+            _logger.LogDebug("Byte Array: {cleanByteArray}", cleanByteArray);
+            
 
             var rawName = Encoding.ASCII.GetString(data, offset + 4, 4);
             var name = rawName.TrimEnd('\0');
