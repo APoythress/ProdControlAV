@@ -417,11 +417,19 @@ public sealed class AtemUdpConnection : IAtemConnection, IAsyncDisposable
             int blockLen = ReadUInt16BE(data, offset);
             if (blockLen < 8 || offset + blockLen > data.Length)
                 break;
+            
+            // HACK - debugging purposes ONLY
+            foreach (var b in data)
+            {
+                var hexString = b.ToString("X2");
+                _logger.LogDebug("Current Byte: {Hex}", hexString);
+            }
 
             var rawName = Encoding.ASCII.GetString(data, offset + 4, 4);
             var name = rawName.TrimEnd('\0');
             var blockData = data.AsSpan(offset + 8, blockLen - 8);
-
+            // TODO: need to see what the data looks like to determine how to parse it correctly
+            // - will most likely need a custom parser for each block type to write the data to the state
             _logger.LogDebug("ATEM block {Name} (raw='{RawName}') len={Len} -- Data={blockData} -- RawData={data}", name, rawName, blockLen, blockData.ToString());
 
             _snapshot.Apply(name, blockData);
