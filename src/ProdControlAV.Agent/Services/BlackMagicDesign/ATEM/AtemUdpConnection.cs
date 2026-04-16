@@ -407,6 +407,11 @@ public sealed class AtemUdpConnection : IAtemConnection, IAsyncDisposable
         ParseStateBlocks(data);
     }
 
+    private class AtemReturnString
+    {
+        public string Response { get; set; }
+    }
+
     private void ParseStateBlocks(byte[] data)
     {
         int offset = HeaderSize;
@@ -417,26 +422,30 @@ public sealed class AtemUdpConnection : IAtemConnection, IAsyncDisposable
             int blockLen = ReadUInt16BE(data, offset);
             if (blockLen < 8 || offset + blockLen > data.Length)
                 break;
-            
-            // HACK - debugging purposes ONLY
-            List<string> cleanByteArray = new();
-            
-            foreach (var b in data)
-            {
-                var hexString = b.ToString("X2");
-                cleanByteArray.Add(hexString);
-                
-            }
-            _logger.LogDebug("Byte Array: {cleanByteArray}", cleanByteArray);
-            
 
             var rawName = Encoding.ASCII.GetString(data, offset + 4, 4);
             var name = rawName.TrimEnd('\0');
             var blockData = data.AsSpan(offset + 8, blockLen - 8);
-            // TODO: need to see what the data looks like to determine how to parse it correctly
-            // - will most likely need a custom parser for each block type to write the data to the state
-            _logger.LogDebug("ATEM block {Name} (raw='{RawName}') len={Len} -- Data={blockData} -- RawData={data}", name, rawName, blockLen, blockData.ToString());
+            
+            // Format for the ATEM state blocks:
+            /*
+             *offset 0, length 2   = InputId
+             *offset 2, length 20  = LongName
+             *offset 22, length 4  = ShortName
+             */
 
+            if (name == "InPr")
+            {
+                var inputID = blockData.Slice(0, 2).ToArray();
+                var longName = Encoding.ASCII.GetString(blockData.Slice(2, 20).ToArray());
+                var shortName = Encoding.ASCII.GetString(blockData.Slice(22, 4).ToArray());
+                
+                Console.WriteLine($"Input {inputID} - {longName} ({shortName})");
+            }
+            
+            
+            _logger.LogDebug("ATEM block {Name} (raw='{RawName}') len={Len}", name, rawName, blockLen);
+            _logger.LogDebug("ATEM block data: {Name} - {BlockData}", name, Convert.ToHexString(blockData));
             _snapshot.Apply(name, blockData);
             anyUpdate = true;
 

@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ProdControlAV.Agent.Interfaces;
 using ProdControlAV.API.Models;
 using ProdControlAV.Core.Interfaces;
 using ProdControlAV.Core.Models;
@@ -103,10 +104,10 @@ public class AtemController : ControllerBase
 
         // Deserialize incoming JSON into stable storage model
         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-        AtemStateStorageModel? state;
+        AtemState? state;
         try
         {
-            state = JsonSerializer.Deserialize<AtemStateStorageModel>(payload.GetRawText(), options);
+            state = JsonSerializer.Deserialize<AtemState>(payload.GetRawText(), options);
         }
         catch (JsonException ex)
         {
@@ -118,16 +119,13 @@ public class AtemController : ControllerBase
             return BadRequest(new { message = "Empty ATEM state payload" });
 
         // Ensure metadata
-        state.TimestampUtc = DateTime.UtcNow;
+        // state.TimestampUtc = DateTime.UtcNow;
 
         // Prepare inputs and current sources for storage (JSON-based conversions avoid ambiguous type resolution)
-        var infraInputs = JsonSerializer.Deserialize<List<Infrastructure.Services.AtemInputDto>>(JsonSerializer.Serialize(state.Inputs, options))
-                          ?? new List<Infrastructure.Services.AtemInputDto>();
+        // var infraInputs = JsonSerializer.Deserialize<List<Infrastructure.Services.AtemInputDto>>(JsonSerializer.Serialize(state.Inputs, options))
+        //                   ?? new List<Infrastructure.Services.AtemInputDto>();
 
-        var infraCurrent = state.CurrentSources?.ToDictionary(
-            kvp => kvp.Key,
-            kvp => long.TryParse(kvp.Value, out var result) ? result : (long?)null)
-            ?? new Dictionary<string, long?>();
+        var infraCurrent = state.ProgramInputId;
 
         // Persist to your state store
         try
@@ -135,8 +133,8 @@ public class AtemController : ControllerBase
             await _atemStateStore.UpsertStateAsync(
                 _tenant.TenantId,
                 deviceId,
-                infraInputs,
-                infraCurrent,
+                state.ProgramInputId,
+                state.PreviewInputId,
                 ct);
         }
         catch (Exception ex)

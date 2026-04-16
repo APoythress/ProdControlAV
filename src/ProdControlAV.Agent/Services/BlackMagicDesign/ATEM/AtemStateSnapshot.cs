@@ -1,4 +1,6 @@
+using System.Text;
 using ProdControlAV.Agent.Interfaces;
+using ProdControlAV.Agent.Models;
 
 namespace ProdControlAV.Agent.Services;
 
@@ -14,6 +16,7 @@ public sealed class AtemStateSnapshot
     // Per-ME (Mix/Effect) program and preview inputs. Key = ME index (0-based).
     private readonly Dictionary<int, int> _programInputs = new();
     private readonly Dictionary<int, int> _previewInputs = new();
+    private readonly List<AtemInput> _atemInput = new();
 
     // Completed the first time any program state block is successfully applied.
     private readonly TaskCompletionSource<bool> _programInputReady =
@@ -36,12 +39,17 @@ public sealed class AtemStateSnapshot
     /// <param name="data">The raw command-block data bytes (excluding the 8-byte block header).</param>
     public void Apply(string commandName, ReadOnlySpan<byte> data)
     {
+        // HACK - all data is parsed and ready to be written here. just need to persist the objects to table store for pieces we care about
         var name = commandName.TrimEnd('\0');
 
         lock (_lock)
         {
             switch (name)
             {
+                case "InPr" when data.Length >= 4: 
+                    Console.WriteLine(data[0] + " " + data[1] + " " + data[2] + " " + data[3]);
+                    break;
+                
                 // Program Input state
                 // Older style: PrgI
                 // Newer style: Prp

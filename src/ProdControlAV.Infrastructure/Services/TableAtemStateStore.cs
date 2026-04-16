@@ -22,16 +22,15 @@ namespace ProdControlAV.Infrastructure.Services
             _table = tableServiceClient.GetTableClient("AtemState");
         }
 
-        public async Task UpsertStateAsync(Guid tenantId, Guid deviceId, List<AtemInputDto> inputs, 
-            Dictionary<string, long?> currentSources, CancellationToken ct)
+        public async Task UpsertStateAsync(Guid tenantId, Guid deviceId, int programInputId, int previewInputId, CancellationToken ct)
         {
             var partitionKey = tenantId.ToString().ToLowerInvariant();
             var rowKey = deviceId.ToString();
             
             var entity = new TableEntity(partitionKey, rowKey)
             {
-                ["InputsJson"] = JsonSerializer.Serialize(inputs, _jsonOptions),
-                ["CurrentSourcesJson"] = JsonSerializer.Serialize(currentSources, _jsonOptions),
+                ["ProgramInputID"] = programInputId,
+                ["PreviewInputID"] = previewInputId,
                 ["LastUpdatedUtc"] = DateTimeOffset.UtcNow
             };
             

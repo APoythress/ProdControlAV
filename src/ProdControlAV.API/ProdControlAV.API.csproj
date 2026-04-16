@@ -13,6 +13,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\ProdControlAV.Agent\ProdControlAV.Agent.csproj" />
     <ProjectReference Include="..\ProdControlAV.WebApp\ProdControlAV.WebApp.csproj" />
   </ItemGroup>
 

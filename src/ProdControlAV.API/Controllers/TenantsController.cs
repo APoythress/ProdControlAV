@@ -290,7 +290,7 @@ public class TenantsController : ControllerBase
         var agentKey = Guid.NewGuid().ToString("N");
         var agentKeyHash = BCrypt.Net.BCrypt.HashPassword(agentKey);
 
-        var agent = new Agent
+        var agent = new Core.Models.Agent
         {
             Id = Guid.NewGuid(),
             TenantId = id,
