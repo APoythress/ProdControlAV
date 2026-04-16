@@ -18,7 +18,7 @@ public interface IJwtService
     /// </summary>
     /// <param name="agent">The agent to generate a token for</param>
     /// <returns>The JWT token string and expiry time</returns>
-    (string token, DateTime expiresAt) GenerateToken(Agent agent);
+    (string token, DateTime expiresAt) GenerateToken(Core.Models.Agent agent);
 }
 
 /// <summary>
@@ -37,7 +37,7 @@ public sealed class JwtService : IJwtService
         _signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config.Key));
     }
 
-    public (string token, DateTime expiresAt) GenerateToken(Agent agent)
+    public (string token, DateTime expiresAt) GenerateToken(Core.Models.Agent agent)
     {
         var expiresAt = DateTime.UtcNow.AddMinutes(_config.ExpiryMinutes);
         

@@ -1,19 +1,14 @@
-using System;
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
-using ProdControlAV.Core.Models;
 using ProdControlAV.Infrastructure.Services;
 
 namespace ProdControlAV.API.Services;
 
 public interface IAgentAuth
 {
-    Task<(Agent? agent, string? error)> ValidateAsync(string agentKey, CancellationToken ct);
+    Task<(Core.Models.Agent? agent, string? error)> ValidateAsync(string agentKey, CancellationToken ct);
     string HashAgentKey(string agentKey);
 }
 
@@ -49,7 +44,7 @@ public sealed class AgentAuth : IAgentAuth
         _logger = logger;
     }
 
-    public async Task<(Agent? agent, string? error)> ValidateAsync(string agentKey, CancellationToken ct)
+    public async Task<(Core.Models.Agent? agent, string? error)> ValidateAsync(string agentKey, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(agentKey)) return (null, "missing_agent_key");
         
@@ -65,7 +60,7 @@ public sealed class AgentAuth : IAgentAuth
             _failedAgentKeys.TryRemove(hash, out _);
             
             // Convert DTO to Agent model for backward compatibility
-            var agent = new Agent
+            var agent = new Core.Models.Agent
             {
                 Id = agentDto.AgentId,
                 TenantId = agentDto.TenantId,
@@ -157,7 +152,7 @@ public sealed class AgentAuth : IAgentAuth
         _failedAgentKeys.TryRemove(hash, out _);
         
         // Convert verified DTO to Agent model
-        return (new Agent
+        return (new Core.Models.Agent
         {
             Id = verifyDto.AgentId,
             TenantId = verifyDto.TenantId,

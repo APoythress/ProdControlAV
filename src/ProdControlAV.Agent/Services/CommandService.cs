@@ -644,10 +644,6 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
                 // or keep _atemSnapshot if it's truly updated from conn.StateChanged events.
                 case "GETPROGRAMINPUT":
                 {
-                    // Wait up to 2 s for the ATEM to send at least one PrgI state block.
-                    // On a healthy connection the state dump arrives within milliseconds;
-                    // on a fresh connection this prevents a race between handshake completion
-                    // and the initial state dump being parsed.
                     var ready = await conn.WaitForProgramInputAsync(TimeSpan.FromSeconds(2), ct);
                     if (!ready)
                     {
@@ -666,10 +662,7 @@ public async Task<CommandPayload> PollCommandsAsync(CancellationToken ct)
                     var atemState = new AtemState
                     {
                         ProgramInputId     = conn.CurrentState?.ProgramInputId ?? -1,
-                        PreviewInputId     = conn.CurrentState?.PreviewInputId ?? -1,
-                        InTransition       = conn.CurrentState?.InTransition ?? false,
-                        LastTransitionType = conn.CurrentState?.LastTransitionType ?? "",
-                        LastTransitionRate = conn.CurrentState?.LastTransitionRate
+                        PreviewInputId     = conn.CurrentState?.PreviewInputId ?? -1
                     };
     
                     using var req = new HttpRequestMessage(HttpMethod.Post, endpoint)

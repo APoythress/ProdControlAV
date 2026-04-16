@@ -28,8 +28,7 @@ namespace ProdControlAV.Infrastructure.Services
         /// <summary>
         /// Upsert ATEM state for a device
         /// </summary>
-        Task UpsertStateAsync(Guid tenantId, Guid deviceId, List<AtemInputDto> inputs, 
-            Dictionary<string, long?> currentSources, CancellationToken ct);
+        Task UpsertStateAsync(Guid tenantId, Guid deviceId, int programInputId, int previewInputId, CancellationToken ct);
 
         /// <summary>
         /// Get ATEM state for a device

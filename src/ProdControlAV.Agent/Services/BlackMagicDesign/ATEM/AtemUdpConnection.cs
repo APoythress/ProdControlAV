@@ -407,6 +407,11 @@ public sealed class AtemUdpConnection : IAtemConnection, IAsyncDisposable
         ParseStateBlocks(data);
     }
 
+    private class AtemReturnString
+    {
+        public string Response { get; set; }
+    }
+
     private void ParseStateBlocks(byte[] data)
     {
         int offset = HeaderSize;
@@ -421,9 +426,26 @@ public sealed class AtemUdpConnection : IAtemConnection, IAsyncDisposable
             var rawName = Encoding.ASCII.GetString(data, offset + 4, 4);
             var name = rawName.TrimEnd('\0');
             var blockData = data.AsSpan(offset + 8, blockLen - 8);
+            
+            // Format for the ATEM state blocks:
+            /*
+             *offset 0, length 2   = InputId
+             *offset 2, length 20  = LongName
+             *offset 22, length 4  = ShortName
+             */
 
+            if (name == "InPr")
+            {
+                var inputID = blockData.Slice(0, 2).ToArray();
+                var longName = Encoding.ASCII.GetString(blockData.Slice(2, 20).ToArray());
+                var shortName = Encoding.ASCII.GetString(blockData.Slice(22, 4).ToArray());
+                
+                Console.WriteLine($"Input {inputID} - {longName} ({shortName})");
+            }
+            
+            
             _logger.LogDebug("ATEM block {Name} (raw='{RawName}') len={Len}", name, rawName, blockLen);
-
+            _logger.LogDebug("ATEM block data: {Name} - {BlockData}", name, Convert.ToHexString(blockData));
             _snapshot.Apply(name, blockData);
             anyUpdate = true;
 
